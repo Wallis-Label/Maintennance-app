@@ -114,14 +114,15 @@
           const f = parseInt(matchK[1]);
           if (f > 0) cyclesAtteints = Math.floor(km / f);
         } else return; // Frequence calendaire : non compte ici
-        // Nombre d'interventions preventives deja faites pour ce plan / cet equipement
-        const deja = interventions.filter((i) =>
+        // On ne compte qu'une seule visite par plan : celle du dernier cycle atteint.
+        // Si le dernier cycle terminé est >= au cycle actuel, aucune visite due.
+        const maxCompleted = interventions.filter((i) =>
           i.Type === "Preventive" &&
           (i.EquipementId === eq.Id || i.Equipement === eq.Title) &&
           (i.Plan || "").toLowerCase() === p.Title.toLowerCase() &&
           i.Statut_Intervention === "Termine"
-        ).length;
-        overdue += Math.max(0, cyclesAtteints - deja);
+        ).reduce((a, i) => Math.max(a, parseInt(i.CycleNumber || 0)), 0);
+        if (cyclesAtteints > maxCompleted) overdue += 1;
       });
       return overdue;
     }
@@ -979,16 +980,20 @@
 
       useEffect(() => { if (session) loadAll(); }, [session, loadAll]);
 
-      // Auto-generation des interventions preventives quand un cycle horametre/KM est atteint.
-      // Pour chaque plan lie a un equipement : on calcule le nombre de cycles atteints
-      // (horametre ou KM / frequence), puis on cree une intervention "Pas fait" pour chaque
-      // cycle sans intervention correspondante (dedup via cycle_number).
+      // Auto-generation des interventions preventives : une seule visite par (equipement, plan)
+      // correspondant au DERNIER cycle atteint. Exemple : machine a 1000h avec plan 250h
+      // affichera UNIQUEMENT la visite "1000h" (et non 250, 500, 750, 1000).
+      // Logique : pour chaque (eq, plan), s'il reste un cycle non termine, on s'assure
+      // qu'il existe exactement UNE intervention auto [Auto] Pas fait au cycle courant.
+      // Les [Auto] Pas fait obsoletes (cycle inferieur) sont automatiquement nettoyes.
       const [autoGenDone, setAutoGenDone] = useState(false);
       useEffect(() => {
         if (!session || dataLoading || autoGenDone) return;
         if (equipements.length === 0 || plans.length === 0) return;
         const run = async () => {
           const toCreate = [];
+          const toUpdate = []; // { id, cycle, freqNum, typeCycle, planTitle }
+          const toDelete = []; // ids d'interventions [Auto] Pas fait obsoletes
           equipements.forEach((eq) => {
             const eqCode = (eq.Title || "").toLowerCase();
             const horam = parseFloat(eq.Horametre || 0);
@@ -1000,45 +1005,94 @@
               const freq = p.Frequence || "";
               const matchH = freq.match(/horametre\s*(\d+)/i) || freq.match(/^(\d+)\s*h/i);
               const matchK = freq.match(/km\s*(\d+)/i) || freq.match(/(\d+)\s*km/i);
-              let cycles = 0, typeCycle = null, freqNum = 0;
-              if (matchH) { freqNum = parseInt(matchH[1]); if (freqNum > 0) { cycles = Math.floor(horam / freqNum); typeCycle = "h"; } }
-              else if (matchK) { freqNum = parseInt(matchK[1]); if (freqNum > 0) { cycles = Math.floor(km / freqNum); typeCycle = "km"; } }
+              let cyclesAtteints = 0, typeCycle = null, freqNum = 0;
+              if (matchH) { freqNum = parseInt(matchH[1]); if (freqNum > 0) { cyclesAtteints = Math.floor(horam / freqNum); typeCycle = "h"; } }
+              else if (matchK) { freqNum = parseInt(matchK[1]); if (freqNum > 0) { cyclesAtteints = Math.floor(km / freqNum); typeCycle = "km"; } }
               else return;
-              for (let c = 1; c <= cycles; c++) {
-                const exists = interventions.some((i) =>
-                  (i.EquipementId === eq.Id || i.Equipement === eq.Title) &&
-                  (i.Plan || "").toLowerCase() === (p.Title || "").toLowerCase() &&
-                  parseInt(i.CycleNumber || 0) === c
-                );
-                if (!exists) {
+
+              // Toutes les interventions preventives pour ce (eq, plan)
+              const myInts = interventions.filter((i) =>
+                i.Type === "Preventive" &&
+                (i.EquipementId === eq.Id || i.Equipement === eq.Title) &&
+                (i.Plan || "").toLowerCase() === (p.Title || "").toLowerCase()
+              );
+              const maxCompleted = myInts
+                .filter((i) => i.Statut_Intervention === "Termine")
+                .reduce((a, i) => Math.max(a, parseInt(i.CycleNumber || 0)), 0);
+              // Pending = non terminees + auto-generees ([Auto] ...)
+              const pending = myInts.filter((i) =>
+                i.Statut_Intervention !== "Termine" && (i.Title || "").startsWith("[Auto]")
+              );
+
+              if (cyclesAtteints > maxCompleted) {
+                // Il faut une visite au cycle courant
+                const existingAtMax = pending.find((i) => parseInt(i.CycleNumber || 0) === cyclesAtteints);
+                if (existingAtMax) {
+                  // Deja bonne : on nettoie les autres [Auto] Pas fait inferieurs
+                  pending.filter((i) => i !== existingAtMax).forEach((i) => toDelete.push(i.Id));
+                } else if (pending.length > 0) {
+                  // On recycle la premiere (update) et on supprime le reste
+                  const first = pending[0];
+                  toUpdate.push({ id: first.Id, cycle: cyclesAtteints, freqNum, typeCycle, planTitle: p.Title });
+                  pending.slice(1).forEach((i) => toDelete.push(i.Id));
+                } else {
+                  // Aucune pending : on cree
                   toCreate.push({
                     equipement_id: eq.Id,
-                    titre: "[Auto] " + p.Title + " - cycle " + c,
+                    titre: "[Auto] " + p.Title + " - " + (freqNum * cyclesAtteints) + " " + typeCycle,
                     technicien: null,
                     date_intervention: new Date().toISOString().split("T")[0],
                     statut: "pas_fait",
-                    travaux_effectues: "Visite preventive auto-generee (seuil " + (freqNum * c) + " " + typeCycle + " atteint)",
+                    travaux_effectues: "Visite preventive auto-generee (seuil " + (freqNum * cyclesAtteints) + " " + typeCycle + " atteint)",
                     temps_arret: null,
                     cout_total: 0,
                     plan_nom: p.Title,
-                    horametre: typeCycle === "h" ? freqNum * c : null,
-                    km: typeCycle === "km" ? freqNum * c : null,
+                    horametre: typeCycle === "h" ? freqNum * cyclesAtteints : null,
+                    km: typeCycle === "km" ? freqNum * cyclesAtteints : null,
                     type: "preventive",
                     description: "Auto-generee par depassement de seuil",
-                    cycle_number: c,
+                    cycle_number: cyclesAtteints,
                   });
                 }
+              } else {
+                // Aucun cycle due : on nettoie toutes les [Auto] Pas fait obsoletes
+                pending.forEach((i) => toDelete.push(i.Id));
               }
             });
           });
-          if (toCreate.length === 0) { setAutoGenDone(true); return; }
+
+          const totalChanges = toCreate.length + toUpdate.length + toDelete.length;
+          if (totalChanges === 0) { setAutoGenDone(true); return; }
           try {
-            const { data, error } = await supabase.from("interventions").insert(toCreate).select();
-            if (error) throw error;
+            if (toDelete.length > 0) {
+              const { error } = await supabase.from("interventions").delete().in("id", toDelete);
+              if (error) throw error;
+            }
+            for (const u of toUpdate) {
+              const newPayload = {
+                cycle_number: u.cycle,
+                titre: "[Auto] " + u.planTitle + " - " + (u.freqNum * u.cycle) + " " + u.typeCycle,
+                travaux_effectues: "Visite preventive auto-generee (seuil " + (u.freqNum * u.cycle) + " " + u.typeCycle + " atteint)",
+                horametre: u.typeCycle === "h" ? u.freqNum * u.cycle : null,
+                km: u.typeCycle === "km" ? u.freqNum * u.cycle : null,
+              };
+              const { error } = await supabase.from("interventions").update(newPayload).eq("id", u.id);
+              if (error) throw error;
+            }
+            if (toCreate.length > 0) {
+              const { error } = await supabase.from("interventions").insert(toCreate);
+              if (error) throw error;
+            }
+            // Rechargement complet des interventions pour refleter toutes les modifications
+            const { data: inRes, error: inErr } = await supabase.from("interventions").select("*").order("date_intervention", { ascending: false });
+            if (inErr) throw inErr;
             const eqCodeById = {}; equipements.forEach((e) => { eqCodeById[e.Id] = e.Title; });
-            const nouvelles = (data || []).map((r) => interventionFromDb({ ...r, _equipement_code: eqCodeById[r.equipement_id] }));
-            setInterventions((prev) => [...nouvelles, ...prev]);
-            showToast(toCreate.length + " visite(s) preventive(s) generee(s) automatiquement", "info");
+            setInterventions((inRes || []).map((r) => interventionFromDb({ ...r, _equipement_code: eqCodeById[r.equipement_id] })));
+            const parts = [];
+            if (toCreate.length) parts.push(toCreate.length + " creee(s)");
+            if (toUpdate.length) parts.push(toUpdate.length + " mise(s) a jour");
+            if (toDelete.length) parts.push(toDelete.length + " nettoyee(s)");
+            showToast("Visites preventives : " + parts.join(", "), "info");
           } catch (e) {
             showToast("Erreur auto-generation : " + e.message, "error");
           } finally {
