@@ -27,6 +27,9 @@
     const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRmbW5tenlldHliYWV5Z3VnaGNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYxMDIyMTQsImV4cCI6MjA5MTY3ODIxNH0.mpFFrat0OkWvm30FSt5gtW8zR4KcBjdc0V-I0NPxaVA";
     const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+    // Email admin : seul ce compte peut modifier l'horametre et supprimer des releves
+    const ADMIN_EMAIL = "tomy.picot@gmail.com";
+
     // ─── Formateurs (nombres + devise) ──────────────────────────────────
     const fmtNum = (n) => {
       const v = Number(n);
@@ -446,9 +449,14 @@
 
     // ─── Formulaire Equipement ──────────────────────────────────────────
     function EquipementForm({ onSave, onCancel, editItem }) {
+      const { isAdmin } = useAppData();
       const [f, setF] = useState(editItem || { Title: "", Nom: "", Categorie: "Engin", Type: "Engin de chantier", Localisation: "Zone A", Horametre: "0", KM: "0", Statut: "En service", DateMiseEnService: new Date().toISOString().split("T")[0] });
       const [saving, setSaving] = useState(false);
       const upd = (k, v) => setF((p) => ({ ...p, [k]: v }));
+      // On ne peut modifier l'horametre/KM manuellement que si admin et en mode edition.
+      // En creation, tous les utilisateurs saisissent la valeur initiale (pas de bloquant).
+      const isEdition = !!(editItem && editItem.Id);
+      const horametreEditable = !isEdition || isAdmin;
       const submit = async () => {
         if (!f.Title || !f.Nom) return alert("Le code et le nom sont obligatoires");
         setSaving(true);
@@ -458,6 +466,7 @@
       const typesVL = useParams("type_vl");
       const localisations = useParams("localisation");
       const typesDispos = f.Categorie === "VL" ? typesVL : typesEngin;
+      const lockedInput = { ...inputStyle, background: "#f3f4f6", color: "#6b7280", cursor: "not-allowed" };
       return h("div", null,
         h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
           h(FormField, { label: "Categorie" }, h("select", { style: selectStyle, value: f.Categorie, onChange: (e) => { const c = e.target.value; upd("Categorie", c); const newList = c === "VL" ? typesVL : typesEngin; upd("Type", newList[0] || ""); } },
@@ -468,11 +477,12 @@
             typesDispos.length === 0 ? h("option", { value: "" }, "(aucun, ajoutez dans Parametres)") : typesDispos.map((x) => h("option", { key: x, value: x }, x)))),
           h(FormField, { label: "Localisation" }, h("select", { style: selectStyle, value: f.Localisation, onChange: (e) => upd("Localisation", e.target.value) },
             h("option", { value: "" }, "--"), localisations.map((x) => h("option", { key: x, value: x }, x)))),
-          h(FormField, { label: "Horametre (h)" }, h("input", { type: "number", style: inputStyle, value: f.Horametre, onChange: (e) => upd("Horametre", e.target.value) })),
-          h(FormField, { label: "Kilometrage (km)" }, h("input", { type: "number", style: inputStyle, value: f.KM, onChange: (e) => upd("KM", e.target.value) })),
+          h(FormField, { label: "Horametre (h)" + (horametreEditable ? "" : " \uD83D\uDD12") }, h("input", { type: "number", style: horametreEditable ? inputStyle : lockedInput, value: f.Horametre, onChange: (e) => upd("Horametre", e.target.value), readOnly: !horametreEditable, title: horametreEditable ? "" : "Reserve a l'admin. Utilisez un releve pour mettre a jour." })),
+          h(FormField, { label: "Kilometrage (km)" + (horametreEditable ? "" : " \uD83D\uDD12") }, h("input", { type: "number", style: horametreEditable ? inputStyle : lockedInput, value: f.KM, onChange: (e) => upd("KM", e.target.value), readOnly: !horametreEditable, title: horametreEditable ? "" : "Reserve a l'admin. Utilisez un releve pour mettre a jour." })),
           h(FormField, { label: "Statut" }, h("select", { style: selectStyle, value: f.Statut, onChange: (e) => upd("Statut", e.target.value) },
             ["En service", "En panne", "En maintenance", "Reforme"].map((x) => h("option", { key: x, value: x }, x)))),
           h(FormField, { label: "Mise en service" }, h("input", { type: "date", style: inputStyle, value: f.DateMiseEnService, onChange: (e) => upd("DateMiseEnService", e.target.value) }))),
+        !horametreEditable && h("p", { style: { fontSize: 12, color: "#6b7280", marginTop: 8, fontStyle: "italic" } }, "\uD83D\uDD12 Les champs Horametre et Kilometrage sont modifiables uniquement par l'admin. Utilisez la fonction \"+ Releve H/KM\" pour enregistrer une nouvelle valeur."),
         h("div", { style: { display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 20 } },
           h(Button, { variant: "secondary", onClick: onCancel, disabled: saving }, "Annuler"),
           h(Button, { onClick: submit, disabled: saving }, saving ? "Enregistrement..." : "\uD83D\uDCBE Enregistrer")));
@@ -535,7 +545,7 @@
 
     // ─── Ecran Fiche Equipement ─────────────────────────────────────────
     function EcranFicheEquipement({ onNavigate, equipement }) {
-      const { interventions, releves, addReleve, plans, pieces, piecesEquipements, linkPieceEquipement, unlinkPieceEquipement } = useAppData();
+      const { interventions, releves, addReleve, deleteReleve, plans, pieces, piecesEquipements, linkPieceEquipement, unlinkPieceEquipement, isAdmin } = useAppData();
       const eq = equipement;
       if (!eq) return h("div", null, h(Button, { variant: "secondary", onClick: () => onNavigate("equipements") }, "\u2190 Retour"));
       const eqInterventions = interventions.filter((i) => i.EquipementId === eq.Id || i.Equipement === eq.Title);
@@ -550,6 +560,7 @@
       const [pieceSearch, setPieceSearch] = useState("");
       const [newReleve, setNewReleve] = useState({ Date: new Date().toISOString().split("T")[0], Horametre: "", KM: "", Technicien: "" });
       const [saving, setSaving] = useState(false);
+      const [releveToDelete, setReleveToDelete] = useState(null);
 
       const submitReleve = async () => {
         if (!newReleve.Horametre && !newReleve.KM) return alert("Renseignez au moins l'horametre ou le kilometrage");
@@ -632,7 +643,7 @@
             h("div", { style: { overflowX: "auto" } },
               h("table", { style: { width: "100%", borderCollapse: "collapse", fontSize: 13 } },
                 h("thead", null, h("tr", { style: { background: "#f9fafb", textAlign: "left" } },
-                  ["Date", "Horametre", "KM", "Variation", "Technicien"].map((x) => h("th", { key: x, style: { padding: "10px 12px", fontWeight: 600, color: "#6b7280", borderBottom: "1px solid #e5e7eb" } }, x)))),
+                  ["Date", "Horametre", "KM", "Variation", "Technicien", ""].map((x, i) => h("th", { key: i, style: { padding: "10px 12px", fontWeight: 600, color: "#6b7280", borderBottom: "1px solid #e5e7eb" } }, x)))),
                 h("tbody", null, eqReleves.map((r, idx) => {
                   const prev = eqReleves[idx + 1];
                   const deltaH = prev ? (parseInt(r.Horametre || 0) - parseInt(prev.Horametre || 0)) : 0;
@@ -642,7 +653,11 @@
                     h("td", { style: { padding: "10px 12px", fontWeight: 600 } }, fmtNum(r.Horametre || 0) + " h"),
                     h("td", { style: { padding: "10px 12px" } }, fmtNum(r.KM || 0) + " km"),
                     h("td", { style: { padding: "10px 12px", color: "#16a34a", fontWeight: 600 } }, prev ? "+" + fmtNum(deltaH) + " h / +" + fmtNum(deltaKM) + " km" : "\u2014"),
-                    h("td", { style: { padding: "10px 12px" } }, r.Technicien || "\u2014"));
+                    h("td", { style: { padding: "10px 12px" } }, r.Technicien || "\u2014"),
+                    h("td", { style: { padding: "10px 12px", textAlign: "right" } },
+                      isAdmin
+                        ? h("button", { onClick: () => setReleveToDelete(r), style: { background: "transparent", border: "none", cursor: "pointer", fontSize: 15, padding: 4, color: "#dc2626" }, title: "Supprimer ce releve" }, "\uD83D\uDDD1\uFE0F")
+                        : h("span", { style: { color: "#d1d5db", fontSize: 14 }, title: "Reserve a l'admin" }, "\uD83D\uDD12")));
                 }))))),
         h(Card, null,
           h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, "\uD83D\uDD27 Historique des interventions"),
@@ -678,7 +693,13 @@
                   h("div", { style: { fontWeight: 700, color: "#6d28d9", fontSize: 14 } }, p.Reference),
                   h("div", { style: { fontSize: 13 } }, p.Designation),
                   h("div", { style: { fontSize: 12, color: "#6b7280" } }, p.Categorie + " \u2022 Stock: " + fmtNum(p.Stock) + " \u2022 " + fmtMoney(p.PrixUnitaire))),
-                h(Button, { variant: "secondary", onClick: async () => { await linkPieceEquipement(p.Id, eq.Id); }, style: { padding: "6px 12px", fontSize: 12 } }, "+ Lier"))))));
+                h(Button, { variant: "secondary", onClick: async () => { await linkPieceEquipement(p.Id, eq.Id); }, style: { padding: "6px 12px", fontSize: 12 } }, "+ Lier"))))),
+        releveToDelete && h(ConfirmDialog, {
+          title: "Supprimer le releve ?",
+          message: "Confirmer la suppression du releve du " + (releveToDelete.Date || "") + " (" + fmtNum(releveToDelete.Horametre || 0) + " h / " + fmtNum(releveToDelete.KM || 0) + " km) ? Cette action ne peut pas etre annulee.",
+          onConfirm: async () => { await deleteReleve(releveToDelete.Id); setReleveToDelete(null); },
+          onCancel: () => setReleveToDelete(null),
+        }));
     }
 
     // ─── Ecran Historique ───────────────────────────────────────────────
@@ -1221,16 +1242,27 @@
         if (error) { showToast(error.message, "error"); throw error; }
         const eqCodeById = {}; equipements.forEach((e) => { eqCodeById[e.Id] = e.Title; });
         setReleves((p) => [releveFromDb(data, eqCodeById), ...p]);
-        // MAJ horametre/km courants de l'equipement si plus recent
+        // MAJ horametre/km courants de l'equipement si plus recent (admin uniquement cote DB via trigger)
         const eq = equipements.find((e) => e.Id === payload.equipement_id);
         if (eq) {
           const newHor = payload.horametre != null ? payload.horametre : parseFloat(eq.Horametre);
           const newKm = payload.km != null ? payload.km : parseFloat(eq.KM);
           if (newHor > parseFloat(eq.Horametre) || newKm > parseFloat(eq.KM)) {
-            await supabase.from("equipements").update({ horametre_actuel: newHor, km_actuel: newKm }).eq("id", eq.Id);
-            setEquipements((list) => list.map((e) => (e.Id === eq.Id ? { ...e, Horametre: String(newHor), KM: String(newKm) } : e)));
+            // Le trigger SQL bloquera cette MAJ pour les non-admin : on ignore l'erreur.
+            const { error: upErr } = await supabase.from("equipements").update({ horametre_actuel: newHor, km_actuel: newKm }).eq("id", eq.Id);
+            if (!upErr) {
+              setEquipements((list) => list.map((e) => (e.Id === eq.Id ? { ...e, Horametre: String(newHor), KM: String(newKm) } : e)));
+            }
+            // Si l'admin est absent : le releve est bien enregistre, seule la
+            // valeur courante sur l'equipement reste inchangee (non bloquant).
           }
         }
+      };
+      const deleteReleve = async (id) => {
+        const { error } = await supabase.from("releves_horametre").delete().eq("id", id);
+        if (error) { showToast(error.message, "error"); throw error; }
+        setReleves((p) => p.filter((x) => x.Id !== id));
+        showToast("Releve supprime");
       };
 
       // CRUD : liaisons pieces <-> equipements
@@ -1249,13 +1281,16 @@
 
       const logout = async () => { await supabase.auth.signOut(); setSession(null); };
 
+      const isAdmin = !!(session && session.user && session.user.email === ADMIN_EMAIL);
+
       const contextValue = {
         interventions, equipements, plans, pieces, releves, piecesEquipements, parametres,
+        isAdmin,
         addIntervention, updateIntervention, deleteIntervention,
         addEquipement, updateEquipement, deleteEquipement,
         addPlan, updatePlan, deletePlan,
         addPiece, updatePiece, deletePiece,
-        addReleve,
+        addReleve, deleteReleve,
         linkPieceEquipement, unlinkPieceEquipement,
         addParametre, updateParametre, deleteParametre,
       };
