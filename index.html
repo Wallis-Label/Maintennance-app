@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Maintenance - Gestion & Suivi</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛠️</text></svg>" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: #f3f4f6; }
+    .loader { border: 3px solid #e5e7eb; border-top: 3px solid #6d28d9; border-radius: 50%; width: 32px; height: 32px; animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div id="root"><div style="display:flex;justify-content:center;align-items:center;min-height:100vh;"><div class="loader"></div></div></div>
+  <script type="text/babel">
+    const { useState, useEffect, useCallback, useMemo, createContext, useContext } = React;
+    const h = React.createElement;
+
+    // ─── Configuration Supabase ─────────────────────────────────────────
+    const SUPABASE_URL = "https://tfmnmzyetybaeygughcs.supabase.co";
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRmbW5tenlldHliYWV5Z3VnaGNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYxMDIyMTQsImV4cCI6MjA5MTY3ODIxNH0.mpFFrat0OkWvm30FSt5gtW8zR4KcBjdc0V-I0NPxaVA";
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    // ─── Mappers (DB snake_case <-> UI PascalCase) ──────────────────────
+    const STATUT_EQ_TO_UI = { actif: "En service", en_panne: "En panne", en_maintenance: "En maintenance", reforme: "Reforme" };
+    const STATUT_EQ_TO_DB = { "En service": "actif", "En panne": "en_panne", "En maintenance": "en_maintenance", "Reforme": "reforme" };
+    const STATUT_INT_TO_UI = { termine: "Termine", en_cours: "En cours", planifie: "Planifiee", pas_fait: "Pas fait" };
+    const STATUT_INT_TO_DB = { "Termine": "termine", "En cours": "en_cours", "Planifiee": "planifie", "Pas fait": "pas_fait" };
+    const STATUT_PLAN_TO_UI = { actif: "Actif", en_retard: "En retard", suspendu: "Suspendu", inactif: "Suspendu" };
+    const STATUT_PLAN_TO_DB = { "Actif": "actif", "En retard": "en_retard", "Suspendu": "suspendu" };
+
+    function equipementFromDb(r) {
+      return { Id: r.id, Title: r.immatriculation || "", Nom: r.nom || "", Type: r.type || "", Localisation: r.localisation || "", Horametre: String(r.horametre_actuel ?? 0), KM: String(r.km_actuel ?? 0), Statut: STATUT_EQ_TO_UI[r.statut] || "En service", DateMiseEnService: r.date_mise_en_service || "", Marque: r.marque || "", Modele: r.modele || "", Annee: r.annee || null, Notes: r.notes || "" };
+    }
+    function equipementToDb(e) {
+      return { immatriculation: e.Title, nom: e.Nom, type: e.Type, localisation: e.Localisation, horametre_actuel: parseFloat(e.Horametre) || 0, km_actuel: parseFloat(e.KM) || 0, statut: STATUT_EQ_TO_DB[e.Statut] || "actif", date_mise_en_service: e.DateMiseEnService || null, marque: e.Marque || null, modele: e.Modele || null, annee: e.Annee ? parseInt(e.Annee) : null, notes: e.Notes || null };
+    }
+    function interventionFromDb(r) {
+      return { Id: r.id, Title: r.titre || "", Equipement: r._equipement_code || "", EquipementId: r.equipement_id, Date_Intervention: r.date_intervention || "", Technicien: r.technicien || "", Statut_Intervention: STATUT_INT_TO_UI[r.statut] || "Planifiee", Travaux_Effectues: r.travaux_effectues || r.description || "", Temps_Arret: r.temps_arret || "", Cout: String(r.cout_total ?? ""), Plan: r.plan_nom || "", Horametre: r.horametre != null ? String(r.horametre) : "", KM: r.km != null ? String(r.km) : "", Type: r.type === "preventive" ? "Preventive" : "Curative" };
+    }
+    function interventionToDb(i, equipementIdByCode) {
+      return { equipement_id: i.EquipementId || equipementIdByCode[i.Equipement] || null, titre: i.Title, technicien: i.Technicien, date_intervention: i.Date_Intervention, statut: STATUT_INT_TO_DB[i.Statut_Intervention] || "planifie", travaux_effectues: i.Travaux_Effectues, temps_arret: i.Temps_Arret, cout_total: parseFloat(i.Cout) || 0, plan_nom: i.Plan, horametre: i.Horametre !== "" ? parseFloat(i.Horametre) : null, km: i.KM !== "" ? parseFloat(i.KM) : null, type: i.Type === "Preventive" ? "preventive" : "curative", description: i.Travaux_Effectues || i.Title };
+    }
+    function planFromDb(r) {
+      return { Id: r.id, Title: r.nom || "", Frequence: r.frequence_label || ((r.type_recurrence === "horametre" ? "Horametre " : r.type_recurrence === "km" ? "KM " : "") + r.frequence), Description: r.description || "", Equipements: r.equipements_codes || "", ProchainIntervention: r.prochaine_execution_date || "", Statut: STATUT_PLAN_TO_UI[r.statut] || "Actif" };
+    }
+    function planToDb(p) {
+      const freq = p.Frequence || "";
+      let type_rec = "horametre", freq_num = 0;
+      const m = freq.match(/([0-9]+)/);
+      if (m) freq_num = parseInt(m[1]);
+      if (/km/i.test(freq)) type_rec = "km";
+      else if (/jour|semain|mois|trimest|annu/i.test(freq)) type_rec = "date";
+      return { nom: p.Title, description: p.Description, frequence_label: p.Frequence, equipements_codes: p.Equipements, prochaine_execution_date: p.ProchainIntervention || null, statut: STATUT_PLAN_TO_DB[p.Statut] || "actif", type_recurrence: type_rec, frequence: freq_num || 1 };
+    }
+    function pieceFromDb(r) {
+      return { Id: r.id, Reference: r.reference || "", Designation: r.designation || "", Categorie: r.categorie || "", Fournisseur: r.fournisseur || "", PrixUnitaire: String(r.prix_unitaire ?? 0), Stock: String(r.stock_actuel ?? 0), StockMin: String(r.stock_minimum ?? 0), Emplacement: r.emplacement || "", Compatible: r.compatible || "" };
+    }
+    function pieceToDb(p) {
+      return { reference: p.Reference, designation: p.Designation, categorie: p.Categorie, fournisseur: p.Fournisseur, prix_unitaire: parseFloat(p.PrixUnitaire) || 0, stock_actuel: parseInt(p.Stock) || 0, stock_minimum: parseInt(p.StockMin) || 0, emplacement: p.Emplacement, compatible: p.Compatible };
+    }
+    function releveFromDb(r, eqCodeById) {
+      return { Id: r.id, Equipement: eqCodeById[r.equipement_id] || "", EquipementId: r.equipement_id, Date: r.date_releve || "", Horametre: r.horametre != null ? String(r.horametre) : "", KM: r.km != null ? String(r.km) : "", Technicien: r.saisi_par || "" };
+    }
+    function releveToDb(r, equipementIdByCode) {
+      return { equipement_id: r.EquipementId || equipementIdByCode[r.Equipement] || null, date_releve: r.Date, horametre: r.Horametre !== "" ? parseFloat(r.Horametre) : null, km: r.KM !== "" ? parseFloat(r.KM) : null, saisi_par: r.Technicien || null };
+    }
+
+    // ─── Contexte global ────────────────────────────────────────────────
+    const AppContext = createContext();
+    function useAppData() { return useContext(AppContext); }
+
+    // ─── Composants UI ──────────────────────────────────────────────────
+    function StatusBadge({ status }) {
+      const colors = {
+        "Termine": { bg: "#dcfce7", text: "#166534", icon: "\u2705" },
+        "En cours": { bg: "#fef9c3", text: "#854d0e", icon: "\uD83D\uDD36" },
+        "Planifiee": { bg: "#dbeafe", text: "#1e40af", icon: "\uD83D\uDCC5" },
+        "Pas fait": { bg: "#fee2e2", text: "#991b1b", icon: "\uD83D\uDD34" },
+        "En service": { bg: "#dcfce7", text: "#166534", icon: "\u2705" },
+        "En panne": { bg: "#fee2e2", text: "#991b1b", icon: "\uD83D\uDD34" },
+        "En maintenance": { bg: "#fef9c3", text: "#854d0e", icon: "\uD83D\uDD27" },
+        "Actif": { bg: "#dcfce7", text: "#166534", icon: "\u2705" },
+        "En retard": { bg: "#fee2e2", text: "#991b1b", icon: "\u26A0\uFE0F" },
+        "Suspendu": { bg: "#f3f4f6", text: "#374151", icon: "\u23F8\uFE0F" },
+        "Stock OK": { bg: "#dcfce7", text: "#166534", icon: "\u2705" },
+        "Stock faible": { bg: "#fef9c3", text: "#854d0e", icon: "\u26A0\uFE0F" },
+        "Rupture": { bg: "#fee2e2", text: "#991b1b", icon: "\uD83D\uDD34" },
+      };
+      const c = colors[status] || { bg: "#f3f4f6", text: "#374151", icon: "" };
+      return h("span", { style: { background: c.bg, color: c.text, padding: "4px 12px", borderRadius: 20, fontSize: 13, fontWeight: 600, whiteSpace: "nowrap" } }, c.icon + " " + status);
+    }
+
+    function SearchInput({ placeholder, value, onChange }) {
+      return h("div", { style: { position: "relative" } },
+        h("span", { style: { position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "#9ca3af", fontSize: 14 } }, "\uD83D\uDD0D"),
+        h("input", { type: "text", placeholder, value, onChange: (e) => onChange(e.target.value),
+          style: { width: "100%", padding: "10px 10px 10px 36px", border: "1px solid #d1d5db", borderRadius: 8, fontSize: 14, outline: "none", boxSizing: "border-box" } }));
+    }
+
+    function Card({ children, style, onClick }) {
+      const [hovered, setHovered] = useState(false);
+      return h("div", { onClick, onMouseEnter: () => setHovered(true), onMouseLeave: () => setHovered(false),
+        style: { background: "white", borderRadius: 12, padding: 20, boxShadow: hovered && onClick ? "0 4px 12px rgba(0,0,0,0.15)" : "0 1px 3px rgba(0,0,0,0.1)", border: "1px solid #e5e7eb", transition: "all 0.2s", cursor: onClick ? "pointer" : "default", transform: hovered && onClick ? "translateY(-2px)" : "none", ...style } }, children);
+    }
+
+    function KPICard({ icon, label, value, color, onClick }) {
+      return h(Card, { onClick, style: { textAlign: "center", minWidth: 140, flex: 1 } },
+        h("div", { style: { fontSize: 32, marginBottom: 8 } }, icon),
+        h("div", { style: { fontSize: 28, fontWeight: 700, color } }, value),
+        h("div", { style: { fontSize: 13, color: "#6b7280", marginTop: 4 } }, label));
+    }
+
+    function PageHeader({ title, subtitle, action }) {
+      return h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24, flexWrap: "wrap", gap: 12 } },
+        h("div", null,
+          h("h1", { style: { fontSize: 24, fontWeight: 700, color: "#1f2937", margin: 0 } }, title),
+          subtitle && h("p", { style: { color: "#6b7280", margin: "4px 0 0", fontSize: 14 } }, subtitle)),
+        action);
+    }
+
+    function Button({ children, onClick, variant = "primary", style: s, disabled }) {
+      const styles = { primary: { background: "#6d28d9", color: "white", border: "none" }, secondary: { background: "white", color: "#6d28d9", border: "2px solid #6d28d9" }, danger: { background: "#dc2626", color: "white", border: "none" } };
+      return h("button", { onClick, disabled, style: { padding: "10px 20px", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.6 : 1, transition: "all 0.2s", display: "inline-flex", alignItems: "center", gap: 8, ...styles[variant], ...s },
+        onMouseEnter: (e) => !disabled && (e.currentTarget.style.opacity = "0.85"), onMouseLeave: (e) => !disabled && (e.currentTarget.style.opacity = "1") }, children);
+    }
+
+    function FormField({ label, children }) {
+      return h("div", { style: { marginBottom: 16 } },
+        h("label", { style: { display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 6 } }, label), children);
+    }
+
+    const inputStyle = { width: "100%", padding: "10px 12px", border: "1px solid #d1d5db", borderRadius: 8, fontSize: 14, outline: "none", boxSizing: "border-box" };
+    const selectStyle = { ...inputStyle, background: "white" };
+
+    function Modal({ title, onClose, children, size = 600 }) {
+      return h("div", { onClick: onClose, style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 20 } },
+        h("div", { onClick: (e) => e.stopPropagation(), style: { background: "white", borderRadius: 12, padding: 24, maxWidth: size, width: "100%", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" } },
+          h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, paddingBottom: 16, borderBottom: "1px solid #e5e7eb" } },
+            h("h2", { style: { fontSize: 20, fontWeight: 700, color: "#1f2937", margin: 0 } }, title),
+            h("button", { onClick: onClose, style: { background: "transparent", border: "none", fontSize: 24, cursor: "pointer", color: "#6b7280", padding: 0, width: 32, height: 32, borderRadius: 8 } }, "\u00D7")),
+          children));
+    }
+
+    function Toast({ message, type = "success" }) {
+      if (!message) return null;
+      const colors = { success: { bg: "#dcfce7", border: "#86efac", text: "#166534" }, error: { bg: "#fee2e2", border: "#fca5a5", text: "#991b1b" }, info: { bg: "#dbeafe", border: "#93c5fd", text: "#1e40af" } };
+      const c = colors[type] || colors.success;
+      return h("div", { style: { position: "fixed", top: 20, right: 20, background: c.bg, border: `1px solid ${c.border}`, color: c.text, padding: "12px 20px", borderRadius: 8, fontWeight: 600, zIndex: 200, boxShadow: "0 4px 12px rgba(0,0,0,0.15)" } }, message);
+    }
+
+    // ─── Ecran Login ────────────────────────────────────────────────────
+    function LoginScreen({ onLoggedIn }) {
+      const [email, setEmail] = useState("");
+      const [password, setPassword] = useState("");
+      const [mode, setMode] = useState("signin"); // signin | signup
+      const [loading, setLoading] = useState(false);
+      const [error, setError] = useState("");
+      const [info, setInfo] = useState("");
+
+      const submit = async () => {
+        setError(""); setInfo(""); setLoading(true);
+        try {
+          if (mode === "signin") {
+            const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+            if (error) throw error;
+            onLoggedIn(data.user);
+          } else {
+            const { data, error } = await supabase.auth.signUp({ email, password });
+            if (error) throw error;
+            if (data.user && !data.session) setInfo("Compte cree ! Verifie ton email pour confirmer.");
+            else if (data.session) onLoggedIn(data.user);
+          }
+        } catch (e) {
+          setError(e.message || "Erreur de connexion");
+        } finally { setLoading(false); }
+      };
+
+      return h("div", { style: { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg, #1e1b4b 0%, #4c1d95 100%)" } },
+        h("div", { style: { background: "white", padding: 40, borderRadius: 16, boxShadow: "0 20px 60px rgba(0,0,0,0.3)", width: "100%", maxWidth: 420 } },
+          h("div", { style: { textAlign: "center", marginBottom: 30 } },
+            h("div", { style: { fontSize: 48, marginBottom: 8 } }, "\uD83D\uDEE0\uFE0F"),
+            h("h1", { style: { fontSize: 24, fontWeight: 800, color: "#1e1b4b" } }, "Maintenance"),
+            h("p", { style: { fontSize: 14, color: "#6b7280", marginTop: 4 } }, mode === "signin" ? "Connecte-toi pour continuer" : "Cree ton compte employe")),
+          error && h("div", { style: { background: "#fee2e2", border: "1px solid #fca5a5", color: "#991b1b", padding: 12, borderRadius: 8, fontSize: 13, marginBottom: 16 } }, error),
+          info && h("div", { style: { background: "#dcfce7", border: "1px solid #86efac", color: "#166534", padding: 12, borderRadius: 8, fontSize: 13, marginBottom: 16 } }, info),
+          h(FormField, { label: "Email" }, h("input", { type: "email", style: inputStyle, value: email, onChange: (e) => setEmail(e.target.value), placeholder: "ton@email.com" })),
+          h(FormField, { label: "Mot de passe" }, h("input", { type: "password", style: inputStyle, value: password, onChange: (e) => setPassword(e.target.value), placeholder: "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022", onKeyDown: (e) => e.key === "Enter" && submit() })),
+          h(Button, { onClick: submit, disabled: loading || !email || !password, style: { width: "100%", justifyContent: "center", padding: "12px 20px", marginTop: 8 } }, loading ? "..." : (mode === "signin" ? "Se connecter" : "Creer mon compte")),
+          h("div", { style: { textAlign: "center", marginTop: 20, fontSize: 13, color: "#6b7280" } },
+            mode === "signin" ? "Pas encore de compte ? " : "Deja inscrit ? ",
+            h("button", { onClick: () => { setMode(mode === "signin" ? "signup" : "signin"); setError(""); setInfo(""); }, style: { background: "transparent", border: "none", color: "#6d28d9", fontWeight: 600, cursor: "pointer", fontSize: 13 } }, mode === "signin" ? "Creer un compte" : "Se connecter"))));
+    }
+
+    // ─── Ecran Accueil ──────────────────────────────────────────────────
+    function EcranAccueil({ onNavigate }) {
+      const { interventions, equipements, plans, pieces } = useAppData();
+      const totalEquip = equipements.length;
+      const enPanne = equipements.filter((e) => e.Statut === "En panne").length;
+      const planifiees = interventions.filter((i) => i.Statut_Intervention === "Planifiee").length;
+      const enCours = interventions.filter((i) => i.Statut_Intervention === "En cours").length;
+      const terminees = interventions.filter((i) => i.Statut_Intervention === "Termine").length;
+      const tauxConf = totalEquip > 0 ? Math.round(((totalEquip - enPanne) / totalEquip) * 100) : 0;
+      const urgents = interventions.filter((i) => i.Statut_Intervention === "En cours" || i.Statut_Intervention === "Pas fait");
+      const piecesFaibles = pieces.filter((p) => parseInt(p.Stock) <= parseInt(p.StockMin)).length;
+
+      return h("div", null,
+        h(PageHeader, { title: "\uD83C\uDFE0 Tableau de bord", subtitle: "Vue d'ensemble de la maintenance" }),
+        h("div", { style: { display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 24 } },
+          h(KPICard, { icon: "\uD83D\uDD27", label: "Equipements", value: totalEquip, color: "#6d28d9", onClick: () => onNavigate("equipements") }),
+          h(KPICard, { icon: "\uD83D\uDCC5", label: "Planifiees", value: planifiees, color: "#2563eb", onClick: () => onNavigate("interventions") }),
+          h(KPICard, { icon: "\uD83D\uDD36", label: "En cours", value: enCours, color: "#d97706" }),
+          h(KPICard, { icon: "\u2705", label: "Terminees", value: terminees, color: "#16a34a", onClick: () => onNavigate("historique") }),
+          h(KPICard, { icon: "\uD83D\uDD29", label: "Pieces faibles", value: piecesFaibles, color: "#dc2626", onClick: () => onNavigate("pieces") }),
+          h(KPICard, { icon: "\uD83D\uDCCA", label: "Conformite", value: tauxConf + "%", color: tauxConf >= 80 ? "#16a34a" : "#dc2626" })),
+        h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 } },
+          h(Card, null,
+            h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, "\u26A0\uFE0F Alertes urgentes"),
+            urgents.length === 0 ? h("p", { style: { color: "#9ca3af", textAlign: "center", padding: 20 } }, "Aucune alerte") :
+              h("div", { style: { display: "flex", flexDirection: "column", gap: 8 } },
+                urgents.map((u) => h("div", { key: u.Id, style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "#fef2f2", borderRadius: 8, borderLeft: "4px solid #dc2626" } },
+                  h("div", null,
+                    h("div", { style: { fontWeight: 600, fontSize: 14 } }, u.Title),
+                    h("div", { style: { fontSize: 12, color: "#6b7280" } }, u.Equipement + " \u2014 " + u.Technicien)),
+                  h(StatusBadge, { status: u.Statut_Intervention }))))),
+          h(Card, null,
+            h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, "\uD83D\uDCCB Plans de maintenance"),
+            plans.length === 0 ? h("p", { style: { color: "#9ca3af", textAlign: "center", padding: 20 } }, "Aucun plan") :
+              h("div", { style: { display: "flex", flexDirection: "column", gap: 8 } },
+                plans.slice(0, 5).map((p) => h("div", { key: p.Id, style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "#f9fafb", borderRadius: 8 } },
+                  h("div", null,
+                    h("div", { style: { fontWeight: 600, fontSize: 14 } }, p.Title),
+                    h("div", { style: { fontSize: 12, color: "#6b7280" } }, p.Frequence + " \u2014 Prochain: " + (p.ProchainIntervention || "\u2014"))),
+                  h(StatusBadge, { status: p.Statut })))))),
+        h("div", { style: { display: "flex", gap: 12, marginTop: 24, flexWrap: "wrap" } },
+          h(Button, { onClick: () => onNavigate("interventions") }, "\uD83D\uDD27 Nouvelle intervention"),
+          h(Button, { variant: "secondary", onClick: () => onNavigate("equipements") }, "\u2699\uFE0F Equipements"),
+          h(Button, { variant: "secondary", onClick: () => onNavigate("plans") }, "\uD83D\uDCCB Plans"),
+          h(Button, { variant: "secondary", onClick: () => onNavigate("pieces") }, "\uD83D\uDD29 Pieces")));
+    }
+
+    // ─── Formulaire Plan ────────────────────────────────────────────────
+    function PlanForm({ onSave, onCancel }) {
+      const [f, setF] = useState({ Title: "", Frequence: "Mensuel", Description: "", Equipements: "", ProchainIntervention: new Date().toISOString().split("T")[0], Statut: "Actif" });
+      const [saving, setSaving] = useState(false);
+      const upd = (k, v) => setF((p) => ({ ...p, [k]: v }));
+      const submit = async () => {
+        if (!f.Title) return alert("Le titre est obligatoire");
+        setSaving(true);
+        try { await onSave(f); } finally { setSaving(false); }
+      };
+      return h("div", null,
+        h(FormField, { label: "Titre du plan" }, h("input", { style: inputStyle, value: f.Title, onChange: (e) => upd("Title", e.target.value), placeholder: "Ex: Plan mensuel" })),
+        h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
+          h(FormField, { label: "Frequence" }, h("select", { style: selectStyle, value: f.Frequence, onChange: (e) => upd("Frequence", e.target.value) },
+            ["Hebdomadaire", "Mensuel", "Trimestriel", "Semestriel", "Annuel", "Horametre 250h", "Horametre 500h", "Horametre 1000h", "KM 10000", "KM 50000"].map((x) => h("option", { key: x, value: x }, x)))),
+          h(FormField, { label: "Statut" }, h("select", { style: selectStyle, value: f.Statut, onChange: (e) => upd("Statut", e.target.value) },
+            ["Actif", "En retard", "Suspendu"].map((x) => h("option", { key: x, value: x }, x))))),
+        h(FormField, { label: "Description" }, h("textarea", { style: { ...inputStyle, minHeight: 70, resize: "vertical" }, value: f.Description, onChange: (e) => upd("Description", e.target.value), placeholder: "Description des operations..." })),
+        h(FormField, { label: "Equipements concernes" }, h("input", { style: inputStyle, value: f.Equipements, onChange: (e) => upd("Equipements", e.target.value), placeholder: "Ex: 427 686 NC, AB-123-CD" })),
+        h(FormField, { label: "Prochaine intervention" }, h("input", { type: "date", style: inputStyle, value: f.ProchainIntervention, onChange: (e) => upd("ProchainIntervention", e.target.value) })),
+        h("div", { style: { display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 20 } },
+          h(Button, { variant: "secondary", onClick: onCancel, disabled: saving }, "Annuler"),
+          h(Button, { onClick: submit, disabled: saving }, saving ? "Enregistrement..." : "\uD83D\uDCBE Enregistrer")));
+    }
+
+    // ─── Ecran Plans ────────────────────────────────────────────────────
+    function EcranPlans() {
+      const { plans, addPlan } = useAppData();
+      const [search, setSearch] = useState("");
+      const [showModal, setShowModal] = useState(false);
+      const filtered = plans.filter((p) => !search || p.Title.toLowerCase().includes(search.toLowerCase()) || (p.Frequence || "").toLowerCase().includes(search.toLowerCase()));
+      const handleSave = async (p) => { await addPlan(p); setShowModal(false); };
+      return h("div", null,
+        h(PageHeader, { title: "\uD83D\uDCCB Plans de maintenance", subtitle: plans.length + " plans au total", action: h(Button, { onClick: () => setShowModal(true) }, "+ Nouveau plan") }),
+        h("div", { style: { marginBottom: 16 } }, h(SearchInput, { placeholder: "Rechercher un plan...", value: search, onChange: setSearch })),
+        h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: 12 } },
+          filtered.length === 0 ? h(Card, null, h("p", { style: { textAlign: "center", color: "#9ca3af", padding: 20 } }, "Aucun plan trouve")) :
+            filtered.map((p) => h(Card, { key: p.Id },
+              h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 } },
+                h("div", null,
+                  h("div", { style: { fontWeight: 700, fontSize: 16, color: "#6d28d9" } }, p.Title),
+                  h("div", { style: { fontSize: 12, color: "#6b7280", marginTop: 2 } }, p.Frequence)),
+                h(StatusBadge, { status: p.Statut })),
+              h("div", { style: { fontSize: 13, color: "#4b5563", marginBottom: 10 } }, p.Description),
+              h("div", { style: { fontSize: 12, color: "#6b7280", display: "flex", flexDirection: "column", gap: 4 } },
+                p.Equipements && h("div", null, "\uD83D\uDD27 Equipements: " + p.Equipements),
+                p.ProchainIntervention && h("div", null, "\uD83D\uDCC5 Prochaine: " + p.ProchainIntervention))))),
+        showModal && h(Modal, { title: "Nouveau plan de maintenance", onClose: () => setShowModal(false) },
+          h(PlanForm, { onSave: handleSave, onCancel: () => setShowModal(false) })));
+    }
+
+    // ─── Ecran Interventions (Formulaire) ───────────────────────────────
+    function EcranInterventions({ onNavigate, editItem }) {
+      const { equipements, addIntervention, updateIntervention, addReleve } = useAppData();
+      const [f, setF] = useState(editItem || { Title: "", Equipement: "", Date_Intervention: new Date().toISOString().split("T")[0], Technicien: "", Statut_Intervention: "Planifiee", Travaux_Effectues: "", Temps_Arret: "", Cout: "", Plan: "", Horametre: "", KM: "", Type: "Preventive" });
+      const [saved, setSaved] = useState(false);
+      const [saving, setSaving] = useState(false);
+      const upd = (k, v) => setF((p) => ({ ...p, [k]: v }));
+      const submit = async () => {
+        if (!f.Title || !f.Equipement) return alert("Veuillez remplir au minimum le titre et l'equipement.");
+        setSaving(true);
+        try {
+          if (editItem) await updateIntervention(f); else await addIntervention(f);
+          if (f.Horametre || f.KM) {
+            await addReleve({ Equipement: f.Equipement, Date: f.Date_Intervention, Horametre: f.Horametre || "0", KM: f.KM || "0", Technicien: f.Technicien || "" });
+          }
+          setSaved(true);
+          setTimeout(() => { setSaved(false); onNavigate("historique"); }, 1500);
+        } catch (err) { alert("Erreur : " + err.message); }
+        finally { setSaving(false); }
+      };
+      return h("div", null,
+        h(PageHeader, { title: editItem ? "\u270F\uFE0F Modifier l'intervention" : "\uD83D\uDD27 Nouvelle intervention", subtitle: "Saisir les informations" }),
+        saved && h("div", { style: { background: "#dcfce7", border: "1px solid #86efac", borderRadius: 8, padding: "12px 16px", marginBottom: 16, color: "#166534", fontWeight: 600 } }, "\u2705 Intervention enregistree !"),
+        h(Card, null,
+          h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 } },
+            h(FormField, { label: "Titre / Description" }, h("input", { style: inputStyle, value: f.Title, onChange: (e) => upd("Title", e.target.value), placeholder: "Ex: Vidange D36" })),
+            h(FormField, { label: "Equipement" }, h("select", { style: selectStyle, value: f.Equipement, onChange: (e) => upd("Equipement", e.target.value) },
+              h("option", { value: "" }, "-- Selectionner --"),
+              equipements.map((eq) => h("option", { key: eq.Id, value: eq.Title }, eq.Title + " \u2014 " + eq.Nom)))),
+            h(FormField, { label: "Date d'intervention" }, h("input", { type: "date", style: inputStyle, value: f.Date_Intervention, onChange: (e) => upd("Date_Intervention", e.target.value) })),
+            h(FormField, { label: "Technicien" }, h("input", { style: inputStyle, value: f.Technicien, onChange: (e) => upd("Technicien", e.target.value), placeholder: "Nom du technicien" })),
+            h(FormField, { label: "Statut" }, h("select", { style: selectStyle, value: f.Statut_Intervention, onChange: (e) => upd("Statut_Intervention", e.target.value) },
+              ["Planifiee", "En cours", "Termine", "Pas fait"].map((s) => h("option", { key: s, value: s }, s)))),
+            h(FormField, { label: "Type" }, h("select", { style: selectStyle, value: f.Type, onChange: (e) => upd("Type", e.target.value) },
+              ["Preventive", "Curative"].map((t) => h("option", { key: t, value: t }, t)))),
+            h(FormField, { label: "Temps d'arret" }, h("input", { style: inputStyle, value: f.Temps_Arret, onChange: (e) => upd("Temps_Arret", e.target.value), placeholder: "Ex: 2h30" })),
+            h(FormField, { label: "Cout (EUR)" }, h("input", { type: "number", style: inputStyle, value: f.Cout, onChange: (e) => upd("Cout", e.target.value), placeholder: "0" })),
+            h(FormField, { label: "Horametre (h)" }, h("input", { type: "number", style: inputStyle, value: f.Horametre, onChange: (e) => upd("Horametre", e.target.value), placeholder: "0" })),
+            h(FormField, { label: "Kilometrage (km)" }, h("input", { type: "number", style: inputStyle, value: f.KM, onChange: (e) => upd("KM", e.target.value), placeholder: "0" })),
+            h(FormField, { label: "Plan de maintenance" }, h("input", { style: inputStyle, value: f.Plan, onChange: (e) => upd("Plan", e.target.value), placeholder: "Ex: Plan mensuel" })),
+            h("div", { style: { gridColumn: "1 / -1" } },
+              h(FormField, { label: "Travaux effectues" }, h("textarea", { style: { ...inputStyle, minHeight: 80, resize: "vertical" }, value: f.Travaux_Effectues, onChange: (e) => upd("Travaux_Effectues", e.target.value), placeholder: "Decrivez les travaux..." })))),
+          h("div", { style: { display: "flex", gap: 12, marginTop: 20, justifyContent: "flex-end" } },
+            h(Button, { variant: "secondary", onClick: () => onNavigate("accueil"), disabled: saving }, "Annuler"),
+            h(Button, { onClick: submit, disabled: saving }, saving ? "Enregistrement..." : (editItem ? "\uD83D\uDCBE Modifier" : "\uD83D\uDCBE Enregistrer")))));
+    }
+
+    // ─── Formulaire Equipement ──────────────────────────────────────────
+    function EquipementForm({ onSave, onCancel }) {
+      const [f, setF] = useState({ Title: "", Nom: "", Type: "Engin de chantier", Localisation: "Zone A", Horametre: "0", KM: "0", Statut: "En service", DateMiseEnService: new Date().toISOString().split("T")[0] });
+      const [saving, setSaving] = useState(false);
+      const upd = (k, v) => setF((p) => ({ ...p, [k]: v }));
+      const submit = async () => {
+        if (!f.Title || !f.Nom) return alert("Le code et le nom sont obligatoires");
+        setSaving(true);
+        try { await onSave(f); } finally { setSaving(false); }
+      };
+      return h("div", null,
+        h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
+          h(FormField, { label: "Code / Immatriculation" }, h("input", { style: inputStyle, value: f.Title, onChange: (e) => upd("Title", e.target.value), placeholder: "Ex: 427 686 NC" })),
+          h(FormField, { label: "Nom" }, h("input", { style: inputStyle, value: f.Nom, onChange: (e) => upd("Nom", e.target.value), placeholder: "Ex: Pelleteuse Komatsu" })),
+          h(FormField, { label: "Type" }, h("select", { style: selectStyle, value: f.Type, onChange: (e) => upd("Type", e.target.value) },
+            ["Engin de chantier", "Engin de compactage", "Engin de transport", "Engin de terrassement", "Engin de levage", "Poids Lourd", "Vehicule leger", "Outil"].map((x) => h("option", { key: x, value: x }, x)))),
+          h(FormField, { label: "Localisation" }, h("select", { style: selectStyle, value: f.Localisation, onChange: (e) => upd("Localisation", e.target.value) },
+            ["Zone A", "Zone B", "Zone C", "Atelier", "Depot"].map((x) => h("option", { key: x, value: x }, x)))),
+          h(FormField, { label: "Horametre (h)" }, h("input", { type: "number", style: inputStyle, value: f.Horametre, onChange: (e) => upd("Horametre", e.target.value) })),
+          h(FormField, { label: "Kilometrage (km)" }, h("input", { type: "number", style: inputStyle, value: f.KM, onChange: (e) => upd("KM", e.target.value) })),
+          h(FormField, { label: "Statut" }, h("select", { style: selectStyle, value: f.Statut, onChange: (e) => upd("Statut", e.target.value) },
+            ["En service", "En panne", "En maintenance", "Reforme"].map((x) => h("option", { key: x, value: x }, x)))),
+          h(FormField, { label: "Mise en service" }, h("input", { type: "date", style: inputStyle, value: f.DateMiseEnService, onChange: (e) => upd("DateMiseEnService", e.target.value) }))),
+        h("div", { style: { display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 20 } },
+          h(Button, { variant: "secondary", onClick: onCancel, disabled: saving }, "Annuler"),
+          h(Button, { onClick: submit, disabled: saving }, saving ? "Enregistrement..." : "\uD83D\uDCBE Enregistrer")));
+    }
+
+    // ─── Ecran Equipements ──────────────────────────────────────────────
+    function EcranEquipements({ onNavigate }) {
+      const { equipements, addEquipement } = useAppData();
+      const [search, setSearch] = useState("");
+      const [showModal, setShowModal] = useState(false);
+      const filtered = equipements.filter((e) => !search || e.Title.toLowerCase().includes(search.toLowerCase()) || e.Nom.toLowerCase().includes(search.toLowerCase()) || (e.Type || "").toLowerCase().includes(search.toLowerCase()));
+      const handleSave = async (eq) => { await addEquipement(eq); setShowModal(false); };
+      return h("div", null,
+        h(PageHeader, { title: "\u2699\uFE0F Equipements", subtitle: equipements.length + " equipements enregistres", action: h(Button, { onClick: () => setShowModal(true) }, "+ Nouvel equipement") }),
+        h("div", { style: { marginBottom: 16 } }, h(SearchInput, { placeholder: "Rechercher par code, nom, type...", value: search, onChange: setSearch })),
+        h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 12 } },
+          filtered.length === 0 ? h(Card, null, h("p", { style: { textAlign: "center", color: "#9ca3af", padding: 20 } }, "Aucun equipement")) :
+          filtered.map((eq) => h(Card, { key: eq.Id, onClick: () => onNavigate("fiche-equipement", eq) },
+            h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 } },
+              h("div", null,
+                h("div", { style: { fontWeight: 700, fontSize: 18, color: "#6d28d9" } }, eq.Title),
+                h("div", { style: { fontWeight: 600, fontSize: 15 } }, eq.Nom)),
+              h(StatusBadge, { status: eq.Statut })),
+            h("div", { style: { display: "flex", flexDirection: "column", gap: 4, fontSize: 13, color: "#6b7280" } },
+              h("span", null, "\uD83D\uDCE6 Type: " + eq.Type),
+              eq.Localisation && h("span", null, "\uD83D\uDCCD Localisation: " + eq.Localisation),
+              h("span", null, "\u23F1\uFE0F Horametre: " + eq.Horametre + "h"),
+              (eq.KM && eq.KM !== "0") && h("span", null, "\uD83D\uDEE3\uFE0F KM: " + eq.KM),
+              eq.DateMiseEnService && h("span", null, "\uD83D\uDCC5 Mise en service: " + eq.DateMiseEnService))))),
+        showModal && h(Modal, { title: "Nouvel equipement", onClose: () => setShowModal(false) },
+          h(EquipementForm, { onSave: handleSave, onCancel: () => setShowModal(false) })));
+    }
+
+    // ─── Ecran Fiche Equipement ─────────────────────────────────────────
+    function EcranFicheEquipement({ onNavigate, equipement }) {
+      const { interventions, releves, addReleve } = useAppData();
+      const eq = equipement;
+      if (!eq) return h("div", null, h(Button, { variant: "secondary", onClick: () => onNavigate("equipements") }, "\u2190 Retour"));
+      const eqInterventions = interventions.filter((i) => i.EquipementId === eq.Id || i.Equipement === eq.Title);
+      const eqReleves = releves.filter((r) => r.EquipementId === eq.Id || r.Equipement === eq.Title).sort((a, b) => (b.Date || "").localeCompare(a.Date || ""));
+      const preventives = eqInterventions.filter((i) => i.Type === "Preventive");
+      const curatives = eqInterventions.filter((i) => i.Type === "Curative");
+      const [showReleveModal, setShowReleveModal] = useState(false);
+      const [newReleve, setNewReleve] = useState({ Date: new Date().toISOString().split("T")[0], Horametre: "", KM: "", Technicien: "" });
+      const [saving, setSaving] = useState(false);
+
+      const submitReleve = async () => {
+        if (!newReleve.Horametre && !newReleve.KM) return alert("Renseignez au moins l'horametre ou le kilometrage");
+        setSaving(true);
+        try {
+          await addReleve({ ...newReleve, Equipement: eq.Title, EquipementId: eq.Id });
+          setNewReleve({ Date: new Date().toISOString().split("T")[0], Horametre: "", KM: "", Technicien: "" });
+          setShowReleveModal(false);
+        } catch (err) { alert("Erreur : " + err.message); }
+        finally { setSaving(false); }
+      };
+
+      return h("div", null,
+        h(PageHeader, { title: "\uD83D\uDCCB " + eq.Title + " \u2014 " + eq.Nom, subtitle: "Details et historique", action: h("div", { style: { display: "flex", gap: 8 } },
+          h(Button, { variant: "secondary", onClick: () => onNavigate("equipements") }, "\u2190 Retour"),
+          h(Button, { onClick: () => setShowReleveModal(true) }, "+ Releve H/KM")) }),
+        h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 24 } },
+          h(Card, null,
+            h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, "Informations generales"),
+            h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
+              [["Code", eq.Title], ["Nom", eq.Nom], ["Type", eq.Type], ["Localisation", eq.Localisation || "\u2014"], ["Horametre", eq.Horametre + "h"], ["KM", (eq.KM || "0") + " km"], ["Mise en service", eq.DateMiseEnService || "\u2014"]].map(([label, val]) =>
+                h("div", { key: label },
+                  h("div", { style: { fontSize: 12, color: "#9ca3af", fontWeight: 600, textTransform: "uppercase" } }, label),
+                  h("div", { style: { fontSize: 15, fontWeight: 600, color: "#1f2937" } }, val)))),
+            h("div", { style: { marginTop: 16 } }, h(StatusBadge, { status: eq.Statut }))),
+          h(Card, null,
+            h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, "Statistiques"),
+            h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, textAlign: "center" } },
+              [["#6d28d9", "#f3f4f6", eqInterventions.length, "Interventions"], ["#2563eb", "#dbeafe", preventives.length, "Preventives"], ["#dc2626", "#fee2e2", curatives.length, "Curatives"], ["#16a34a", "#dcfce7", eqInterventions.reduce((a, i) => a + (parseFloat(i.Cout) || 0), 0) + "\u20AC", "Cout total"]].map(([c, bg, v, l]) =>
+                h("div", { key: l, style: { padding: 16, background: bg, borderRadius: 8 } },
+                  h("div", { style: { fontSize: 24, fontWeight: 700, color: c } }, v),
+                  h("div", { style: { fontSize: 12, color: "#6b7280" } }, l)))))),
+        h(Card, { style: { marginBottom: 20 } },
+          h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, "\u23F1\uFE0F Historique Horametre / KM"),
+          eqReleves.length === 0 ? h("p", { style: { textAlign: "center", color: "#9ca3af", padding: 20 } }, "Aucun releve") :
+            h("div", { style: { overflowX: "auto" } },
+              h("table", { style: { width: "100%", borderCollapse: "collapse", fontSize: 13 } },
+                h("thead", null, h("tr", { style: { background: "#f9fafb", textAlign: "left" } },
+                  ["Date", "Horametre", "KM", "Variation", "Technicien"].map((x) => h("th", { key: x, style: { padding: "10px 12px", fontWeight: 600, color: "#6b7280", borderBottom: "1px solid #e5e7eb" } }, x)))),
+                h("tbody", null, eqReleves.map((r, idx) => {
+                  const prev = eqReleves[idx + 1];
+                  const deltaH = prev ? (parseInt(r.Horametre || 0) - parseInt(prev.Horametre || 0)) : 0;
+                  const deltaKM = prev ? (parseInt(r.KM || 0) - parseInt(prev.KM || 0)) : 0;
+                  return h("tr", { key: r.Id, style: { borderBottom: "1px solid #f3f4f6" } },
+                    h("td", { style: { padding: "10px 12px" } }, r.Date),
+                    h("td", { style: { padding: "10px 12px", fontWeight: 600 } }, (r.Horametre || "0") + "h"),
+                    h("td", { style: { padding: "10px 12px" } }, (r.KM || "0") + " km"),
+                    h("td", { style: { padding: "10px 12px", color: "#16a34a", fontWeight: 600 } }, prev ? "+" + deltaH + "h / +" + deltaKM + "km" : "\u2014"),
+                    h("td", { style: { padding: "10px 12px" } }, r.Technicien || "\u2014"));
+                }))))),
+        h(Card, null,
+          h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, "\uD83D\uDD27 Historique des interventions"),
+          eqInterventions.length === 0 ? h("p", { style: { textAlign: "center", color: "#9ca3af", padding: 20 } }, "Aucune intervention") :
+            h("div", { style: { overflowX: "auto" } },
+              h("table", { style: { width: "100%", borderCollapse: "collapse", fontSize: 13 } },
+                h("thead", null, h("tr", { style: { background: "#f9fafb", textAlign: "left" } },
+                  ["Date", "Travaux", "Technicien", "Type", "Cout", "Statut"].map((x) => h("th", { key: x, style: { padding: "10px 12px", fontWeight: 600, color: "#6b7280", borderBottom: "1px solid #e5e7eb" } }, x)))),
+                h("tbody", null, eqInterventions.map((i) =>
+                  h("tr", { key: i.Id, style: { borderBottom: "1px solid #f3f4f6", cursor: "pointer" }, onClick: () => onNavigate("interventions", i) },
+                    h("td", { style: { padding: "10px 12px" } }, i.Date_Intervention),
+                    h("td", { style: { padding: "10px 12px", fontWeight: 600 } }, i.Title),
+                    h("td", { style: { padding: "10px 12px" } }, i.Technicien),
+                    h("td", { style: { padding: "10px 12px" } }, i.Type),
+                    h("td", { style: { padding: "10px 12px" } }, i.Cout ? i.Cout + "\u20AC" : "\u2014"),
+                    h("td", { style: { padding: "10px 12px" } }, h(StatusBadge, { status: i.Statut_Intervention })))))))),
+        showReleveModal && h(Modal, { title: "Nouveau releve pour " + eq.Title, onClose: () => setShowReleveModal(false), size: 500 },
+          h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
+            h(FormField, { label: "Date" }, h("input", { type: "date", style: inputStyle, value: newReleve.Date, onChange: (e) => setNewReleve((p) => ({ ...p, Date: e.target.value })) })),
+            h(FormField, { label: "Technicien" }, h("input", { style: inputStyle, value: newReleve.Technicien, onChange: (e) => setNewReleve((p) => ({ ...p, Technicien: e.target.value })), placeholder: "Nom" })),
+            h(FormField, { label: "Horametre (h)" }, h("input", { type: "number", style: inputStyle, value: newReleve.Horametre, onChange: (e) => setNewReleve((p) => ({ ...p, Horametre: e.target.value })), placeholder: "Ex: 8300" })),
+            h(FormField, { label: "Kilometrage (km)" }, h("input", { type: "number", style: inputStyle, value: newReleve.KM, onChange: (e) => setNewReleve((p) => ({ ...p, KM: e.target.value })), placeholder: "Ex: 20500" }))),
+          h("div", { style: { display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 20 } },
+            h(Button, { variant: "secondary", onClick: () => setShowReleveModal(false), disabled: saving }, "Annuler"),
+            h(Button, { onClick: submitReleve, disabled: saving }, saving ? "Enregistrement..." : "\uD83D\uDCBE Enregistrer"))));
+    }
+
+    // ─── Ecran Historique ───────────────────────────────────────────────
+    function EcranHistorique({ onNavigate }) {
+      const { interventions } = useAppData();
+      const [sT, setST] = useState(""); const [sM, setSM] = useState(""); const [sD, setSD] = useState(""); const [sI, setSI] = useState(""); const [sS, setSS] = useState("");
+      const filtered = interventions.filter((i) => {
+        const mt = !sT || (i.Title || "").toLowerCase().includes(sT.toLowerCase()) || (i.Travaux_Effectues || "").toLowerCase().includes(sT.toLowerCase());
+        const mm = !sM || (i.Equipement || "").toLowerCase().includes(sM.toLowerCase());
+        const md = !sD || (i.Date_Intervention || "").includes(sD);
+        const mi = !sI || (i.Technicien || "").toLowerCase().includes(sI.toLowerCase());
+        const ms = !sS || (i.Statut_Intervention || "").toLowerCase().includes(sS.toLowerCase());
+        return mt && mm && md && mi && ms;
+      });
+      return h("div", null,
+        h(PageHeader, { title: "\uD83D\uDCDC Historique des interventions", subtitle: interventions.length + " interventions", action: h(Button, { onClick: () => onNavigate("interventions") }, "+ Nouvelle intervention") }),
+        h(Card, { style: { marginBottom: 16 } },
+          h("div", { style: { display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12 } },
+            h(SearchInput, { placeholder: "Travaux...", value: sT, onChange: setST }),
+            h(SearchInput, { placeholder: "Machine...", value: sM, onChange: setSM }),
+            h(SearchInput, { placeholder: "Date...", value: sD, onChange: setSD }),
+            h(SearchInput, { placeholder: "Technicien...", value: sI, onChange: setSI }),
+            h(SearchInput, { placeholder: "Statut...", value: sS, onChange: setSS }))),
+        h("div", { style: { display: "flex", flexDirection: "column", gap: 8 } },
+          filtered.length === 0 ? h(Card, null, h("p", { style: { textAlign: "center", color: "#9ca3af", padding: 20 } }, "Aucune intervention trouvee")) :
+            filtered.map((item) => h(Card, { key: item.Id, onClick: () => onNavigate("interventions", item), style: { padding: 14 } },
+              h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
+                h("div", { style: { flex: 1 } },
+                  h("div", { style: { fontWeight: 700, fontSize: 14, marginBottom: 4 } }, item.Travaux_Effectues || item.Title),
+                  h("div", { style: { display: "flex", gap: 16, fontSize: 13, color: "#6b7280", flexWrap: "wrap" } },
+                    h("span", null, "\uD83C\uDFD7\uFE0F " + item.Equipement),
+                    h("span", null, "\uD83D\uDCC5 " + item.Date_Intervention),
+                    item.Technicien && h("span", null, "\uD83D\uDC77 " + item.Technicien),
+                    item.Horametre && h("span", null, "\u23F1\uFE0F " + item.Horametre + "h"))),
+                h(StatusBadge, { status: item.Statut_Intervention }))))));
+    }
+
+    // ─── Formulaire Piece ───────────────────────────────────────────────
+    function PieceForm({ onSave, onCancel, editItem }) {
+      const [f, setF] = useState(editItem || { Reference: "", Designation: "", Categorie: "Filtres", Fournisseur: "", PrixUnitaire: "", Stock: "0", StockMin: "1", Emplacement: "", Compatible: "" });
+      const [saving, setSaving] = useState(false);
+      const upd = (k, v) => setF((p) => ({ ...p, [k]: v }));
+      const submit = async () => {
+        if (!f.Reference || !f.Designation) return alert("La reference et la designation sont obligatoires");
+        setSaving(true);
+        try { await onSave(f); } finally { setSaving(false); }
+      };
+      return h("div", null,
+        h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
+          h(FormField, { label: "Reference" }, h("input", { style: inputStyle, value: f.Reference, onChange: (e) => upd("Reference", e.target.value), placeholder: "Ex: FIL-003" })),
+          h(FormField, { label: "Designation" }, h("input", { style: inputStyle, value: f.Designation, onChange: (e) => upd("Designation", e.target.value), placeholder: "Ex: Filtre hydraulique" })),
+          h(FormField, { label: "Categorie" }, h("select", { style: selectStyle, value: f.Categorie, onChange: (e) => upd("Categorie", e.target.value) },
+            ["Filtres", "Lubrifiants", "Transmission", "Freinage", "Pneumatiques", "Electrique", "Hydraulique", "Consommables", "Autre"].map((x) => h("option", { key: x, value: x }, x)))),
+          h(FormField, { label: "Fournisseur" }, h("input", { style: inputStyle, value: f.Fournisseur, onChange: (e) => upd("Fournisseur", e.target.value) })),
+          h(FormField, { label: "Prix unitaire (EUR)" }, h("input", { type: "number", style: inputStyle, value: f.PrixUnitaire, onChange: (e) => upd("PrixUnitaire", e.target.value) })),
+          h(FormField, { label: "Emplacement" }, h("input", { style: inputStyle, value: f.Emplacement, onChange: (e) => upd("Emplacement", e.target.value), placeholder: "Ex: Rayon A-1" })),
+          h(FormField, { label: "Stock actuel" }, h("input", { type: "number", style: inputStyle, value: f.Stock, onChange: (e) => upd("Stock", e.target.value) })),
+          h(FormField, { label: "Stock minimum" }, h("input", { type: "number", style: inputStyle, value: f.StockMin, onChange: (e) => upd("StockMin", e.target.value) }))),
+        h(FormField, { label: "Compatible avec" }, h("input", { style: inputStyle, value: f.Compatible, onChange: (e) => upd("Compatible", e.target.value), placeholder: "Ex: 427 686 NC ou Tous" })),
+        h("div", { style: { display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 20 } },
+          h(Button, { variant: "secondary", onClick: onCancel, disabled: saving }, "Annuler"),
+          h(Button, { onClick: submit, disabled: saving }, saving ? "Enregistrement..." : "\uD83D\uDCBE Enregistrer")));
+    }
+
+    // ─── Ecran Pieces ───────────────────────────────────────────────────
+    function EcranPieces() {
+      const { pieces, addPiece, updatePiece } = useAppData();
+      const [search, setSearch] = useState("");
+      const [categorie, setCategorie] = useState("all");
+      const [showModal, setShowModal] = useState(false);
+      const [editing, setEditing] = useState(null);
+      const categories = ["all", ...Array.from(new Set(pieces.map((p) => p.Categorie).filter(Boolean)))];
+      const filtered = pieces.filter((p) => {
+        const mc = categorie === "all" || p.Categorie === categorie;
+        const ms = !search || p.Reference.toLowerCase().includes(search.toLowerCase()) || p.Designation.toLowerCase().includes(search.toLowerCase()) || (p.Fournisseur || "").toLowerCase().includes(search.toLowerCase());
+        return mc && ms;
+      });
+      const statusOf = (p) => {
+        const s = parseInt(p.Stock || 0), m = parseInt(p.StockMin || 0);
+        if (s === 0) return "Rupture";
+        if (s <= m) return "Stock faible";
+        return "Stock OK";
+      };
+      const totalValeur = pieces.reduce((a, p) => a + (parseFloat(p.Stock || 0) * parseFloat(p.PrixUnitaire || 0)), 0);
+      const faibles = pieces.filter((p) => parseInt(p.Stock) <= parseInt(p.StockMin)).length;
+      const handleSave = async (p) => {
+        if (editing) await updatePiece({ ...p, Id: editing.Id }); else await addPiece(p);
+        setShowModal(false); setEditing(null);
+      };
+      const openEdit = (p) => { setEditing(p); setShowModal(true); };
+      const openNew = () => { setEditing(null); setShowModal(true); };
+
+      return h("div", null,
+        h(PageHeader, { title: "\uD83D\uDD29 Pieces detachees", subtitle: pieces.length + " references \u2014 " + totalValeur.toFixed(0) + "\u20AC en stock", action: h(Button, { onClick: openNew }, "+ Nouvelle piece") }),
+        h("div", { style: { display: "flex", gap: 16, marginBottom: 16, flexWrap: "wrap" } },
+          h(KPICard, { icon: "\uD83D\uDD29", label: "References", value: pieces.length, color: "#6d28d9" }),
+          h(KPICard, { icon: "\u26A0\uFE0F", label: "Stock faible", value: faibles, color: "#d97706" }),
+          h(KPICard, { icon: "\uD83D\uDCB0", label: "Valeur stock", value: totalValeur.toFixed(0) + "\u20AC", color: "#16a34a" })),
+        h("div", { style: { display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap" } },
+          h("div", { style: { flex: 1, minWidth: 250 } }, h(SearchInput, { placeholder: "Reference, designation, fournisseur...", value: search, onChange: setSearch })),
+          h("select", { value: categorie, onChange: (e) => setCategorie(e.target.value), style: { ...selectStyle, width: "auto", minWidth: 180 } },
+            categories.map((c) => h("option", { key: c, value: c }, c === "all" ? "Toutes categories" : c)))),
+        h(Card, { style: { padding: 0, overflow: "hidden" } },
+          h("div", { style: { overflowX: "auto" } },
+            h("table", { style: { width: "100%", borderCollapse: "collapse", fontSize: 13 } },
+              h("thead", null, h("tr", { style: { background: "#f9fafb", textAlign: "left" } },
+                ["Reference", "Designation", "Categorie", "Stock", "Prix u.", "Emplacement", "Compatible", "Statut", ""].map((x, i) =>
+                  h("th", { key: i, style: { padding: "12px", fontWeight: 600, color: "#6b7280", borderBottom: "1px solid #e5e7eb" } }, x)))),
+              h("tbody", null, filtered.length === 0 ?
+                h("tr", null, h("td", { colSpan: 9, style: { padding: 40, textAlign: "center", color: "#9ca3af" } }, "Aucune piece trouvee")) :
+                filtered.map((p) => h("tr", { key: p.Id, style: { borderBottom: "1px solid #f3f4f6" } },
+                  h("td", { style: { padding: "10px 12px", fontWeight: 700, color: "#6d28d9" } }, p.Reference),
+                  h("td", { style: { padding: "10px 12px", fontWeight: 600 } }, p.Designation),
+                  h("td", { style: { padding: "10px 12px" } }, p.Categorie),
+                  h("td", { style: { padding: "10px 12px", fontWeight: 600 } }, p.Stock + " / min " + p.StockMin),
+                  h("td", { style: { padding: "10px 12px" } }, p.PrixUnitaire + "\u20AC"),
+                  h("td", { style: { padding: "10px 12px", fontSize: 12 } }, p.Emplacement),
+                  h("td", { style: { padding: "10px 12px", fontSize: 12 } }, p.Compatible),
+                  h("td", { style: { padding: "10px 12px" } }, h(StatusBadge, { status: statusOf(p) })),
+                  h("td", { style: { padding: "10px 12px" } },
+                    h("button", { onClick: () => openEdit(p), style: { background: "transparent", border: "none", cursor: "pointer", fontSize: 16, padding: 4 } }, "\u270F\uFE0F")))))))),
+        showModal && h(Modal, { title: editing ? "Modifier la piece" : "Nouvelle piece detachee", onClose: () => { setShowModal(false); setEditing(null); } },
+          h(PieceForm, { onSave: handleSave, onCancel: () => { setShowModal(false); setEditing(null); }, editItem: editing })));
+    }
+
+    // ─── Sidebar ────────────────────────────────────────────────────────
+    function Sidebar({ currentPage, onNavigate, userEmail, onLogout }) {
+      const pages = [
+        { key: "accueil", label: "Accueil", icon: "\uD83C\uDFE0" },
+        { key: "plans", label: "Plans", icon: "\uD83D\uDCCB" },
+        { key: "interventions", label: "Interventions", icon: "\uD83D\uDD27" },
+        { key: "equipements", label: "Equipements", icon: "\u2699\uFE0F" },
+        { key: "pieces", label: "Pieces detachees", icon: "\uD83D\uDD29" },
+        { key: "historique", label: "Historique", icon: "\uD83D\uDCDC" },
+      ];
+      return h("div", { style: { width: 220, background: "#1e1b4b", color: "white", minHeight: "100vh", display: "flex", flexDirection: "column", flexShrink: 0 } },
+        h("div", { style: { padding: "20px 16px", borderBottom: "1px solid #312e81" } },
+          h("div", { style: { fontSize: 18, fontWeight: 800, letterSpacing: -0.5 } }, "\uD83D\uDEE0\uFE0F Maintenance"),
+          h("div", { style: { fontSize: 11, color: "#a5b4fc", marginTop: 2 } }, "Gestion & Suivi")),
+        h("nav", { style: { flex: 1, padding: "12px 8px" } },
+          pages.map((p) => h("button", { key: p.key, onClick: () => onNavigate(p.key),
+            style: { display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "12px 14px", border: "none", borderRadius: 8, marginBottom: 4, cursor: "pointer", fontSize: 14, fontWeight: currentPage === p.key ? 700 : 500, transition: "all 0.2s", background: currentPage === p.key ? "#4c1d95" : "transparent", color: currentPage === p.key ? "white" : "#c4b5fd" } },
+            h("span", { style: { fontSize: 18 } }, p.icon), p.label))),
+        h("div", { style: { padding: "12px 16px", borderTop: "1px solid #312e81" } },
+          h("div", { style: { fontSize: 11, color: "#a5b4fc", marginBottom: 8, wordBreak: "break-all" } }, userEmail || ""),
+          h("button", { onClick: onLogout, style: { width: "100%", padding: "8px 12px", background: "transparent", color: "#c4b5fd", border: "1px solid #4c1d95", borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 600 } }, "\uD83D\uDEAA Deconnexion")));
+    }
+
+    // ─── App principale ─────────────────────────────────────────────────
+    function App() {
+      const [session, setSession] = useState(null);
+      const [authLoading, setAuthLoading] = useState(true);
+      const [dataLoading, setDataLoading] = useState(false);
+      const [currentPage, setCurrentPage] = useState("accueil");
+      const [pageData, setPageData] = useState(null);
+      const [interventions, setInterventions] = useState([]);
+      const [equipements, setEquipements] = useState([]);
+      const [plans, setPlans] = useState([]);
+      const [pieces, setPieces] = useState([]);
+      const [releves, setReleves] = useState([]);
+      const [toast, setToast] = useState({ message: "", type: "success" });
+
+      const showToast = (message, type = "success") => {
+        setToast({ message, type });
+        setTimeout(() => setToast({ message: "", type }), 3000);
+      };
+
+      // Ecoute de la session (login/logout)
+      useEffect(() => {
+        supabase.auth.getSession().then(({ data }) => { setSession(data.session); setAuthLoading(false); });
+        const { data: sub } = supabase.auth.onAuthStateChange((_event, sess) => { setSession(sess); });
+        return () => sub.subscription.unsubscribe();
+      }, []);
+
+      // Chargement des donnees apres login
+      const loadAll = useCallback(async () => {
+        setDataLoading(true);
+        try {
+          const [eqRes, pcRes, plRes, inRes, rlRes] = await Promise.all([
+            supabase.from("equipements").select("*").order("immatriculation"),
+            supabase.from("pieces").select("*").order("reference"),
+            supabase.from("plans").select("*").order("nom"),
+            supabase.from("interventions").select("*").order("date_intervention", { ascending: false }),
+            supabase.from("releves_horametre").select("*").order("date_releve", { ascending: false }),
+          ]);
+          if (eqRes.error) throw eqRes.error;
+          if (pcRes.error) throw pcRes.error;
+          if (plRes.error) throw plRes.error;
+          if (inRes.error) throw inRes.error;
+          if (rlRes.error) throw rlRes.error;
+
+          const eqList = (eqRes.data || []).map(equipementFromDb);
+          const eqCodeById = {}; const eqIdByCode = {};
+          eqList.forEach((e) => { eqCodeById[e.Id] = e.Title; eqIdByCode[e.Title] = e.Id; });
+          setEquipements(eqList);
+          setPieces((pcRes.data || []).map(pieceFromDb));
+          setPlans((plRes.data || []).map(planFromDb));
+          setInterventions((inRes.data || []).map((r) => interventionFromDb({ ...r, _equipement_code: eqCodeById[r.equipement_id] })));
+          setReleves((rlRes.data || []).map((r) => releveFromDb(r, eqCodeById)));
+        } catch (e) { showToast("Erreur chargement : " + e.message, "error"); }
+        finally { setDataLoading(false); }
+      }, []);
+
+      useEffect(() => { if (session) loadAll(); }, [session, loadAll]);
+
+      const navigate = useCallback((page, data = null) => { setCurrentPage(page); setPageData(data); }, []);
+
+      // Helper : mapping code <-> id equipement
+      const eqIdByCode = useMemo(() => {
+        const m = {}; equipements.forEach((e) => { m[e.Title] = e.Id; }); return m;
+      }, [equipements]);
+
+      // CRUD : Equipements
+      const addEquipement = async (item) => {
+        const { data, error } = await supabase.from("equipements").insert(equipementToDb(item)).select().single();
+        if (error) { showToast(error.message, "error"); throw error; }
+        setEquipements((p) => [...p, equipementFromDb(data)]);
+        showToast("Equipement ajoute");
+      };
+
+      // CRUD : Plans
+      const addPlan = async (item) => {
+        const { data, error } = await supabase.from("plans").insert(planToDb(item)).select().single();
+        if (error) { showToast(error.message, "error"); throw error; }
+        setPlans((p) => [...p, planFromDb(data)]);
+        showToast("Plan ajoute");
+      };
+
+      // CRUD : Pieces
+      const addPiece = async (item) => {
+        const { data, error } = await supabase.from("pieces").insert(pieceToDb(item)).select().single();
+        if (error) { showToast(error.message, "error"); throw error; }
+        setPieces((p) => [...p, pieceFromDb(data)]);
+        showToast("Piece ajoutee");
+      };
+      const updatePiece = async (item) => {
+        const { data, error } = await supabase.from("pieces").update(pieceToDb(item)).eq("id", item.Id).select().single();
+        if (error) { showToast(error.message, "error"); throw error; }
+        setPieces((p) => p.map((x) => (x.Id === item.Id ? pieceFromDb(data) : x)));
+        showToast("Piece mise a jour");
+      };
+
+      // CRUD : Interventions
+      const addIntervention = async (item) => {
+        const payload = interventionToDb(item, eqIdByCode);
+        const { data, error } = await supabase.from("interventions").insert(payload).select().single();
+        if (error) { showToast(error.message, "error"); throw error; }
+        const eqCodeById = {}; equipements.forEach((e) => { eqCodeById[e.Id] = e.Title; });
+        setInterventions((p) => [interventionFromDb({ ...data, _equipement_code: eqCodeById[data.equipement_id] }), ...p]);
+        showToast("Intervention ajoutee");
+      };
+      const updateIntervention = async (item) => {
+        const payload = interventionToDb(item, eqIdByCode);
+        const { data, error } = await supabase.from("interventions").update(payload).eq("id", item.Id).select().single();
+        if (error) { showToast(error.message, "error"); throw error; }
+        const eqCodeById = {}; equipements.forEach((e) => { eqCodeById[e.Id] = e.Title; });
+        setInterventions((p) => p.map((x) => (x.Id === item.Id ? interventionFromDb({ ...data, _equipement_code: eqCodeById[data.equipement_id] }) : x)));
+        showToast("Intervention mise a jour");
+      };
+
+      // CRUD : Releves
+      const addReleve = async (item) => {
+        const payload = releveToDb(item, eqIdByCode);
+        if (!payload.equipement_id) return;
+        const { data, error } = await supabase.from("releves_horametre").insert(payload).select().single();
+        if (error) { showToast(error.message, "error"); throw error; }
+        const eqCodeById = {}; equipements.forEach((e) => { eqCodeById[e.Id] = e.Title; });
+        setReleves((p) => [releveFromDb(data, eqCodeById), ...p]);
+        // MAJ horametre/km courants de l'equipement si plus recent
+        const eq = equipements.find((e) => e.Id === payload.equipement_id);
+        if (eq) {
+          const newHor = payload.horametre != null ? payload.horametre : parseFloat(eq.Horametre);
+          const newKm = payload.km != null ? payload.km : parseFloat(eq.KM);
+          if (newHor > parseFloat(eq.Horametre) || newKm > parseFloat(eq.KM)) {
+            await supabase.from("equipements").update({ horametre_actuel: newHor, km_actuel: newKm }).eq("id", eq.Id);
+            setEquipements((list) => list.map((e) => (e.Id === eq.Id ? { ...e, Horametre: String(newHor), KM: String(newKm) } : e)));
+          }
+        }
+      };
+
+      const logout = async () => { await supabase.auth.signOut(); setSession(null); };
+
+      const contextValue = { interventions, equipements, plans, pieces, releves, addIntervention, updateIntervention, addEquipement, addPlan, addPiece, updatePiece, addReleve };
+
+      if (authLoading) return h("div", { style: { display: "flex", justifyContent: "center", alignItems: "center", minHeight: "100vh" } }, h("div", { className: "loader" }));
+      if (!session) return h(LoginScreen, { onLoggedIn: () => {} });
+
+      const renderPage = () => {
+        switch (currentPage) {
+          case "accueil": return h(EcranAccueil, { onNavigate: navigate });
+          case "plans": return h(EcranPlans, null);
+          case "interventions": return h(EcranInterventions, { onNavigate: navigate, editItem: pageData });
+          case "equipements": return h(EcranEquipements, { onNavigate: navigate });
+          case "fiche-equipement": return h(EcranFicheEquipement, { onNavigate: navigate, equipement: pageData });
+          case "historique": return h(EcranHistorique, { onNavigate: navigate });
+          case "pieces": return h(EcranPieces, null);
+          default: return h(EcranAccueil, { onNavigate: navigate });
+        }
+      };
+
+      return h(AppContext.Provider, { value: contextValue },
+        h("div", { style: { display: "flex", minHeight: "100vh", background: "#f3f4f6", fontFamily: "'Segoe UI', system-ui, -apple-system, sans-serif" } },
+          h(Sidebar, { currentPage, onNavigate: navigate, userEmail: session.user && session.user.email, onLogout: logout }),
+          h("div", { style: { flex: 1, padding: "24px 32px", overflowY: "auto", maxHeight: "100vh", position: "relative" } },
+            dataLoading && h("div", { style: { position: "absolute", top: 20, right: 20, display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#6b7280" } }, h("div", { className: "loader", style: { width: 20, height: 20, borderWidth: 2 } }), "Chargement..."),
+            renderPage()),
+          h(Toast, { message: toast.message, type: toast.type })));
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(h(App));
+  </script>
+</body>
+</html>
