@@ -27,6 +27,14 @@
     const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRmbW5tenlldHliYWV5Z3VnaGNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYxMDIyMTQsImV4cCI6MjA5MTY3ODIxNH0.mpFFrat0OkWvm30FSt5gtW8zR4KcBjdc0V-I0NPxaVA";
     const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+    // ─── Formateurs (nombres + devise) ──────────────────────────────────
+    const fmtNum = (n) => {
+      const v = Number(n);
+      if (!isFinite(v)) return "0";
+      return new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(Math.round(v));
+    };
+    const fmtMoney = (n) => fmtNum(n) + " XPF";
+
     // ─── Mappers (DB snake_case <-> UI PascalCase) ──────────────────────
     const STATUT_EQ_TO_UI = { actif: "En service", en_panne: "En panne", en_maintenance: "En maintenance", reforme: "Reforme" };
     const STATUT_EQ_TO_DB = { "En service": "actif", "En panne": "en_panne", "En maintenance": "en_maintenance", "Reforme": "reforme" };
@@ -36,10 +44,10 @@
     const STATUT_PLAN_TO_DB = { "Actif": "actif", "En retard": "en_retard", "Suspendu": "suspendu" };
 
     function equipementFromDb(r) {
-      return { Id: r.id, Title: r.immatriculation || "", Nom: r.nom || "", Type: r.type || "", Localisation: r.localisation || "", Horametre: String(r.horametre_actuel ?? 0), KM: String(r.km_actuel ?? 0), Statut: STATUT_EQ_TO_UI[r.statut] || "En service", DateMiseEnService: r.date_mise_en_service || "", Marque: r.marque || "", Modele: r.modele || "", Annee: r.annee || null, Notes: r.notes || "" };
+      return { Id: r.id, Title: r.immatriculation || "", Nom: r.nom || "", Type: r.type || "", Categorie: r.categorie === "vl" ? "VL" : "Engin", Localisation: r.localisation || "", Horametre: String(r.horametre_actuel ?? 0), KM: String(r.km_actuel ?? 0), Statut: STATUT_EQ_TO_UI[r.statut] || "En service", DateMiseEnService: r.date_mise_en_service || "", Marque: r.marque || "", Modele: r.modele || "", Annee: r.annee || null, Notes: r.notes || "" };
     }
     function equipementToDb(e) {
-      return { immatriculation: e.Title, nom: e.Nom, type: e.Type, localisation: e.Localisation, horametre_actuel: parseFloat(e.Horametre) || 0, km_actuel: parseFloat(e.KM) || 0, statut: STATUT_EQ_TO_DB[e.Statut] || "actif", date_mise_en_service: e.DateMiseEnService || null, marque: e.Marque || null, modele: e.Modele || null, annee: e.Annee ? parseInt(e.Annee) : null, notes: e.Notes || null };
+      return { immatriculation: e.Title, nom: e.Nom, type: e.Type, categorie: e.Categorie === "VL" ? "vl" : "engin", localisation: e.Localisation, horametre_actuel: parseFloat(e.Horametre) || 0, km_actuel: parseFloat(e.KM) || 0, statut: STATUT_EQ_TO_DB[e.Statut] || "actif", date_mise_en_service: e.DateMiseEnService || null, marque: e.Marque || null, modele: e.Modele || null, annee: e.Annee ? parseInt(e.Annee) : null, notes: e.Notes || null };
     }
     function interventionFromDb(r) {
       return { Id: r.id, Title: r.titre || "", Equipement: r._equipement_code || "", EquipementId: r.equipement_id, Date_Intervention: r.date_intervention || "", Technicien: r.technicien || "", Statut_Intervention: STATUT_INT_TO_UI[r.statut] || "Planifiee", Travaux_Effectues: r.travaux_effectues || r.description || "", Temps_Arret: r.temps_arret || "", Cout: String(r.cout_total ?? ""), Plan: r.plan_nom || "", Horametre: r.horametre != null ? String(r.horametre) : "", KM: r.km != null ? String(r.km) : "", Type: r.type === "preventive" ? "Preventive" : "Curative" };
@@ -75,6 +83,43 @@
     // ─── Contexte global ────────────────────────────────────────────────
     const AppContext = createContext();
     function useAppData() { return useContext(AppContext); }
+
+    // ─── Helper : calcul des visites preventives en retard ──────────────
+    // Pour chaque plan (horametre) lie a l'equipement, on calcule combien
+    // de cycles de visite ont ete atteints par l'horametre actuel, et on
+    // soustrait le nombre d'interventions preventives deja faites.
+    function computeVisitesADeclencher(eq, plans, interventions) {
+      if (!eq) return 0;
+      const eqCode = (eq.Title || "").toLowerCase();
+      const horam = parseFloat(eq.Horametre || 0);
+      const km = parseFloat(eq.KM || 0);
+      let overdue = 0;
+      plans.forEach((p) => {
+        if (p.Statut === "Suspendu") return;
+        const concerne = !p.Equipements || p.Equipements.toLowerCase().includes(eqCode) || p.Equipements.toLowerCase().includes("tous");
+        if (!concerne) return;
+        const freq = p.Frequence || "";
+        const matchH = freq.match(/horametre\s*(\d+)/i) || freq.match(/^(\d+)\s*h/i);
+        const matchK = freq.match(/km\s*(\d+)/i) || freq.match(/(\d+)\s*km/i);
+        let cyclesAtteints = 0;
+        if (matchH) {
+          const f = parseInt(matchH[1]);
+          if (f > 0) cyclesAtteints = Math.floor(horam / f);
+        } else if (matchK) {
+          const f = parseInt(matchK[1]);
+          if (f > 0) cyclesAtteints = Math.floor(km / f);
+        } else return; // Frequence calendaire : non compte ici
+        // Nombre d'interventions preventives deja faites pour ce plan / cet equipement
+        const deja = interventions.filter((i) =>
+          i.Type === "Preventive" &&
+          (i.EquipementId === eq.Id || i.Equipement === eq.Title) &&
+          (i.Plan || "").toLowerCase() === p.Title.toLowerCase() &&
+          i.Statut_Intervention === "Termine"
+        ).length;
+        overdue += Math.max(0, cyclesAtteints - deja);
+      });
+      return overdue;
+    }
 
     // ─── Composants UI ──────────────────────────────────────────────────
     function StatusBadge({ status }) {
@@ -148,6 +193,41 @@
           children));
     }
 
+    // ─── Graphique lineaire SVG ────────────────────────────────────────
+    function LineChart({ data, color, unit, title }) {
+      // data: [{ date, value }] trie par date ascendante
+      if (!data || data.length < 2) return null;
+      const W = 640, H = 220, pad = { t: 28, r: 16, b: 36, l: 60 };
+      const innerW = W - pad.l - pad.r, innerH = H - pad.t - pad.b;
+      const values = data.map((d) => Number(d.value) || 0);
+      const minV = Math.min(...values), maxV = Math.max(...values);
+      const rng = Math.max(1, maxV - minV);
+      const low = minV - rng * 0.05, high = maxV + rng * 0.05, span = high - low;
+      const x = (i) => pad.l + (i / (data.length - 1)) * innerW;
+      const y = (v) => pad.t + innerH - ((v - low) / span) * innerH;
+      const pts = data.map((d, i) => x(i) + "," + y(d.value)).join(" ");
+      const area = "M" + pad.l + "," + (pad.t + innerH) + " L" + data.map((d, i) => x(i) + "," + y(d.value)).join(" L") + " L" + (pad.l + innerW) + "," + (pad.t + innerH) + " Z";
+      const yTicks = 4;
+      const yTickVals = Array.from({ length: yTicks + 1 }, (_, i) => low + (span * i) / yTicks);
+      const every = Math.max(1, Math.floor(data.length / 6));
+      return h("div", { style: { width: "100%", overflowX: "auto" } },
+        h("svg", { viewBox: `0 0 ${W} ${H}`, style: { width: "100%", maxWidth: 800, height: "auto", display: "block" } },
+          title && h("text", { x: pad.l, y: 16, fontSize: 13, fontWeight: 700, fill: "#1f2937" }, title),
+          // Grille horizontale
+          yTickVals.map((v, i) => h("g", { key: i },
+            h("line", { x1: pad.l, x2: pad.l + innerW, y1: y(v), y2: y(v), stroke: "#e5e7eb", strokeWidth: 1 }),
+            h("text", { x: pad.l - 8, y: y(v) + 4, fontSize: 10, fill: "#6b7280", textAnchor: "end" }, fmtNum(v) + (unit || "")))),
+          // Zone sous la courbe
+          h("path", { d: area, fill: color, opacity: 0.12 }),
+          // Ligne
+          h("polyline", { points: pts, fill: "none", stroke: color, strokeWidth: 2.5 }),
+          // Points + labels X
+          data.map((d, i) => h("g", { key: i },
+            h("circle", { cx: x(i), cy: y(d.value), r: 3.5, fill: color, stroke: "white", strokeWidth: 1.5 }),
+            (i % every === 0 || i === data.length - 1) && h("text", { x: x(i), y: H - 10, fontSize: 10, fill: "#6b7280", textAnchor: "middle" }, (d.date || "").slice(5))
+          ))));
+    }
+
     function Toast({ message, type = "success" }) {
       if (!message) return null;
       const colors = { success: { bg: "#dcfce7", border: "#86efac", text: "#166534" }, error: { bg: "#fee2e2", border: "#fca5a5", text: "#991b1b" }, info: { bg: "#dbeafe", border: "#93c5fd", text: "#1e40af" } };
@@ -209,15 +289,17 @@
       const tauxConf = totalEquip > 0 ? Math.round(((totalEquip - enPanne) / totalEquip) * 100) : 0;
       const urgents = interventions.filter((i) => i.Statut_Intervention === "En cours" || i.Statut_Intervention === "Pas fait");
       const piecesFaibles = pieces.filter((p) => parseInt(p.Stock) <= parseInt(p.StockMin)).length;
+      const visitesADeclencher = equipements.reduce((a, eq) => a + computeVisitesADeclencher(eq, plans, interventions), 0);
 
       return h("div", null,
         h(PageHeader, { title: "\uD83C\uDFE0 Tableau de bord", subtitle: "Vue d'ensemble de la maintenance" }),
         h("div", { style: { display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 24 } },
-          h(KPICard, { icon: "\uD83D\uDD27", label: "Equipements", value: totalEquip, color: "#6d28d9", onClick: () => onNavigate("equipements") }),
-          h(KPICard, { icon: "\uD83D\uDCC5", label: "Planifiees", value: planifiees, color: "#2563eb", onClick: () => onNavigate("interventions") }),
-          h(KPICard, { icon: "\uD83D\uDD36", label: "En cours", value: enCours, color: "#d97706" }),
-          h(KPICard, { icon: "\u2705", label: "Terminees", value: terminees, color: "#16a34a", onClick: () => onNavigate("historique") }),
-          h(KPICard, { icon: "\uD83D\uDD29", label: "Pieces faibles", value: piecesFaibles, color: "#dc2626", onClick: () => onNavigate("pieces") }),
+          h(KPICard, { icon: "\uD83D\uDD27", label: "Equipements", value: fmtNum(totalEquip), color: "#6d28d9", onClick: () => onNavigate("equipements") }),
+          h(KPICard, { icon: "\uD83D\uDCC5", label: "Planifiees", value: fmtNum(planifiees), color: "#2563eb", onClick: () => onNavigate("interventions") }),
+          h(KPICard, { icon: "\uD83D\uDD36", label: "En cours", value: fmtNum(enCours), color: "#d97706" }),
+          h(KPICard, { icon: "\u2705", label: "Terminees", value: fmtNum(terminees), color: "#16a34a", onClick: () => onNavigate("historique") }),
+          h(KPICard, { icon: "\u23F0", label: "Visites a declencher", value: fmtNum(visitesADeclencher), color: visitesADeclencher > 0 ? "#dc2626" : "#16a34a", onClick: () => onNavigate("equipements") }),
+          h(KPICard, { icon: "\uD83D\uDD29", label: "Pieces faibles", value: fmtNum(piecesFaibles), color: "#dc2626", onClick: () => onNavigate("pieces") }),
           h(KPICard, { icon: "\uD83D\uDCCA", label: "Conformite", value: tauxConf + "%", color: tauxConf >= 80 ? "#16a34a" : "#dc2626" })),
         h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 } },
           h(Card, null,
@@ -332,7 +414,7 @@
             h(FormField, { label: "Type" }, h("select", { style: selectStyle, value: f.Type, onChange: (e) => upd("Type", e.target.value) },
               ["Preventive", "Curative"].map((t) => h("option", { key: t, value: t }, t)))),
             h(FormField, { label: "Temps d'arret" }, h("input", { style: inputStyle, value: f.Temps_Arret, onChange: (e) => upd("Temps_Arret", e.target.value), placeholder: "Ex: 2h30" })),
-            h(FormField, { label: "Cout (EUR)" }, h("input", { type: "number", style: inputStyle, value: f.Cout, onChange: (e) => upd("Cout", e.target.value), placeholder: "0" })),
+            h(FormField, { label: "Cout (XPF)" }, h("input", { type: "number", style: inputStyle, value: f.Cout, onChange: (e) => upd("Cout", e.target.value), placeholder: "0" })),
             h(FormField, { label: "Horametre (h)" }, h("input", { type: "number", style: inputStyle, value: f.Horametre, onChange: (e) => upd("Horametre", e.target.value), placeholder: "0" })),
             h(FormField, { label: "Kilometrage (km)" }, h("input", { type: "number", style: inputStyle, value: f.KM, onChange: (e) => upd("KM", e.target.value), placeholder: "0" })),
             h(FormField, { label: "Plan de maintenance" }, h("input", { style: inputStyle, value: f.Plan, onChange: (e) => upd("Plan", e.target.value), placeholder: "Ex: Plan mensuel" })),
@@ -344,8 +426,8 @@
     }
 
     // ─── Formulaire Equipement ──────────────────────────────────────────
-    function EquipementForm({ onSave, onCancel }) {
-      const [f, setF] = useState({ Title: "", Nom: "", Type: "Engin de chantier", Localisation: "Zone A", Horametre: "0", KM: "0", Statut: "En service", DateMiseEnService: new Date().toISOString().split("T")[0] });
+    function EquipementForm({ onSave, onCancel, editItem }) {
+      const [f, setF] = useState(editItem || { Title: "", Nom: "", Categorie: "Engin", Type: "Engin de chantier", Localisation: "Zone A", Horametre: "0", KM: "0", Statut: "En service", DateMiseEnService: new Date().toISOString().split("T")[0] });
       const [saving, setSaving] = useState(false);
       const upd = (k, v) => setF((p) => ({ ...p, [k]: v }));
       const submit = async () => {
@@ -353,12 +435,17 @@
         setSaving(true);
         try { await onSave(f); } finally { setSaving(false); }
       };
+      const typesEngin = ["Engin de chantier", "Engin de compactage", "Engin de transport", "Engin de terrassement", "Engin de levage", "Outil"];
+      const typesVL = ["Poids Lourd", "Vehicule leger", "Utilitaire", "Pickup"];
+      const typesDispos = f.Categorie === "VL" ? typesVL : typesEngin;
       return h("div", null,
         h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
+          h(FormField, { label: "Categorie" }, h("select", { style: selectStyle, value: f.Categorie, onChange: (e) => { const c = e.target.value; upd("Categorie", c); upd("Type", c === "VL" ? typesVL[0] : typesEngin[0]); } },
+            ["Engin", "VL"].map((x) => h("option", { key: x, value: x }, x)))),
           h(FormField, { label: "Code / Immatriculation" }, h("input", { style: inputStyle, value: f.Title, onChange: (e) => upd("Title", e.target.value), placeholder: "Ex: 427 686 NC" })),
           h(FormField, { label: "Nom" }, h("input", { style: inputStyle, value: f.Nom, onChange: (e) => upd("Nom", e.target.value), placeholder: "Ex: Pelleteuse Komatsu" })),
           h(FormField, { label: "Type" }, h("select", { style: selectStyle, value: f.Type, onChange: (e) => upd("Type", e.target.value) },
-            ["Engin de chantier", "Engin de compactage", "Engin de transport", "Engin de terrassement", "Engin de levage", "Poids Lourd", "Vehicule leger", "Outil"].map((x) => h("option", { key: x, value: x }, x)))),
+            typesDispos.map((x) => h("option", { key: x, value: x }, x)))),
           h(FormField, { label: "Localisation" }, h("select", { style: selectStyle, value: f.Localisation, onChange: (e) => upd("Localisation", e.target.value) },
             ["Zone A", "Zone B", "Zone C", "Atelier", "Depot"].map((x) => h("option", { key: x, value: x }, x)))),
           h(FormField, { label: "Horametre (h)" }, h("input", { type: "number", style: inputStyle, value: f.Horametre, onChange: (e) => upd("Horametre", e.target.value) })),
@@ -373,42 +460,60 @@
 
     // ─── Ecran Equipements ──────────────────────────────────────────────
     function EcranEquipements({ onNavigate }) {
-      const { equipements, addEquipement } = useAppData();
+      const { equipements, addEquipement, plans, interventions } = useAppData();
       const [search, setSearch] = useState("");
       const [showModal, setShowModal] = useState(false);
-      const filtered = equipements.filter((e) => !search || e.Title.toLowerCase().includes(search.toLowerCase()) || e.Nom.toLowerCase().includes(search.toLowerCase()) || (e.Type || "").toLowerCase().includes(search.toLowerCase()));
-      const handleSave = async (eq) => { await addEquipement(eq); setShowModal(false); };
+      const [onglet, setOnglet] = useState("Engin"); // Engin | VL
+      const eqCategorie = equipements.filter((e) => e.Categorie === onglet);
+      const filtered = eqCategorie.filter((e) => !search || e.Title.toLowerCase().includes(search.toLowerCase()) || e.Nom.toLowerCase().includes(search.toLowerCase()) || (e.Type || "").toLowerCase().includes(search.toLowerCase()));
+      const handleSave = async (eq) => { await addEquipement({ ...eq, Categorie: onglet }); setShowModal(false); };
+      const nbEngins = equipements.filter((e) => e.Categorie === "Engin").length;
+      const nbVL = equipements.filter((e) => e.Categorie === "VL").length;
+      const tabStyle = (active) => ({ padding: "10px 20px", background: active ? "#6d28d9" : "white", color: active ? "white" : "#6d28d9", borderRadius: 8, fontWeight: 600, cursor: "pointer", fontSize: 14, border: "2px solid #6d28d9", transition: "all 0.2s" });
       return h("div", null,
-        h(PageHeader, { title: "\u2699\uFE0F Equipements", subtitle: equipements.length + " equipements enregistres", action: h(Button, { onClick: () => setShowModal(true) }, "+ Nouvel equipement") }),
+        h(PageHeader, { title: "\u2699\uFE0F Equipements", subtitle: equipements.length + " equipements (" + nbEngins + " engins / " + nbVL + " VL)", action: h(Button, { onClick: () => setShowModal(true) }, "+ Nouvel equipement") }),
+        h("div", { style: { display: "flex", gap: 8, marginBottom: 16 } },
+          h("button", { onClick: () => setOnglet("Engin"), style: tabStyle(onglet === "Engin") }, "\uD83D\uDEA7 Engins (" + nbEngins + ")"),
+          h("button", { onClick: () => setOnglet("VL"), style: tabStyle(onglet === "VL") }, "\uD83D\uDE9A VL (" + nbVL + ")")),
         h("div", { style: { marginBottom: 16 } }, h(SearchInput, { placeholder: "Rechercher par code, nom, type...", value: search, onChange: setSearch })),
         h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 12 } },
-          filtered.length === 0 ? h(Card, null, h("p", { style: { textAlign: "center", color: "#9ca3af", padding: 20 } }, "Aucun equipement")) :
-          filtered.map((eq) => h(Card, { key: eq.Id, onClick: () => onNavigate("fiche-equipement", eq) },
-            h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 } },
-              h("div", null,
-                h("div", { style: { fontWeight: 700, fontSize: 18, color: "#6d28d9" } }, eq.Title),
-                h("div", { style: { fontWeight: 600, fontSize: 15 } }, eq.Nom)),
-              h(StatusBadge, { status: eq.Statut })),
-            h("div", { style: { display: "flex", flexDirection: "column", gap: 4, fontSize: 13, color: "#6b7280" } },
-              h("span", null, "\uD83D\uDCE6 Type: " + eq.Type),
-              eq.Localisation && h("span", null, "\uD83D\uDCCD Localisation: " + eq.Localisation),
-              h("span", null, "\u23F1\uFE0F Horametre: " + eq.Horametre + "h"),
-              (eq.KM && eq.KM !== "0") && h("span", null, "\uD83D\uDEE3\uFE0F KM: " + eq.KM),
-              eq.DateMiseEnService && h("span", null, "\uD83D\uDCC5 Mise en service: " + eq.DateMiseEnService))))),
+          filtered.length === 0 ? h(Card, null, h("p", { style: { textAlign: "center", color: "#9ca3af", padding: 20 } }, "Aucun " + (onglet === "Engin" ? "engin" : "VL"))) :
+          filtered.map((eq) => {
+            const visitesDues = computeVisitesADeclencher(eq, plans, interventions);
+            return h(Card, { key: eq.Id, onClick: () => onNavigate("fiche-equipement", eq) },
+              h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 } },
+                h("div", null,
+                  h("div", { style: { fontWeight: 700, fontSize: 18, color: "#6d28d9" } }, eq.Title),
+                  h("div", { style: { fontWeight: 600, fontSize: 15 } }, eq.Nom)),
+                h("div", { style: { display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" } },
+                  h(StatusBadge, { status: eq.Statut }),
+                  visitesDues > 0 && h("span", { style: { background: "#fee2e2", color: "#991b1b", padding: "4px 10px", borderRadius: 20, fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" } }, "\u23F0 " + visitesDues + " visite" + (visitesDues > 1 ? "s" : "") + " due" + (visitesDues > 1 ? "s" : "")))),
+              h("div", { style: { display: "flex", flexDirection: "column", gap: 4, fontSize: 13, color: "#6b7280" } },
+                h("span", null, "\uD83D\uDCE6 Type: " + eq.Type),
+                eq.Localisation && h("span", null, "\uD83D\uDCCD Localisation: " + eq.Localisation),
+                h("span", null, "\u23F1\uFE0F Horametre: " + fmtNum(eq.Horametre) + " h"),
+                (eq.KM && eq.KM !== "0") && h("span", null, "\uD83D\uDEE3\uFE0F KM: " + fmtNum(eq.KM)),
+                eq.DateMiseEnService && h("span", null, "\uD83D\uDCC5 Mise en service: " + eq.DateMiseEnService)));
+          })),
         showModal && h(Modal, { title: "Nouvel equipement", onClose: () => setShowModal(false) },
-          h(EquipementForm, { onSave: handleSave, onCancel: () => setShowModal(false) })));
+          h(EquipementForm, { onSave: handleSave, onCancel: () => setShowModal(false), editItem: { Title: "", Nom: "", Categorie: onglet, Type: onglet === "VL" ? "Vehicule leger" : "Engin de chantier", Localisation: "Zone A", Horametre: "0", KM: "0", Statut: "En service", DateMiseEnService: new Date().toISOString().split("T")[0] } })));
     }
 
     // ─── Ecran Fiche Equipement ─────────────────────────────────────────
     function EcranFicheEquipement({ onNavigate, equipement }) {
-      const { interventions, releves, addReleve } = useAppData();
+      const { interventions, releves, addReleve, plans, pieces, piecesEquipements, linkPieceEquipement, unlinkPieceEquipement } = useAppData();
       const eq = equipement;
       if (!eq) return h("div", null, h(Button, { variant: "secondary", onClick: () => onNavigate("equipements") }, "\u2190 Retour"));
       const eqInterventions = interventions.filter((i) => i.EquipementId === eq.Id || i.Equipement === eq.Title);
       const eqReleves = releves.filter((r) => r.EquipementId === eq.Id || r.Equipement === eq.Title).sort((a, b) => (b.Date || "").localeCompare(a.Date || ""));
+      const releveAsc = [...eqReleves].reverse();
       const preventives = eqInterventions.filter((i) => i.Type === "Preventive");
       const curatives = eqInterventions.filter((i) => i.Type === "Curative");
+      const coutTotal = eqInterventions.reduce((a, i) => a + (parseFloat(i.Cout) || 0), 0);
+      const visitesDues = computeVisitesADeclencher(eq, plans, interventions);
       const [showReleveModal, setShowReleveModal] = useState(false);
+      const [showPieceModal, setShowPieceModal] = useState(false);
+      const [pieceSearch, setPieceSearch] = useState("");
       const [newReleve, setNewReleve] = useState({ Date: new Date().toISOString().split("T")[0], Horametre: "", KM: "", Technicien: "" });
       const [saving, setSaving] = useState(false);
 
@@ -423,15 +528,28 @@
         finally { setSaving(false); }
       };
 
+      // Pieces liees a cet equipement
+      const piecesLieesIds = new Set((piecesEquipements || []).filter((l) => l.equipement_id === eq.Id).map((l) => l.piece_id));
+      const piecesLiees = pieces.filter((p) => piecesLieesIds.has(p.Id));
+      const piecesNonLiees = pieces.filter((p) => !piecesLieesIds.has(p.Id));
+      const piecesNonLieesFilter = piecesNonLiees.filter((p) => !pieceSearch || p.Reference.toLowerCase().includes(pieceSearch.toLowerCase()) || p.Designation.toLowerCase().includes(pieceSearch.toLowerCase()));
+
+      // Donnees pour les graphiques
+      const dataHor = releveAsc.filter((r) => r.Horametre && r.Horametre !== "" && r.Horametre !== "0").map((r) => ({ date: r.Date, value: parseFloat(r.Horametre) }));
+      const dataKM = releveAsc.filter((r) => r.KM && r.KM !== "" && r.KM !== "0").map((r) => ({ date: r.Date, value: parseFloat(r.KM) }));
+
       return h("div", null,
         h(PageHeader, { title: "\uD83D\uDCCB " + eq.Title + " \u2014 " + eq.Nom, subtitle: "Details et historique", action: h("div", { style: { display: "flex", gap: 8 } },
           h(Button, { variant: "secondary", onClick: () => onNavigate("equipements") }, "\u2190 Retour"),
           h(Button, { onClick: () => setShowReleveModal(true) }, "+ Releve H/KM")) }),
+        visitesDues > 0 && h("div", { style: { background: "#fef2f2", border: "1px solid #fca5a5", color: "#991b1b", padding: "12px 16px", borderRadius: 8, marginBottom: 16, fontWeight: 600, display: "flex", alignItems: "center", gap: 10 } },
+          h("span", { style: { fontSize: 20 } }, "\u23F0"),
+          visitesDues + " visite" + (visitesDues > 1 ? "s" : "") + " preventive" + (visitesDues > 1 ? "s" : "") + " a declencher sur cet equipement"),
         h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 24 } },
           h(Card, null,
             h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, "Informations generales"),
             h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
-              [["Code", eq.Title], ["Nom", eq.Nom], ["Type", eq.Type], ["Localisation", eq.Localisation || "\u2014"], ["Horametre", eq.Horametre + "h"], ["KM", (eq.KM || "0") + " km"], ["Mise en service", eq.DateMiseEnService || "\u2014"]].map(([label, val]) =>
+              [["Code", eq.Title], ["Nom", eq.Nom], ["Categorie", eq.Categorie || "Engin"], ["Type", eq.Type], ["Localisation", eq.Localisation || "\u2014"], ["Horametre", fmtNum(eq.Horametre) + " h"], ["KM", fmtNum(eq.KM || 0) + " km"], ["Mise en service", eq.DateMiseEnService || "\u2014"]].map(([label, val]) =>
                 h("div", { key: label },
                   h("div", { style: { fontSize: 12, color: "#9ca3af", fontWeight: 600, textTransform: "uppercase" } }, label),
                   h("div", { style: { fontSize: 15, fontWeight: 600, color: "#1f2937" } }, val)))),
@@ -439,10 +557,41 @@
           h(Card, null,
             h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, "Statistiques"),
             h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, textAlign: "center" } },
-              [["#6d28d9", "#f3f4f6", eqInterventions.length, "Interventions"], ["#2563eb", "#dbeafe", preventives.length, "Preventives"], ["#dc2626", "#fee2e2", curatives.length, "Curatives"], ["#16a34a", "#dcfce7", eqInterventions.reduce((a, i) => a + (parseFloat(i.Cout) || 0), 0) + "\u20AC", "Cout total"]].map(([c, bg, v, l]) =>
+              [["#6d28d9", "#f3f4f6", fmtNum(eqInterventions.length), "Interventions"], ["#2563eb", "#dbeafe", fmtNum(preventives.length), "Preventives"], ["#dc2626", "#fee2e2", fmtNum(curatives.length), "Curatives"], ["#16a34a", "#dcfce7", fmtMoney(coutTotal), "Cout total"]].map(([c, bg, v, l]) =>
                 h("div", { key: l, style: { padding: 16, background: bg, borderRadius: 8 } },
-                  h("div", { style: { fontSize: 24, fontWeight: 700, color: c } }, v),
+                  h("div", { style: { fontSize: 22, fontWeight: 700, color: c } }, v),
                   h("div", { style: { fontSize: 12, color: "#6b7280" } }, l)))))),
+        // Graphique Horametre
+        dataHor.length >= 2 && h(Card, { style: { marginBottom: 20 } },
+          h("h3", { style: { margin: "0 0 12px", fontSize: 16, fontWeight: 700 } }, "\uD83D\uDCC8 Evolution Horametre"),
+          h(LineChart, { data: dataHor, color: "#6d28d9", unit: " h" })),
+        // Graphique Kilometre
+        dataKM.length >= 2 && h(Card, { style: { marginBottom: 20 } },
+          h("h3", { style: { margin: "0 0 12px", fontSize: 16, fontWeight: 700 } }, "\uD83D\uDCC8 Evolution Kilometrage"),
+          h(LineChart, { data: dataKM, color: "#2563eb", unit: " km" })),
+        // Zone Pieces detachees liees
+        h(Card, { style: { marginBottom: 20 } },
+          h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 } },
+            h("h3", { style: { margin: 0, fontSize: 16, fontWeight: 700 } }, "\uD83D\uDD29 Pieces detachees liees (" + piecesLiees.length + ")"),
+            h(Button, { variant: "secondary", onClick: () => setShowPieceModal(true), style: { padding: "8px 14px", fontSize: 13 } }, "+ Lier une piece")),
+          piecesLiees.length === 0 ? h("p", { style: { textAlign: "center", color: "#9ca3af", padding: 20 } }, "Aucune piece liee. Cliquez sur '+ Lier une piece' pour en ajouter.") :
+            h("div", { style: { overflowX: "auto" } },
+              h("table", { style: { width: "100%", borderCollapse: "collapse", fontSize: 13 } },
+                h("thead", null, h("tr", { style: { background: "#f9fafb", textAlign: "left" } },
+                  ["Reference", "Designation", "Categorie", "Stock", "Prix u.", "Statut", ""].map((x) => h("th", { key: x, style: { padding: "10px 12px", fontWeight: 600, color: "#6b7280", borderBottom: "1px solid #e5e7eb" } }, x)))),
+                h("tbody", null, piecesLiees.map((p) => {
+                  const s = parseInt(p.Stock || 0), m = parseInt(p.StockMin || 0);
+                  const stAct = s === 0 ? "Rupture" : (s <= m ? "Stock faible" : "Stock OK");
+                  return h("tr", { key: p.Id, style: { borderBottom: "1px solid #f3f4f6" } },
+                    h("td", { style: { padding: "10px 12px", fontWeight: 700, color: "#6d28d9" } }, p.Reference),
+                    h("td", { style: { padding: "10px 12px", fontWeight: 600 } }, p.Designation),
+                    h("td", { style: { padding: "10px 12px" } }, p.Categorie),
+                    h("td", { style: { padding: "10px 12px" } }, fmtNum(p.Stock) + " / min " + fmtNum(p.StockMin)),
+                    h("td", { style: { padding: "10px 12px" } }, fmtMoney(p.PrixUnitaire)),
+                    h("td", { style: { padding: "10px 12px" } }, h(StatusBadge, { status: stAct })),
+                    h("td", { style: { padding: "10px 12px" } },
+                      h("button", { onClick: async () => { if (confirm("Retirer cette piece de l'equipement ?")) await unlinkPieceEquipement(p.Id, eq.Id); }, style: { background: "transparent", border: "none", cursor: "pointer", fontSize: 16, padding: 4, color: "#dc2626" }, title: "Retirer" }, "\uD83D\uDDD1\uFE0F")));
+                }))))),
         h(Card, { style: { marginBottom: 20 } },
           h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, "\u23F1\uFE0F Historique Horametre / KM"),
           eqReleves.length === 0 ? h("p", { style: { textAlign: "center", color: "#9ca3af", padding: 20 } }, "Aucun releve") :
@@ -456,9 +605,9 @@
                   const deltaKM = prev ? (parseInt(r.KM || 0) - parseInt(prev.KM || 0)) : 0;
                   return h("tr", { key: r.Id, style: { borderBottom: "1px solid #f3f4f6" } },
                     h("td", { style: { padding: "10px 12px" } }, r.Date),
-                    h("td", { style: { padding: "10px 12px", fontWeight: 600 } }, (r.Horametre || "0") + "h"),
-                    h("td", { style: { padding: "10px 12px" } }, (r.KM || "0") + " km"),
-                    h("td", { style: { padding: "10px 12px", color: "#16a34a", fontWeight: 600 } }, prev ? "+" + deltaH + "h / +" + deltaKM + "km" : "\u2014"),
+                    h("td", { style: { padding: "10px 12px", fontWeight: 600 } }, fmtNum(r.Horametre || 0) + " h"),
+                    h("td", { style: { padding: "10px 12px" } }, fmtNum(r.KM || 0) + " km"),
+                    h("td", { style: { padding: "10px 12px", color: "#16a34a", fontWeight: 600 } }, prev ? "+" + fmtNum(deltaH) + " h / +" + fmtNum(deltaKM) + " km" : "\u2014"),
                     h("td", { style: { padding: "10px 12px" } }, r.Technicien || "\u2014"));
                 }))))),
         h(Card, null,
@@ -474,7 +623,7 @@
                     h("td", { style: { padding: "10px 12px", fontWeight: 600 } }, i.Title),
                     h("td", { style: { padding: "10px 12px" } }, i.Technicien),
                     h("td", { style: { padding: "10px 12px" } }, i.Type),
-                    h("td", { style: { padding: "10px 12px" } }, i.Cout ? i.Cout + "\u20AC" : "\u2014"),
+                    h("td", { style: { padding: "10px 12px" } }, i.Cout ? fmtMoney(i.Cout) : "\u2014"),
                     h("td", { style: { padding: "10px 12px" } }, h(StatusBadge, { status: i.Statut_Intervention })))))))),
         showReleveModal && h(Modal, { title: "Nouveau releve pour " + eq.Title, onClose: () => setShowReleveModal(false), size: 500 },
           h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
@@ -484,7 +633,18 @@
             h(FormField, { label: "Kilometrage (km)" }, h("input", { type: "number", style: inputStyle, value: newReleve.KM, onChange: (e) => setNewReleve((p) => ({ ...p, KM: e.target.value })), placeholder: "Ex: 20500" }))),
           h("div", { style: { display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 20 } },
             h(Button, { variant: "secondary", onClick: () => setShowReleveModal(false), disabled: saving }, "Annuler"),
-            h(Button, { onClick: submitReleve, disabled: saving }, saving ? "Enregistrement..." : "\uD83D\uDCBE Enregistrer"))));
+            h(Button, { onClick: submitReleve, disabled: saving }, saving ? "Enregistrement..." : "\uD83D\uDCBE Enregistrer"))),
+        showPieceModal && h(Modal, { title: "Lier une piece detachee a " + eq.Title, onClose: () => setShowPieceModal(false), size: 640 },
+          h("div", { style: { marginBottom: 12 } }, h(SearchInput, { placeholder: "Rechercher reference ou designation...", value: pieceSearch, onChange: setPieceSearch })),
+          piecesNonLieesFilter.length === 0 ?
+            h("p", { style: { textAlign: "center", color: "#9ca3af", padding: 20 } }, piecesNonLiees.length === 0 ? "Toutes les pieces sont deja liees." : "Aucun resultat") :
+            h("div", { style: { maxHeight: 380, overflowY: "auto" } },
+              piecesNonLieesFilter.map((p) => h("div", { key: p.Id, style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", borderBottom: "1px solid #f3f4f6" } },
+                h("div", null,
+                  h("div", { style: { fontWeight: 700, color: "#6d28d9", fontSize: 14 } }, p.Reference),
+                  h("div", { style: { fontSize: 13 } }, p.Designation),
+                  h("div", { style: { fontSize: 12, color: "#6b7280" } }, p.Categorie + " \u2022 Stock: " + fmtNum(p.Stock) + " \u2022 " + fmtMoney(p.PrixUnitaire))),
+                h(Button, { variant: "secondary", onClick: async () => { await linkPieceEquipement(p.Id, eq.Id); }, style: { padding: "6px 12px", fontSize: 12 } }, "+ Lier"))))));
     }
 
     // ─── Ecran Historique ───────────────────────────────────────────────
@@ -518,7 +678,7 @@
                     h("span", null, "\uD83C\uDFD7\uFE0F " + item.Equipement),
                     h("span", null, "\uD83D\uDCC5 " + item.Date_Intervention),
                     item.Technicien && h("span", null, "\uD83D\uDC77 " + item.Technicien),
-                    item.Horametre && h("span", null, "\u23F1\uFE0F " + item.Horametre + "h"))),
+                    item.Horametre && h("span", null, "\u23F1\uFE0F " + fmtNum(item.Horametre) + " h"))),
                 h(StatusBadge, { status: item.Statut_Intervention }))))));
     }
 
@@ -539,7 +699,7 @@
           h(FormField, { label: "Categorie" }, h("select", { style: selectStyle, value: f.Categorie, onChange: (e) => upd("Categorie", e.target.value) },
             ["Filtres", "Lubrifiants", "Transmission", "Freinage", "Pneumatiques", "Electrique", "Hydraulique", "Consommables", "Autre"].map((x) => h("option", { key: x, value: x }, x)))),
           h(FormField, { label: "Fournisseur" }, h("input", { style: inputStyle, value: f.Fournisseur, onChange: (e) => upd("Fournisseur", e.target.value) })),
-          h(FormField, { label: "Prix unitaire (EUR)" }, h("input", { type: "number", style: inputStyle, value: f.PrixUnitaire, onChange: (e) => upd("PrixUnitaire", e.target.value) })),
+          h(FormField, { label: "Prix unitaire (XPF)" }, h("input", { type: "number", style: inputStyle, value: f.PrixUnitaire, onChange: (e) => upd("PrixUnitaire", e.target.value) })),
           h(FormField, { label: "Emplacement" }, h("input", { style: inputStyle, value: f.Emplacement, onChange: (e) => upd("Emplacement", e.target.value), placeholder: "Ex: Rayon A-1" })),
           h(FormField, { label: "Stock actuel" }, h("input", { type: "number", style: inputStyle, value: f.Stock, onChange: (e) => upd("Stock", e.target.value) })),
           h(FormField, { label: "Stock minimum" }, h("input", { type: "number", style: inputStyle, value: f.StockMin, onChange: (e) => upd("StockMin", e.target.value) }))),
@@ -578,11 +738,11 @@
       const openNew = () => { setEditing(null); setShowModal(true); };
 
       return h("div", null,
-        h(PageHeader, { title: "\uD83D\uDD29 Pieces detachees", subtitle: pieces.length + " references \u2014 " + totalValeur.toFixed(0) + "\u20AC en stock", action: h(Button, { onClick: openNew }, "+ Nouvelle piece") }),
+        h(PageHeader, { title: "\uD83D\uDD29 Pieces detachees", subtitle: pieces.length + " references \u2014 " + fmtMoney(totalValeur) + " en stock", action: h(Button, { onClick: openNew }, "+ Nouvelle piece") }),
         h("div", { style: { display: "flex", gap: 16, marginBottom: 16, flexWrap: "wrap" } },
-          h(KPICard, { icon: "\uD83D\uDD29", label: "References", value: pieces.length, color: "#6d28d9" }),
-          h(KPICard, { icon: "\u26A0\uFE0F", label: "Stock faible", value: faibles, color: "#d97706" }),
-          h(KPICard, { icon: "\uD83D\uDCB0", label: "Valeur stock", value: totalValeur.toFixed(0) + "\u20AC", color: "#16a34a" })),
+          h(KPICard, { icon: "\uD83D\uDD29", label: "References", value: fmtNum(pieces.length), color: "#6d28d9" }),
+          h(KPICard, { icon: "\u26A0\uFE0F", label: "Stock faible", value: fmtNum(faibles), color: "#d97706" }),
+          h(KPICard, { icon: "\uD83D\uDCB0", label: "Valeur stock", value: fmtMoney(totalValeur), color: "#16a34a" })),
         h("div", { style: { display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap" } },
           h("div", { style: { flex: 1, minWidth: 250 } }, h(SearchInput, { placeholder: "Reference, designation, fournisseur...", value: search, onChange: setSearch })),
           h("select", { value: categorie, onChange: (e) => setCategorie(e.target.value), style: { ...selectStyle, width: "auto", minWidth: 180 } },
@@ -599,8 +759,8 @@
                   h("td", { style: { padding: "10px 12px", fontWeight: 700, color: "#6d28d9" } }, p.Reference),
                   h("td", { style: { padding: "10px 12px", fontWeight: 600 } }, p.Designation),
                   h("td", { style: { padding: "10px 12px" } }, p.Categorie),
-                  h("td", { style: { padding: "10px 12px", fontWeight: 600 } }, p.Stock + " / min " + p.StockMin),
-                  h("td", { style: { padding: "10px 12px" } }, p.PrixUnitaire + "\u20AC"),
+                  h("td", { style: { padding: "10px 12px", fontWeight: 600 } }, fmtNum(p.Stock) + " / min " + fmtNum(p.StockMin)),
+                  h("td", { style: { padding: "10px 12px" } }, fmtMoney(p.PrixUnitaire)),
                   h("td", { style: { padding: "10px 12px", fontSize: 12 } }, p.Emplacement),
                   h("td", { style: { padding: "10px 12px", fontSize: 12 } }, p.Compatible),
                   h("td", { style: { padding: "10px 12px" } }, h(StatusBadge, { status: statusOf(p) })),
@@ -645,6 +805,7 @@
       const [plans, setPlans] = useState([]);
       const [pieces, setPieces] = useState([]);
       const [releves, setReleves] = useState([]);
+      const [piecesEquipements, setPiecesEquipements] = useState([]);
       const [toast, setToast] = useState({ message: "", type: "success" });
 
       const showToast = (message, type = "success") => {
@@ -663,18 +824,20 @@
       const loadAll = useCallback(async () => {
         setDataLoading(true);
         try {
-          const [eqRes, pcRes, plRes, inRes, rlRes] = await Promise.all([
+          const [eqRes, pcRes, plRes, inRes, rlRes, peRes] = await Promise.all([
             supabase.from("equipements").select("*").order("immatriculation"),
             supabase.from("pieces").select("*").order("reference"),
             supabase.from("plans").select("*").order("nom"),
             supabase.from("interventions").select("*").order("date_intervention", { ascending: false }),
             supabase.from("releves_horametre").select("*").order("date_releve", { ascending: false }),
+            supabase.from("pieces_equipements").select("*"),
           ]);
           if (eqRes.error) throw eqRes.error;
           if (pcRes.error) throw pcRes.error;
           if (plRes.error) throw plRes.error;
           if (inRes.error) throw inRes.error;
           if (rlRes.error) throw rlRes.error;
+          if (peRes.error) throw peRes.error;
 
           const eqList = (eqRes.data || []).map(equipementFromDb);
           const eqCodeById = {}; const eqIdByCode = {};
@@ -684,6 +847,7 @@
           setPlans((plRes.data || []).map(planFromDb));
           setInterventions((inRes.data || []).map((r) => interventionFromDb({ ...r, _equipement_code: eqCodeById[r.equipement_id] })));
           setReleves((rlRes.data || []).map((r) => releveFromDb(r, eqCodeById)));
+          setPiecesEquipements(peRes.data || []);
         } catch (e) { showToast("Erreur chargement : " + e.message, "error"); }
         finally { setDataLoading(false); }
       }, []);
@@ -765,9 +929,23 @@
         }
       };
 
+      // CRUD : liaisons pieces <-> equipements
+      const linkPieceEquipement = async (pieceId, equipementId) => {
+        const { data, error } = await supabase.from("pieces_equipements").insert({ piece_id: pieceId, equipement_id: equipementId }).select().single();
+        if (error) { showToast(error.message, "error"); throw error; }
+        setPiecesEquipements((p) => [...p, data]);
+        showToast("Piece liee a l'equipement");
+      };
+      const unlinkPieceEquipement = async (pieceId, equipementId) => {
+        const { error } = await supabase.from("pieces_equipements").delete().eq("piece_id", pieceId).eq("equipement_id", equipementId);
+        if (error) { showToast(error.message, "error"); throw error; }
+        setPiecesEquipements((p) => p.filter((l) => !(l.piece_id === pieceId && l.equipement_id === equipementId)));
+        showToast("Liaison supprimee");
+      };
+
       const logout = async () => { await supabase.auth.signOut(); setSession(null); };
 
-      const contextValue = { interventions, equipements, plans, pieces, releves, addIntervention, updateIntervention, addEquipement, addPlan, addPiece, updatePiece, addReleve };
+      const contextValue = { interventions, equipements, plans, pieces, releves, piecesEquipements, addIntervention, updateIntervention, addEquipement, addPlan, addPiece, updatePiece, addReleve, linkPieceEquipement, unlinkPieceEquipement };
 
       if (authLoading) return h("div", { style: { display: "flex", justifyContent: "center", alignItems: "center", minHeight: "100vh" } }, h("div", { className: "loader" }));
       if (!session) return h(LoginScreen, { onLoggedIn: () => {} });
