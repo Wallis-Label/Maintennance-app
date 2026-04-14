@@ -28,7 +28,7 @@
     const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     // Email admin : seul ce compte peut modifier l'horametre et supprimer des releves
-    const ADMIN_EMAIL = "tomy.picot@gmail.com";
+    const ADMIN_EMAIL = "tom.wallislabel@gmail.com";
 
     // ─── Formateurs (nombres + devise) ──────────────────────────────────
     const fmtNum = (n) => {
@@ -1281,7 +1281,7 @@
 
       const logout = async () => { await supabase.auth.signOut(); setSession(null); };
 
-      const isAdmin = !!(session && session.user && session.user.email === ADMIN_EMAIL);
+      const isAdmin = !!(session && session.user && (session.user.email || "").toLowerCase() === ADMIN_EMAIL);
 
       const contextValue = {
         interventions, equipements, plans, pieces, releves, piecesEquipements, parametres,
