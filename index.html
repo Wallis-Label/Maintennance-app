@@ -43,13 +43,18 @@
     // ─── Icones SVG (Lucide) ─────────────────────────────────────────
     // Composant Icon : affiche une icone Lucide inline via la librairie globale.
     // Usage : h(Icon, { name: "wrench", size: 16, color: "#6d28d9" })
+    // Convertit kebab-case en PascalCase pour lucide.icons
+    function toPascalCase(str) {
+      return str.split("-").map(function(s) { return s.charAt(0).toUpperCase() + s.slice(1); }).join("");
+    }
     function Icon({ name, size = 16, color = "currentColor", style: s, className }) {
       const ref = React.useRef(null);
       useEffect(() => {
         if (ref.current) {
           ref.current.innerHTML = "";
           try {
-            const svgStr = lucide.icons[name];
+            const pascalName = toPascalCase(name);
+            const svgStr = lucide.icons[pascalName] || lucide.icons[name];
             if (svgStr) {
               const tmp = document.createElement("div");
               tmp.innerHTML = lucide.createElement(svgStr).outerHTML;
