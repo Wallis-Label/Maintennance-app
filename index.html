@@ -366,7 +366,7 @@
             h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, h(IconText, { icon: "alert-triangle", size: 16, color: "#dc2626" }, "Alertes urgentes")),
             urgents.length === 0 ? h("p", { style: { color: "#9ca3af", textAlign: "center", padding: 20 } }, "Aucune alerte") :
               h("div", { style: { display: "flex", flexDirection: "column", gap: 8 } },
-                urgents.map((u) => h("div", { key: u.Id, style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "#fef2f2", borderRadius: 8, borderLeft: "4px solid #dc2626" } },
+                urgents.map((u) => h("div", { key: u.Id, onClick: function() { onNavigate("interventions", u); }, style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "#fef2f2", borderRadius: 8, borderLeft: "4px solid #dc2626", cursor: "pointer", transition: "all 0.15s" } },
                   h("div", null,
                     h("div", { style: { fontWeight: 600, fontSize: 14 } }, u.Title),
                     h("div", { style: { fontSize: 12, color: "#6b7280" } }, u.Equipement + " \u2014 " + u.Technicien)),
@@ -594,7 +594,7 @@
                     h(StatusBadge, { status: eq.Statut }),
                     h("button", { onClick: (e) => openEdit(eq, e), style: { background: "transparent", border: "none", cursor: "pointer", fontSize: 15, padding: 4 }, title: "Modifier" }, h(Icon, { name: "pencil", size: 15 })),
                     h("button", { onClick: (e) => askDelete(eq, e), style: { background: "transparent", border: "none", cursor: "pointer", fontSize: 15, padding: 4, color: "#dc2626" }, title: "Supprimer" }, h(Icon, { name: "trash-2", size: 15, color: "#dc2626" }))),
-                  visitesDues > 0 && h("span", { style: { background: "#fee2e2", color: "#991b1b", padding: "4px 10px", borderRadius: 20, fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" } }, h(IconText, { icon: "bell-ring", size: 12, color: "#991b1b" }, visitesDues + " visite") + (visitesDues > 1 ? "s" : "") + " due" + (visitesDues > 1 ? "s" : "")))),
+                  visitesDues > 0 && h("span", { style: { background: "#fee2e2", color: "#991b1b", padding: "4px 10px", borderRadius: 20, fontSize: 12, fontWeight: 700, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 } }, h(Icon, { name: "bell-ring", size: 12, color: "#991b1b" }), visitesDues + " visite" + (visitesDues > 1 ? "s" : "") + " due" + (visitesDues > 1 ? "s" : "")))),
               h("div", { style: { display: "flex", flexDirection: "column", gap: 4, fontSize: 13, color: "#6b7280" } },
                 h("span", null, h(IconText, { icon: "box", size: 12, color: "#6b7280" }, "Type: " + eq.Type)),
                 eq.Localisation && h("span", null, h(IconText, { icon: "map-pin", size: 12, color: "#6b7280" }, "Localisation: " + eq.Localisation)),
@@ -984,18 +984,24 @@
         { id: 1, name: "Tom Wallis", avatar: "T" },
         { id: 2, name: "Jean Martin", avatar: "J" },
         { id: 3, name: "Marie Dupont", avatar: "M" },
+        { id: 4, name: "Sophie Bernard", avatar: "S" },
+        { id: 5, name: "Luc Moreau", avatar: "L" },
       ];
       var _groups = useState([
-        { id: 1, name: "Groupe Nord", members: [1, 2], equips: [] },
-        { id: 2, name: "Groupe Sud", members: [3], equips: [] },
+        { id: 1, name: "Groupe Nord", members: [1, 2], equips: [], address: "Noumea Centre", lat: -22.2758, lng: 166.458 },
+        { id: 2, name: "Groupe Sud", members: [3], equips: [], address: "", lat: null, lng: null },
       ]);
       var groups = _groups[0], setGroups = _groups[1];
       var _drag = useState(null);
       var dragItem = _drag[0], setDragItem = _drag[1];
       var _map = useState(null);
       var mapObj = _map[0], setMapObj = _map[1];
-      var _addr = useState("");
-      var addr = _addr[0], setAddr = _addr[1];
+      var _markers = useState({});
+      var markers = _markers[0], setMarkers = _markers[1];
+      var _editGroup = useState(null);
+      var editGroup = _editGroup[0], setEditGroup = _editGroup[1];
+      var _newGroupName = useState("");
+      var newGroupName = _newGroupName[0], setNewGroupName = _newGroupName[1];
       var mapId = "orgmap";
 
       useEffect(function() {
@@ -1012,6 +1018,25 @@
         return function() { clearTimeout(t); };
       }, []);
 
+      // Update map markers whenever groups or map change
+      useEffect(function() {
+        if (!mapObj) return;
+        // Remove old markers
+        Object.values(markers).forEach(function(mk) { mapObj.removeLayer(mk); });
+        var newMarkers = {};
+        var bounds = [];
+        groups.forEach(function(g) {
+          if (g.lat && g.lng) {
+            var mk = window.L.marker([g.lat, g.lng]).addTo(mapObj).bindPopup("<b>" + g.name + "</b><br>" + (g.address || ""));
+            newMarkers[g.id] = mk;
+            bounds.push([g.lat, g.lng]);
+          }
+        });
+        setMarkers(newMarkers);
+        if (bounds.length > 1) { mapObj.fitBounds(bounds, { padding: [30, 30], maxZoom: 13 }); }
+        else if (bounds.length === 1) { mapObj.setView(bounds[0], 13); }
+      }, [mapObj, groups]);
+
       function onDragStart(ev, item, type) { setDragItem({ item: item, type: type }); ev.dataTransfer.effectAllowed = "move"; }
       function onDragOver(ev) { ev.preventDefault(); }
       function onDrop(ev, gid) {
@@ -1027,15 +1052,36 @@
       }
       function removeMember(gid, mid) { setGroups(function(p) { return p.map(function(g) { return g.id === gid ? Object.assign({}, g, { members: g.members.filter(function(x) { return x !== mid; }) }) : g; }); }); }
       function removeEquip(gid, eid) { setGroups(function(p) { return p.map(function(g) { return g.id === gid ? Object.assign({}, g, { equips: g.equips.filter(function(x) { return x !== eid; }) }) : g; }); }); }
-      function searchAddr() {
-        if (!addr || !mapObj) return;
-        fetch("https://nominatim.openstreetmap.org/search?q=" + encodeURIComponent(addr) + "&format=json")
+
+      function addGroup() {
+        var name = prompt("Nom du nouveau groupe :");
+        if (!name || !name.trim()) return;
+        setGroups(function(p) { return p.concat({ id: Date.now(), name: name.trim(), members: [], equips: [], address: "", lat: null, lng: null }); });
+      }
+      function renameGroup(gid) {
+        var g = groups.find(function(x) { return x.id === gid; });
+        if (!g) return;
+        var name = prompt("Nouveau nom :", g.name);
+        if (!name || !name.trim()) return;
+        setGroups(function(p) { return p.map(function(x) { return x.id === gid ? Object.assign({}, x, { name: name.trim() }) : x; }); });
+      }
+      function deleteGroup(gid) {
+        if (!confirm("Supprimer ce groupe ?")) return;
+        setGroups(function(p) { return p.filter(function(x) { return x.id !== gid; }); });
+      }
+      function setGroupLocation(gid) {
+        var g = groups.find(function(x) { return x.id === gid; });
+        var addr = prompt("Adresse du lieu de travail :", g ? g.address : "");
+        if (!addr || !addr.trim() || !mapObj) return;
+        fetch("https://nominatim.openstreetmap.org/search?q=" + encodeURIComponent(addr) + "&format=json&limit=1")
           .then(function(r) { return r.json(); })
           .then(function(data) {
             if (data.length > 0) {
-              mapObj.setView([data[0].lat, data[0].lon], 14);
-              window.L.marker([data[0].lat, data[0].lon]).addTo(mapObj).bindPopup(addr).openPopup();
-            }
+              var lat = parseFloat(data[0].lat);
+              var lng = parseFloat(data[0].lon);
+              setGroups(function(p) { return p.map(function(x) { return x.id === gid ? Object.assign({}, x, { address: addr.trim(), lat: lat, lng: lng }) : x; }); });
+              mapObj.setView([lat, lng], 14);
+            } else { alert("Adresse non trouvee."); }
           });
       }
 
@@ -1049,12 +1095,21 @@
       var chipDragStyle = Object.assign({}, chipStyle, { cursor: "grab", border: "1px solid #d1d5db" });
       var rmBtn = { background: "none", border: "none", color: "#9ca3af", cursor: "pointer", padding: 0, fontSize: 14, lineHeight: "1" };
       var avatarStyle = { width: 20, height: 20, background: "#6d28d9", color: "white", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700 };
+      var actionBtn = { background: "transparent", border: "none", cursor: "pointer", padding: 4, borderRadius: 4 };
 
       function renderGroup(g) {
         var mList = g.members.map(function(mid) { return allMembers.find(function(m) { return m.id === mid; }); }).filter(Boolean);
         var eList = g.equips.map(function(eid) { return equipements.find(function(e) { return e.Id === eid; }); }).filter(Boolean);
-        return h("div", { key: g.id, style: { background: "#f9fafb", borderRadius: 10, padding: 12, border: "2px dashed #e2e8f0" }, onDragOver: onDragOver, onDrop: function(ev) { onDrop(ev, g.id); } },
-          h("div", { style: { fontWeight: 700, fontSize: 14, marginBottom: 8, color: "#6d28d9" } }, g.name),
+        return h("div", { key: g.id, style: { background: "#f9fafb", borderRadius: 10, padding: 12, border: "2px dashed #e2e8f0", transition: "all 0.15s" }, onDragOver: onDragOver, onDrop: function(ev) { onDrop(ev, g.id); } },
+          h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 } },
+            h("div", { style: { fontWeight: 700, fontSize: 14, color: "#6d28d9" } }, g.name),
+            h("div", { style: { display: "flex", gap: 2 } },
+              h("button", { onClick: function() { setGroupLocation(g.id); }, style: actionBtn, title: "Localisation" }, h(Icon, { name: "map-pin", size: 14, color: g.lat ? "#059669" : "#9ca3af" })),
+              h("button", { onClick: function() { renameGroup(g.id); }, style: actionBtn, title: "Renommer" }, h(Icon, { name: "pencil", size: 14, color: "#64748b" })),
+              h("button", { onClick: function() { deleteGroup(g.id); }, style: actionBtn, title: "Supprimer" }, h(Icon, { name: "trash-2", size: 14, color: "#dc2626" }))
+            )
+          ),
+          g.address ? h("div", { style: { fontSize: 11, color: "#059669", marginBottom: 8, display: "flex", alignItems: "center", gap: 4 } }, h(Icon, { name: "map-pin", size: 11, color: "#059669" }), g.address) : null,
           h("div", { style: { fontSize: 11, color: "#6b7280", marginBottom: 6 } }, "Membres"),
           h("div", { style: { display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10, minHeight: 28 } },
             mList.length === 0 ? h("span", { style: { fontSize: 12, color: "#9ca3af" } }, "Glisser ici") :
@@ -1069,37 +1124,46 @@
       }
 
       return h("div", null,
-        h(PageHeader, { title: h(IconText, { icon: "users", size: 20 }, "Organisation"), subtitle: "Groupes de travail et localisation" }),
+        h(PageHeader, { title: h(IconText, { icon: "users", size: 20 }, "Organisation"), subtitle: "Groupes de travail et localisation", action: h(Button, { onClick: addGroup }, h(IconText, { icon: "plus", size: 14 }, "Nouveau groupe")) }),
         h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 } },
           // Left column
-          h(Card, null,
-            h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, "Groupes de travail"),
-            h("div", { style: { display: "flex", flexDirection: "column", gap: 10 } },
-              groups.map(renderGroup)
-            ),
-            h("h4", { style: { margin: "20px 0 8px", fontSize: 13, fontWeight: 700, color: "#374151" } }, "Membres disponibles"),
-            h("div", { style: { display: "flex", flexWrap: "wrap", gap: 6, minHeight: 28 } },
-              freeMbrs.length === 0 ? h("span", { style: { fontSize: 12, color: "#9ca3af" } }, "Tous assignes") :
-              freeMbrs.map(function(m) { return h("span", { key: m.id, draggable: true, onDragStart: function(ev) { onDragStart(ev, m, "member"); }, style: chipDragStyle }, h("span", { style: avatarStyle }, m.avatar), m.name); })
-            ),
-            h("h4", { style: { margin: "16px 0 8px", fontSize: 13, fontWeight: 700, color: "#374151" } }, "Equipements disponibles"),
-            h("div", { style: { display: "flex", flexWrap: "wrap", gap: 6, minHeight: 28 } },
-              freeEquips.length === 0 ? h("span", { style: { fontSize: 12, color: "#9ca3af" } }, "Tous assignes") :
-              freeEquips.slice(0, 10).map(function(e) { return h("span", { key: e.Id, draggable: true, onDragStart: function(ev) { onDragStart(ev, e, "equip"); }, style: chipDragStyle }, h(Icon, { name: "truck", size: 12, color: "#6d28d9" }), e.Title); })
-            )
-          ),
-          // Right column
           h("div", { style: { display: "flex", flexDirection: "column", gap: 12 } },
             h(Card, null,
-              h("h3", { style: { margin: "0 0 12px", fontSize: 16, fontWeight: 700 } }, "Localisation"),
-              h("div", { style: { display: "flex", gap: 8, marginBottom: 12 } },
-                h("input", { type: "text", placeholder: "Rechercher une adresse...", value: addr, onChange: function(ev) { setAddr(ev.target.value); }, onKeyDown: function(ev) { if (ev.key === "Enter") searchAddr(); }, style: { flex: 1, padding: "8px 12px", border: "1px solid #d1d5db", borderRadius: 6, fontSize: 12, outline: "none" } }),
-                h(Button, { onClick: searchAddr, style: { padding: "8px 16px", fontSize: 12 } }, h(IconText, { icon: "search", size: 12 }, "Chercher"))
-              ),
-              h("div", { id: mapId, style: { width: "100%", height: 300, borderRadius: 8, background: "#f3f4f6", border: "1px solid #e2e8f0" } })
+              h("h3", { style: { margin: "0 0 12px", fontSize: 16, fontWeight: 700 } }, h(IconText, { icon: "users", size: 16, color: "#6d28d9" }, "Groupes de travail")),
+              groups.length === 0 ? h("p", { style: { color: "#9ca3af", textAlign: "center", padding: 20 } }, "Aucun groupe. Cliquez sur '+ Nouveau groupe'.") :
+              h("div", { style: { display: "flex", flexDirection: "column", gap: 10 } },
+                groups.map(renderGroup)
+              )
             ),
             h(Card, null,
-              h("p", { style: { fontSize: 12, color: "#6b7280", margin: 0 } }, "Glissez-deposez les membres et equipements vers les groupes pour les organiser.")
+              h("h4", { style: { margin: "0 0 8px", fontSize: 13, fontWeight: 700, color: "#374151" } }, h(IconText, { icon: "user", size: 13 }, "Membres disponibles")),
+              h("div", { style: { display: "flex", flexWrap: "wrap", gap: 6, minHeight: 28 } },
+                freeMbrs.length === 0 ? h("span", { style: { fontSize: 12, color: "#9ca3af" } }, "Tous assignes") :
+                freeMbrs.map(function(m) { return h("span", { key: m.id, draggable: true, onDragStart: function(ev) { onDragStart(ev, m, "member"); }, style: chipDragStyle }, h("span", { style: avatarStyle }, m.avatar), m.name); })
+              ),
+              h("h4", { style: { margin: "16px 0 8px", fontSize: 13, fontWeight: 700, color: "#374151" } }, h(IconText, { icon: "truck", size: 13 }, "Equipements disponibles")),
+              h("div", { style: { display: "flex", flexWrap: "wrap", gap: 6, minHeight: 28 } },
+                freeEquips.length === 0 ? h("span", { style: { fontSize: 12, color: "#9ca3af" } }, "Tous assignes") :
+                freeEquips.slice(0, 12).map(function(e) { return h("span", { key: e.Id, draggable: true, onDragStart: function(ev) { onDragStart(ev, e, "equip"); }, style: chipDragStyle }, h(Icon, { name: "truck", size: 12, color: "#6d28d9" }), e.Title); })
+              )
+            )
+          ),
+          // Right column - Map
+          h(Card, { style: { height: "fit-content" } },
+            h("h3", { style: { margin: "0 0 12px", fontSize: 16, fontWeight: 700 } }, h(IconText, { icon: "map-pin", size: 16, color: "#6d28d9" }, "Carte des lieux de travail")),
+            h("div", { id: mapId, style: { width: "100%", height: 400, borderRadius: 8, background: "#f3f4f6", border: "1px solid #e2e8f0" } }),
+            h("div", { style: { marginTop: 12, fontSize: 12, color: "#6b7280" } },
+              groups.filter(function(g) { return g.lat; }).length === 0 ?
+                "Cliquez sur l'icone pin d'un groupe pour lui attribuer un lieu." :
+                h("div", { style: { display: "flex", flexDirection: "column", gap: 4 } },
+                  groups.filter(function(g) { return g.lat; }).map(function(g) {
+                    return h("div", { key: g.id, style: { display: "flex", alignItems: "center", gap: 6, padding: "6px 8px", background: "#f9fafb", borderRadius: 6 } },
+                      h(Icon, { name: "map-pin", size: 12, color: "#059669" }),
+                      h("span", { style: { fontWeight: 600 } }, g.name + " :"),
+                      h("span", null, g.address)
+                    );
+                  })
+                )
             )
           )
         )
@@ -1116,7 +1180,7 @@
         ]},
         { name: "Ressources", pages: [
           { key: "equipements", label: "Equipements", lucide: "settings" },
-          { key: "organisation", label: "Organisation", lucide: "org" },
+          { key: "organisation", label: "Organisation", lucide: "users" },
           { key: "pieces", label: "Pieces detachees", lucide: "package" },
         ]},
         { name: "Rapports", pages: [
@@ -1133,10 +1197,10 @@
             h("div", { style: { fontSize: 11, fontWeight: 700, color: "var(--sidebar-text)", textTransform: "uppercase", letterSpacing: 0.5, padding: "12px 14px 8px", marginTop: section.name !== "Principal" ? 8 : 0 } }, section.name),
             section.pages.map((p) => h("button", { key: p.key, onClick: () => onNavigate(p.key),
               style: { display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "10px 14px", border: "none", borderRadius: 6, marginBottom: 4, cursor: "pointer", fontSize: 14, fontWeight: currentPage === p.key ? 600 : 500, transition: "all 0.2s", background: currentPage === p.key ? "var(--sidebar-active)" : "transparent", color: currentPage === p.key ? "var(--sidebar-text-active)" : "var(--sidebar-text)" } },
-              h(Icon, { name: p.lucide, size: 16, color: currentPage === p.key ? "var(--sidebar-text-active)" : "var(--sidebar-text)" }), p.label))))),
+              h(Icon, { name: p.lucide, size: 16, color: currentPage === p.key ? "#ffffff" : "#94a3b8" }), p.label))))),
         h("div", { style: { padding: "12px 16px", borderTop: "1px solid rgba(255,255,255,0.1)" } },
-          h("div", { style: { fontSize: 11, color: "var(--sidebar-text)", marginBottom: 8, wordBreak: "break-all" } }, userEmail || ""),
-          h("button", { onClick: onLogout, style: { width: "100%", padding: "8px 12px", background: "transparent", color: "var(--sidebar-text)", border: "1px solid var(--sidebar-hover)", borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 600, transition: "all 0.2s" } }, h(IconText, { icon: "log-out", size: 14, color: "var(--sidebar-text)" }, "Deconnexion"))));
+          h("div", { style: { fontSize: 11, color: "#94a3b8", marginBottom: 8, wordBreak: "break-all" } }, userEmail || ""),
+          h("button", { onClick: onLogout, style: { width: "100%", padding: "8px 12px", background: "transparent", color: "#94a3b8", border: "1px solid #1e293b", borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 600, transition: "all 0.2s" } }, h(IconText, { icon: "log-out", size: 14, color: "#94a3b8" }, "Deconnexion"))));
     }
 
     // ─── App principale ─────────────────────────────────────────────────
