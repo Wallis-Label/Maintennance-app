@@ -377,14 +377,20 @@
                     h("div", { style: { fontSize: 12, color: "#6b7280" } }, u.Equipement + " \u2014 " + u.Technicien)),
                   h(StatusBadge, { status: u.Statut_Intervention }))))),
           h(Card, null,
-            h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, h(IconText, { icon: "clipboard-list", size: 16, color: "#1f2937" }, "Plans de maintenance")),
-            plans.length === 0 ? h("p", { style: { color: "#9ca3af", textAlign: "center", padding: 20 } }, "Aucun plan") :
-              h("div", { style: { display: "flex", flexDirection: "column", gap: 8 } },
-                plans.slice(0, 5).map((p) => h("div", { key: p.Id, style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "#f9fafb", borderRadius: 8 } },
-                  h("div", null,
-                    h("div", { style: { fontWeight: 600, fontSize: 14 } }, p.Title),
-                    h("div", { style: { fontSize: 12, color: "#6b7280" } }, p.Frequence + " \u2014 Prochain: " + (p.ProchainIntervention || "\u2014"))),
-                  h(StatusBadge, { status: p.Statut })))))),
+            h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, h(IconText, { icon: "wrench", size: 16, color: "#d97706" }, "Travaux non termines")),
+            (function() {
+              var nonTermines = interventions.filter(function(i) { return i.Statut_Intervention === "Planifiee" || i.Statut_Intervention === "En cours" || i.Statut_Intervention === "Pas fait"; });
+              return nonTermines.length === 0 ? h("p", { style: { color: "#9ca3af", textAlign: "center", padding: 20 } }, "Tous les travaux sont termines") :
+                h("div", { style: { display: "flex", flexDirection: "column", gap: 8 } },
+                  nonTermines.slice(0, 8).map(function(i) {
+                    var borderColor = i.Statut_Intervention === "Pas fait" ? "#dc2626" : i.Statut_Intervention === "En cours" ? "#d97706" : "#2563eb";
+                    return h("div", { key: i.Id, onClick: function() { onNavigate("interventions", i); }, style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "#f9fafb", borderRadius: 8, borderLeft: "4px solid " + borderColor, cursor: "pointer", transition: "all 0.15s" } },
+                      h("div", null,
+                        h("div", { style: { fontWeight: 600, fontSize: 14 } }, i.Title),
+                        h("div", { style: { fontSize: 12, color: "#6b7280" } }, i.Equipement + " \u2014 " + (i.Date_Intervention || "\u2014"))),
+                      h(StatusBadge, { status: i.Statut_Intervention }));
+                  }));
+            }()))),
         h(Card, null,
           h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, h(IconText, { icon: "clock", size: 16, color: "#6d28d9" }, "Derniers equipements modifies")),
           derniersEquips.length === 0 ? h("p", { style: { color: "#9ca3af", textAlign: "center", padding: 20 } }, "Aucun equipement") :
