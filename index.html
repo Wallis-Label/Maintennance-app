@@ -384,7 +384,7 @@
           h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, h(IconText, { icon: "clock", size: 16, color: "#6d28d9" }, "Derniers equipements modifies")),
           derniersEquips.length === 0 ? h("p", { style: { color: "#9ca3af", textAlign: "center", padding: 20 } }, "Aucun equipement") :
             h("div", { style: { display: "flex", flexDirection: "column", gap: 8 } },
-              derniersEquips.map((eq) => h("div", { key: eq.Id, style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px", background: "#f9fafb", borderRadius: 8, cursor: "pointer", transition: "all 0.2s" }, onClick: () => onNavigate("fiche-equipement", eq), onMouseEnter: (e) => e.currentTarget.style.background = "#f0f0f0", onMouseLeave: (e) => e.currentTarget.style.background = "#f9fafb" } },
+              derniersEquips.map(function(eq) { return h("div", { key: eq.Id, style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px", background: "#f9fafb", borderRadius: 8, cursor: "pointer" }, onClick: function() { onNavigate("fiche-equipement", eq); } },
                 h("div", null,
                   h("div", { style: { fontWeight: 600, fontSize: 14, color: "#6d28d9" } }, eq.Title),
                   h("div", { style: { fontSize: 12, color: "#6b7280" } }, eq.Nom)),
@@ -392,7 +392,7 @@
                   h("div", { style: { fontSize: 12, textAlign: "right" } },
                     h("div", { style: { fontWeight: 600, color: "#0f172a" } }, eq.Type),
                     h("div", { style: { color: "#6b7280", fontSize: 11 } }, "H: " + fmtNum(eq.Horametre))),
-                  h(StatusBadge, { status: eq.Statut }))))),
+                  h(StatusBadge, { status: eq.Statut }))); }))),
         h("div", { style: { display: "flex", gap: 12, marginTop: 24, flexWrap: "wrap" } },
           h(Button, { onClick: () => onNavigate("interventions") }, h(IconText, { icon: "wrench", size: 14 }, "Nouvelle intervention")),
           h(Button, { variant: "secondary", onClick: () => onNavigate("equipements") }, h(IconText, { icon: "settings", size: 14 }, "Equipements")),
@@ -978,131 +978,132 @@
 
     // ─── Ecran Organisation ─────────────────────────────────────────────
     function EcranOrganisation({ onNavigate }) {
-      const { equipements } = useAppData();
-      const [members, setMembers] = useState([
-        { id: 1, name: "Tom Wallis", role: "Admin", avatar: "T" },
-        { id: 2, name: "Jean Martin", role: "Technicien", avatar: "J" },
-        { id: 3, name: "Marie Dupont", role: "Operateur", avatar: "M" },
+      var ctx = useAppData();
+      var equipements = ctx.equipements;
+      var allMembers = [
+        { id: 1, name: "Tom Wallis", avatar: "T" },
+        { id: 2, name: "Jean Martin", avatar: "J" },
+        { id: 3, name: "Marie Dupont", avatar: "M" },
+      ];
+      var _groups = useState([
+        { id: 1, name: "Groupe Nord", members: [1, 2], equips: [] },
+        { id: 2, name: "Groupe Sud", members: [3], equips: [] },
       ]);
-      const [groups, setGroups] = useState([
-        { id: 1, name: "Groupe Nord", members: [members[0], members[1]], equipement: [] },
-        { id: 2, name: "Groupe Sud", members: [members[2]], equipement: [] },
-      ]);
-      const [draggedItem, setDraggedItem] = useState(null);
-      const [mapRef, setMapRef] = useState(null);
-      const [searchAddress, setSearchAddress] = useState("");
+      var groups = _groups[0], setGroups = _groups[1];
+      var _drag = useState(null);
+      var dragItem = _drag[0], setDragItem = _drag[1];
+      var _map = useState(null);
+      var mapObj = _map[0], setMapObj = _map[1];
+      var _addr = useState("");
+      var addr = _addr[0], setAddr = _addr[1];
+      var mapId = "orgmap";
 
-      const mapContainerId = "map-container-org-" + (Math.random() * 1000 | 0);
-
-      useEffect(() => {
-        const timer = setTimeout(() => {
-          if (document.getElementById(mapContainerId) && !mapRef) {
+      useEffect(function() {
+        var t = setTimeout(function() {
+          var el = document.getElementById(mapId);
+          if (el && !mapObj && window.L) {
             try {
-              const map = window.L.map(mapContainerId).setView([17.5, -149.5], 12);
-              window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-                attribution: '&copy; OpenStreetMap contributors',
-                maxZoom: 19,
-              }).addTo(map);
-              setMapRef(map);
+              var m = window.L.map(mapId).setView([-22.27, 166.45], 12);
+              window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "OSM" }).addTo(m);
+              setMapObj(m);
             } catch(e) {}
           }
-        }, 100);
-        return () => clearTimeout(timer);
-      }, [mapRef, mapContainerId]);
+        }, 200);
+        return function() { clearTimeout(t); };
+      }, []);
 
-      const handleDragStart = (e, item, type) => {
-        setDraggedItem({ item, type });
-        e.dataTransfer.effectAllowed = "move";
-      };
-
-      const handleDragOver = (e) => {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = "move";
-      };
-
-      const handleDropOnGroup = (e, groupId) => {
-        e.preventDefault();
-        if (!draggedItem) return;
-
-        setGroups(groups.map(g => {
-          if (g.id === groupId) {
-            if (draggedItem.type === "member" && !g.members.find(m => m.id === draggedItem.item.id)) {
-              return { ...g, members: [...g.members, draggedItem.item] };
-            } else if (draggedItem.type === "equipment" && !g.equipement.find(e => e.Id === draggedItem.item.Id)) {
-              return { ...g, equipement: [...g.equipement, draggedItem.item] };
-            }
-          }
+      function onDragStart(ev, item, type) { setDragItem({ item: item, type: type }); ev.dataTransfer.effectAllowed = "move"; }
+      function onDragOver(ev) { ev.preventDefault(); }
+      function onDrop(ev, gid) {
+        ev.preventDefault();
+        if (!dragItem) return;
+        setGroups(function(prev) { return prev.map(function(g) {
+          if (g.id !== gid) return g;
+          if (dragItem.type === "member" && g.members.indexOf(dragItem.item.id) === -1) return Object.assign({}, g, { members: g.members.concat(dragItem.item.id) });
+          if (dragItem.type === "equip" && g.equips.indexOf(dragItem.item.Id) === -1) return Object.assign({}, g, { equips: g.equips.concat(dragItem.item.Id) });
           return g;
-        }));
-        setDraggedItem(null);
-      };
-
-      const removeFromGroup = (groupId, itemId, type) => {
-        setGroups(groups.map(g => {
-          if (g.id === groupId) {
-            if (type === "member") {
-              return { ...g, members: g.members.filter(m => m.id !== itemId) };
-            } else {
-              return { ...g, equipement: g.equipement.filter(e => e.Id !== itemId) };
+        }); });
+        setDragItem(null);
+      }
+      function removeMember(gid, mid) { setGroups(function(p) { return p.map(function(g) { return g.id === gid ? Object.assign({}, g, { members: g.members.filter(function(x) { return x !== mid; }) }) : g; }); }); }
+      function removeEquip(gid, eid) { setGroups(function(p) { return p.map(function(g) { return g.id === gid ? Object.assign({}, g, { equips: g.equips.filter(function(x) { return x !== eid; }) }) : g; }); }); }
+      function searchAddr() {
+        if (!addr || !mapObj) return;
+        fetch("https://nominatim.openstreetmap.org/search?q=" + encodeURIComponent(addr) + "&format=json")
+          .then(function(r) { return r.json(); })
+          .then(function(data) {
+            if (data.length > 0) {
+              mapObj.setView([data[0].lat, data[0].lon], 14);
+              window.L.marker([data[0].lat, data[0].lon]).addTo(mapObj).bindPopup(addr).openPopup();
             }
-          }
-          return g;
-        }));
-      };
+          });
+      }
 
-      const handleAddressSearch = async () => {
-        if (!searchAddress || !mapRef) return;
-        try {
-          const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(searchAddress)}&format=json`);
-          const data = await res.json();
-          if (data.length > 0) {
-            const { lat, lon } = data[0];
-            mapRef.setView([lat, lon], 14);
-            window.L.marker([lat, lon]).addTo(mapRef).bindPopup(searchAddress).openPopup();
-          }
-        } catch(e) {}
-      };
+      var assignedMemberIds = {};
+      var assignedEquipIds = {};
+      groups.forEach(function(g) { g.members.forEach(function(id) { assignedMemberIds[id] = true; }); g.equips.forEach(function(id) { assignedEquipIds[id] = true; }); });
+      var freeMbrs = allMembers.filter(function(m) { return !assignedMemberIds[m.id]; });
+      var freeEquips = equipements.filter(function(e) { return !assignedEquipIds[e.Id]; });
+
+      var chipStyle = { display: "inline-flex", alignItems: "center", gap: 6, background: "white", padding: "4px 10px", borderRadius: 20, fontSize: 12, border: "1px solid #e2e8f0" };
+      var chipDragStyle = Object.assign({}, chipStyle, { cursor: "grab", border: "1px solid #d1d5db" });
+      var rmBtn = { background: "none", border: "none", color: "#9ca3af", cursor: "pointer", padding: 0, fontSize: 14, lineHeight: "1" };
+      var avatarStyle = { width: 20, height: 20, background: "#6d28d9", color: "white", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700 };
+
+      function renderGroup(g) {
+        var mList = g.members.map(function(mid) { return allMembers.find(function(m) { return m.id === mid; }); }).filter(Boolean);
+        var eList = g.equips.map(function(eid) { return equipements.find(function(e) { return e.Id === eid; }); }).filter(Boolean);
+        return h("div", { key: g.id, style: { background: "#f9fafb", borderRadius: 10, padding: 12, border: "2px dashed #e2e8f0" }, onDragOver: onDragOver, onDrop: function(ev) { onDrop(ev, g.id); } },
+          h("div", { style: { fontWeight: 700, fontSize: 14, marginBottom: 8, color: "#6d28d9" } }, g.name),
+          h("div", { style: { fontSize: 11, color: "#6b7280", marginBottom: 6 } }, "Membres"),
+          h("div", { style: { display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10, minHeight: 28 } },
+            mList.length === 0 ? h("span", { style: { fontSize: 12, color: "#9ca3af" } }, "Glisser ici") :
+            mList.map(function(m) { return h("span", { key: m.id, style: chipStyle }, h("span", { style: avatarStyle }, m.avatar), m.name, h("button", { onClick: function() { removeMember(g.id, m.id); }, style: rmBtn }, "\u00D7")); })
+          ),
+          h("div", { style: { fontSize: 11, color: "#6b7280", marginBottom: 6 } }, "Equipements"),
+          h("div", { style: { display: "flex", flexWrap: "wrap", gap: 6, minHeight: 28 } },
+            eList.length === 0 ? h("span", { style: { fontSize: 12, color: "#9ca3af" } }, "Glisser ici") :
+            eList.map(function(e) { return h("span", { key: e.Id, style: Object.assign({}, chipStyle, { background: "#ede9fe" }) }, e.Title, h("button", { onClick: function() { removeEquip(g.id, e.Id); }, style: Object.assign({}, rmBtn, { color: "#6d28d9" }) }, "\u00D7")); })
+          )
+        );
+      }
 
       return h("div", null,
-        h(PageHeader, { title: h(IconText, { icon: "org", size: 20 }, "Organisation"), subtitle: "Gerer les groupes et les localisations" }),
+        h(PageHeader, { title: h(IconText, { icon: "users", size: 20 }, "Organisation"), subtitle: "Groupes de travail et localisation" }),
         h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 } },
+          // Left column
           h(Card, null,
-            h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, "Groupes et equipes"),
-            h("div", { style: { display: "flex", flexDirection: "column", gap: 12 } },
-              groups.map(g => h("div", { key: g.id, style: { background: "#f9fafb", borderRadius: 10, padding: 12, border: "2px dashed #e2e8f0" }, onDragOver: handleDragOver, onDrop: (e) => handleDropOnGroup(e, g.id) },
-                h("div", { style: { fontWeight: 700, fontSize: 14, marginBottom: 8, color: "#6d28d9" } }, g.name),
-                h("div", { style: { fontSize: 12, color: "#6b7280", marginBottom: 8 } }, "Membres (" + g.members.length + ")"),
-                h("div", { style: { display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 } },
-                  g.members.length === 0 ? h("span", { style: { fontSize: 12, color: "#9ca3af", fontStyle: "italic" } }, "Aucun membre") :
-                    g.members.map(m => h("div", { key: m.id, style: { display: "inline-flex", alignItems: "center", gap: 6, background: "white", padding: "4px 8px", borderRadius: 20, fontSize: 12, border: "1px solid #e2e8f0" } },
-                      h("span", { style: { width: 20, height: 20, background: "#6d28d9", color: "white", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700 } }, m.avatar),
-                      h("span", null, m.name),
-                      h("button", { onClick: () => removeFromGroup(g.id, m.id, "member"), style: { background: "none", border: "none", color: "#9ca3af", cursor: "pointer", padding: 0, fontSize: 14, lineHeight: 1 } }, "\u00D7")))),
-                h("div", { style: { fontSize: 12, color: "#6b7280", marginBottom: 8 } }, "Equipements (" + g.equipement.length + ")"),
-                h("div", { style: { display: "flex", flexWrap: "wrap", gap: 6 } },
-                  g.equipement.length === 0 ? h("span", { style: { fontSize: 12, color: "#9ca3af", fontStyle: "italic" } }, "Aucun equipement") :
-                    g.equipement.map(e => h("div", { key: e.Id, style: { display: "inline-flex", alignItems: "center", gap: 6, background: "white", padding: "4px 8px", borderRadius: 20, fontSize: 12, border: "1px solid #e2e8f0", background: "#ede9fe" } },
-                      h("span", null, e.Title),
-                      h("button", { onClick: () => removeFromGroup(g.id, e.Id, "equipment"), style: { background: "none", border: "none", color: "#6d28d9", cursor: "pointer", padding: 0, fontSize: 14, lineHeight: 1 } }, "\u00D7"))))),
-              h("h4", { style: { margin: "16px 0 8px", fontSize: 13, fontWeight: 700, color: "#374151" } }, "Membres disponibles"),
-              h("div", { style: { display: "flex", flexWrap: "wrap", gap: 6 } },
-                members.filter(m => !groups.some(g => g.members.some(gm => gm.id === m.id))).map(m => h("div", { key: m.id, draggable: true, onDragStart: (e) => handleDragStart(e, m, "member"), style: { display: "inline-flex", alignItems: "center", gap: 6, background: "white", padding: "6px 10px", borderRadius: 20, fontSize: 12, border: "1px solid #d1d5db", cursor: "grab", transition: "all 0.2s" } },
-                  h("span", { style: { width: 18, height: 18, background: "#6d28d9", color: "white", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700 } }, m.avatar),
-                  h("span", null, m.name)))),
-              h("h4", { style: { margin: "16px 0 8px", fontSize: 13, fontWeight: 700, color: "#374151" } }, "Equipements disponibles"),
-              h("div", { style: { display: "flex", flexWrap: "wrap", gap: 6 } },
-                equipements.filter(e => !groups.some(g => g.equipement.some(ge => ge.Id === e.Id))).slice(0, 10).map(e => h("div", { key: e.Id, draggable: true, onDragStart: (ev) => handleDragStart(ev, e, "equipment"), style: { display: "inline-flex", alignItems: "center", gap: 6, background: "white", padding: "6px 10px", borderRadius: 20, fontSize: 12, border: "1px solid #d1d5db", cursor: "grab", transition: "all 0.2s" } },
-                  h(Icon, { name: "package", size: 12, color: "#6d28d9" }),
-                  h("span", null, e.Title))))),
+            h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, "Groupes de travail"),
+            h("div", { style: { display: "flex", flexDirection: "column", gap: 10 } },
+              groups.map(renderGroup)
+            ),
+            h("h4", { style: { margin: "20px 0 8px", fontSize: 13, fontWeight: 700, color: "#374151" } }, "Membres disponibles"),
+            h("div", { style: { display: "flex", flexWrap: "wrap", gap: 6, minHeight: 28 } },
+              freeMbrs.length === 0 ? h("span", { style: { fontSize: 12, color: "#9ca3af" } }, "Tous assignes") :
+              freeMbrs.map(function(m) { return h("span", { key: m.id, draggable: true, onDragStart: function(ev) { onDragStart(ev, m, "member"); }, style: chipDragStyle }, h("span", { style: avatarStyle }, m.avatar), m.name); })
+            ),
+            h("h4", { style: { margin: "16px 0 8px", fontSize: 13, fontWeight: 700, color: "#374151" } }, "Equipements disponibles"),
+            h("div", { style: { display: "flex", flexWrap: "wrap", gap: 6, minHeight: 28 } },
+              freeEquips.length === 0 ? h("span", { style: { fontSize: 12, color: "#9ca3af" } }, "Tous assignes") :
+              freeEquips.slice(0, 10).map(function(e) { return h("span", { key: e.Id, draggable: true, onDragStart: function(ev) { onDragStart(ev, e, "equip"); }, style: chipDragStyle }, h(Icon, { name: "truck", size: 12, color: "#6d28d9" }), e.Title); })
+            )
+          ),
+          // Right column
           h("div", { style: { display: "flex", flexDirection: "column", gap: 12 } },
             h(Card, null,
               h("h3", { style: { margin: "0 0 12px", fontSize: 16, fontWeight: 700 } }, "Localisation"),
               h("div", { style: { display: "flex", gap: 8, marginBottom: 12 } },
-                h("input", { type: "text", placeholder: "Rechercher une adresse...", value: searchAddress, onChange: (e) => setSearchAddress(e.target.value), onKeyDown: (e) => e.key === "Enter" && handleAddressSearch(), style: { flex: 1, padding: "8px 12px", border: "1px solid #d1d5db", borderRadius: 6, fontSize: 12, outline: "none" } }),
-                h(Button, { onClick: handleAddressSearch, style: { padding: "8px 16px", fontSize: 12 } }, h(IconText, { icon: "search", size: 12 }, "Chercher"))),
-              h("div", { id: mapContainerId, style: { width: "100%", height: 300, borderRadius: 8, background: "#f3f4f6", border: "1px solid #e2e8f0" } })),
+                h("input", { type: "text", placeholder: "Rechercher une adresse...", value: addr, onChange: function(ev) { setAddr(ev.target.value); }, onKeyDown: function(ev) { if (ev.key === "Enter") searchAddr(); }, style: { flex: 1, padding: "8px 12px", border: "1px solid #d1d5db", borderRadius: 6, fontSize: 12, outline: "none" } }),
+                h(Button, { onClick: searchAddr, style: { padding: "8px 16px", fontSize: 12 } }, h(IconText, { icon: "search", size: 12 }, "Chercher"))
+              ),
+              h("div", { id: mapId, style: { width: "100%", height: 300, borderRadius: 8, background: "#f3f4f6", border: "1px solid #e2e8f0" } })
+            ),
             h(Card, null,
-              h("p", { style: { fontSize: 12, color: "#6b7280", margin: 0 } }, h(IconText, { icon: "info", size: 12 }, "Conseil: Glissez-deposez les membres et equipements depuis les panneaux de droite vers les groupes pour les organiser."))));
+              h("p", { style: { fontSize: 12, color: "#6b7280", margin: 0 } }, "Glissez-deposez les membres et equipements vers les groupes pour les organiser.")
+            )
+          )
+        )
+      );
     }
 
     // ─── Sidebar ────────────────────────────────────────────────────────
