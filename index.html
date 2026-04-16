@@ -4,11 +4,12 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Maintenance - Gestion & Suivi</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛠️</text></svg>" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236d28d9' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z'/></svg>" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: #f3f4f6; }
@@ -21,6 +22,39 @@
   <script type="text/babel">
     const { useState, useEffect, useCallback, useMemo, createContext, useContext } = React;
     const h = React.createElement;
+
+    // ─── Icones SVG (Lucide) ─────────────────────────────────────────
+    // Composant Icon : affiche une icone Lucide inline via la librairie globale.
+    // Usage : h(Icon, { name: "wrench", size: 16, color: "#6d28d9" })
+    function Icon({ name, size = 16, color = "currentColor", style: s, className }) {
+      const ref = React.useRef(null);
+      useEffect(() => {
+        if (ref.current) {
+          ref.current.innerHTML = "";
+          try {
+            const svgStr = lucide.icons[name];
+            if (svgStr) {
+              const tmp = document.createElement("div");
+              tmp.innerHTML = lucide.createElement(svgStr).outerHTML;
+              const svg = tmp.firstChild;
+              svg.setAttribute("width", String(size));
+              svg.setAttribute("height", String(size));
+              svg.setAttribute("stroke", color);
+              svg.style.display = "inline-block";
+              svg.style.verticalAlign = "middle";
+              svg.style.flexShrink = "0";
+              ref.current.appendChild(svg);
+            }
+          } catch(e) {}
+        }
+      }, [name, size, color]);
+      return h("span", { ref, style: { display: "inline-flex", alignItems: "center", lineHeight: 0, ...s }, className });
+    }
+    // Raccourci : icone + texte inline
+    function IconText({ icon, size, color, children, gap = 6 }) {
+      return h("span", { style: { display: "inline-flex", alignItems: "center", gap } },
+        h(Icon, { name: icon, size: size || 14, color }), children);
+    }
 
     // ─── Configuration Supabase ─────────────────────────────────────────
     const SUPABASE_URL = "https://tfmnmzyetybaeygughcs.supabase.co";
@@ -133,27 +167,27 @@
     // ─── Composants UI ──────────────────────────────────────────────────
     function StatusBadge({ status }) {
       const colors = {
-        "Termine": { bg: "#dcfce7", text: "#166534", icon: "\u2705" },
-        "En cours": { bg: "#fef9c3", text: "#854d0e", icon: "\uD83D\uDD36" },
-        "Planifiee": { bg: "#dbeafe", text: "#1e40af", icon: "\uD83D\uDCC5" },
-        "Pas fait": { bg: "#fee2e2", text: "#991b1b", icon: "\uD83D\uDD34" },
-        "En service": { bg: "#dcfce7", text: "#166534", icon: "\u2705" },
-        "En panne": { bg: "#fee2e2", text: "#991b1b", icon: "\uD83D\uDD34" },
-        "En maintenance": { bg: "#fef9c3", text: "#854d0e", icon: "\uD83D\uDD27" },
-        "Actif": { bg: "#dcfce7", text: "#166534", icon: "\u2705" },
-        "En retard": { bg: "#fee2e2", text: "#991b1b", icon: "\u26A0\uFE0F" },
-        "Suspendu": { bg: "#f3f4f6", text: "#374151", icon: "\u23F8\uFE0F" },
-        "Stock OK": { bg: "#dcfce7", text: "#166534", icon: "\u2705" },
-        "Stock faible": { bg: "#fef9c3", text: "#854d0e", icon: "\u26A0\uFE0F" },
-        "Rupture": { bg: "#fee2e2", text: "#991b1b", icon: "\uD83D\uDD34" },
+        "Termine": { bg: "#dcfce7", text: "#166534", lucide: "check-circle" },
+        "En cours": { bg: "#fef9c3", text: "#854d0e", lucide: "clock" },
+        "Planifiee": { bg: "#dbeafe", text: "#1e40af", lucide: "calendar" },
+        "Pas fait": { bg: "#fee2e2", text: "#991b1b", lucide: "x-circle" },
+        "En service": { bg: "#dcfce7", text: "#166534", lucide: "check-circle" },
+        "En panne": { bg: "#fee2e2", text: "#991b1b", lucide: "x-circle" },
+        "En maintenance": { bg: "#fef9c3", text: "#854d0e", lucide: "wrench" },
+        "Actif": { bg: "#dcfce7", text: "#166534", lucide: "check-circle" },
+        "En retard": { bg: "#fee2e2", text: "#991b1b", lucide: "alert-triangle" },
+        "Suspendu": { bg: "#f3f4f6", text: "#374151", lucide: "pause-circle" },
+        "Stock OK": { bg: "#dcfce7", text: "#166534", lucide: "check-circle" },
+        "Stock faible": { bg: "#fef9c3", text: "#854d0e", lucide: "alert-triangle" },
+        "Rupture": { bg: "#fee2e2", text: "#991b1b", lucide: "x-circle" },
       };
-      const c = colors[status] || { bg: "#f3f4f6", text: "#374151", icon: "" };
-      return h("span", { style: { background: c.bg, color: c.text, padding: "4px 12px", borderRadius: 20, fontSize: 13, fontWeight: 600, whiteSpace: "nowrap" } }, c.icon + " " + status);
+      const c = colors[status] || { bg: "#f3f4f6", text: "#374151", lucide: "help-circle" };
+      return h("span", { style: { background: c.bg, color: c.text, padding: "4px 12px", borderRadius: 20, fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 5 } }, h(Icon, { name: c.lucide, size: 14, color: c.text }), " " + status);
     }
 
     function SearchInput({ placeholder, value, onChange }) {
       return h("div", { style: { position: "relative" } },
-        h("span", { style: { position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "#9ca3af", fontSize: 14 } }, "\uD83D\uDD0D"),
+        h(Icon, { name: "search", size: 14, color: "#9ca3af", style: { position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)" } }),
         h("input", { type: "text", placeholder, value, onChange: (e) => onChange(e.target.value),
           style: { width: "100%", padding: "10px 10px 10px 36px", border: "1px solid #d1d5db", borderRadius: 8, fontSize: 14, outline: "none", boxSizing: "border-box" } }));
     }
@@ -274,7 +308,7 @@
       return h("div", { style: { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg, #1e1b4b 0%, #4c1d95 100%)" } },
         h("div", { style: { background: "white", padding: 40, borderRadius: 16, boxShadow: "0 20px 60px rgba(0,0,0,0.3)", width: "100%", maxWidth: 420 } },
           h("div", { style: { textAlign: "center", marginBottom: 30 } },
-            h("div", { style: { fontSize: 48, marginBottom: 8 } }, "\uD83D\uDEE0\uFE0F"),
+            h(Icon, { name: "wrench", size: 48, color: "#6d28d9" }),
             h("h1", { style: { fontSize: 24, fontWeight: 800, color: "#1e1b4b" } }, "Maintenance"),
             h("p", { style: { fontSize: 14, color: "#6b7280", marginTop: 4 } }, mode === "signin" ? "Connecte-toi pour continuer" : "Cree ton compte employe")),
           error && h("div", { style: { background: "#fee2e2", border: "1px solid #fca5a5", color: "#991b1b", padding: 12, borderRadius: 8, fontSize: 13, marginBottom: 16 } }, error),
@@ -301,18 +335,18 @@
       const visitesADeclencher = equipements.reduce((a, eq) => a + computeVisitesADeclencher(eq, plans, interventions), 0);
 
       return h("div", null,
-        h(PageHeader, { title: "\uD83C\uDFE0 Tableau de bord", subtitle: "Vue d'ensemble de la maintenance" }),
+        h(PageHeader, { title: h(IconText, { icon: "home", size: 20 }, "Tableau de bord"), subtitle: "Vue d'ensemble de la maintenance" }),
         h("div", { style: { display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 24 } },
-          h(KPICard, { icon: "\uD83D\uDD27", label: "Equipements", value: fmtNum(totalEquip), color: "#6d28d9", onClick: () => onNavigate("equipements") }),
-          h(KPICard, { icon: "\uD83D\uDCC5", label: "Planifiees", value: fmtNum(planifiees), color: "#2563eb", onClick: () => onNavigate("interventions") }),
-          h(KPICard, { icon: "\uD83D\uDD36", label: "En cours", value: fmtNum(enCours), color: "#d97706" }),
-          h(KPICard, { icon: "\u2705", label: "Terminees", value: fmtNum(terminees), color: "#16a34a", onClick: () => onNavigate("historique") }),
-          h(KPICard, { icon: "\u23F0", label: "Visites a declencher", value: fmtNum(visitesADeclencher), color: visitesADeclencher > 0 ? "#dc2626" : "#16a34a", onClick: () => onNavigate("equipements") }),
-          h(KPICard, { icon: "\uD83D\uDD29", label: "Pieces faibles", value: fmtNum(piecesFaibles), color: "#dc2626", onClick: () => onNavigate("pieces") }),
-          h(KPICard, { icon: "\uD83D\uDCCA", label: "Conformite", value: tauxConf + "%", color: tauxConf >= 80 ? "#16a34a" : "#dc2626" })),
+          h(KPICard, { icon: h(Icon, { name: "truck", size: 32, color: "#6d28d9" }), label: "Equipements", value: fmtNum(totalEquip), color: "#6d28d9", onClick: () => onNavigate("equipements") }),
+          h(KPICard, { icon: h(Icon, { name: "calendar", size: 32, color: "#2563eb" }), label: "Planifiees", value: fmtNum(planifiees), color: "#2563eb", onClick: () => onNavigate("interventions") }),
+          h(KPICard, { icon: h(Icon, { name: "clock", size: 32, color: "#d97706" }), label: "En cours", value: fmtNum(enCours), color: "#d97706" }),
+          h(KPICard, { icon: h(Icon, { name: "check-circle", size: 32, color: "#16a34a" }), label: "Terminees", value: fmtNum(terminees), color: "#16a34a", onClick: () => onNavigate("historique") }),
+          h(KPICard, { icon: h(Icon, { name: "bell-ring", size: 32, color: visitesADeclencher > 0 ? "#dc2626" : "#16a34a" }), label: "Visites a declencher", value: fmtNum(visitesADeclencher), color: visitesADeclencher > 0 ? "#dc2626" : "#16a34a", onClick: () => onNavigate("equipements") }),
+          h(KPICard, { icon: h(Icon, { name: "alert-triangle", size: 32, color: "#dc2626" }), label: "Pieces faibles", value: fmtNum(piecesFaibles), color: "#dc2626", onClick: () => onNavigate("pieces") }),
+          h(KPICard, { icon: h(Icon, { name: "bar-chart-2", size: 32, color: tauxConf >= 80 ? "#16a34a" : "#dc2626" }), label: "Conformite", value: tauxConf + "%", color: tauxConf >= 80 ? "#16a34a" : "#dc2626" })),
         h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 } },
           h(Card, null,
-            h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, "\u26A0\uFE0F Alertes urgentes"),
+            h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, h(IconText, { icon: "alert-triangle", size: 16, color: "#dc2626" }, "Alertes urgentes")),
             urgents.length === 0 ? h("p", { style: { color: "#9ca3af", textAlign: "center", padding: 20 } }, "Aucune alerte") :
               h("div", { style: { display: "flex", flexDirection: "column", gap: 8 } },
                 urgents.map((u) => h("div", { key: u.Id, style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "#fef2f2", borderRadius: 8, borderLeft: "4px solid #dc2626" } },
@@ -321,7 +355,7 @@
                     h("div", { style: { fontSize: 12, color: "#6b7280" } }, u.Equipement + " \u2014 " + u.Technicien)),
                   h(StatusBadge, { status: u.Statut_Intervention }))))),
           h(Card, null,
-            h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, "\uD83D\uDCCB Plans de maintenance"),
+            h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, h(IconText, { icon: "clipboard-list", size: 16, color: "#1f2937" }, "Plans de maintenance")),
             plans.length === 0 ? h("p", { style: { color: "#9ca3af", textAlign: "center", padding: 20 } }, "Aucun plan") :
               h("div", { style: { display: "flex", flexDirection: "column", gap: 8 } },
                 plans.slice(0, 5).map((p) => h("div", { key: p.Id, style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "#f9fafb", borderRadius: 8 } },
@@ -330,10 +364,10 @@
                     h("div", { style: { fontSize: 12, color: "#6b7280" } }, p.Frequence + " \u2014 Prochain: " + (p.ProchainIntervention || "\u2014"))),
                   h(StatusBadge, { status: p.Statut })))))),
         h("div", { style: { display: "flex", gap: 12, marginTop: 24, flexWrap: "wrap" } },
-          h(Button, { onClick: () => onNavigate("interventions") }, "\uD83D\uDD27 Nouvelle intervention"),
-          h(Button, { variant: "secondary", onClick: () => onNavigate("equipements") }, "\u2699\uFE0F Equipements"),
-          h(Button, { variant: "secondary", onClick: () => onNavigate("plans") }, "\uD83D\uDCCB Plans"),
-          h(Button, { variant: "secondary", onClick: () => onNavigate("pieces") }, "\uD83D\uDD29 Pieces")));
+          h(Button, { onClick: () => onNavigate("interventions") }, h(IconText, { icon: "wrench", size: 14 }, "Nouvelle intervention")),
+          h(Button, { variant: "secondary", onClick: () => onNavigate("equipements") }, h(IconText, { icon: "settings", size: 14 }, "Equipements")),
+          h(Button, { variant: "secondary", onClick: () => onNavigate("plans") }, h(IconText, { icon: "clipboard-list", size: 14 }, "Plans")),
+          h(Button, { variant: "secondary", onClick: () => onNavigate("pieces") }, h(IconText, { icon: "package", size: 14 }, "Pieces"))));
     }
 
     // ─── Formulaire Plan ────────────────────────────────────────────────
@@ -359,7 +393,7 @@
         h(FormField, { label: "Prochaine intervention" }, h("input", { type: "date", style: inputStyle, value: f.ProchainIntervention, onChange: (e) => upd("ProchainIntervention", e.target.value) })),
         h("div", { style: { display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 20 } },
           h(Button, { variant: "secondary", onClick: onCancel, disabled: saving }, "Annuler"),
-          h(Button, { onClick: submit, disabled: saving }, saving ? "Enregistrement..." : "\uD83D\uDCBE Enregistrer")));
+          h(Button, { onClick: submit, disabled: saving }, saving ? "Enregistrement..." : h(IconText, { icon: "save", size: 14 }, "Enregistrer"))));
     }
 
     // ─── Ecran Plans ────────────────────────────────────────────────────
@@ -378,7 +412,7 @@
       const openNew = () => { setEditing(null); setShowModal(true); };
       const handleConfirmDelete = async () => { if (toDelete) { await deletePlan(toDelete.Id); setToDelete(null); } };
       return h("div", null,
-        h(PageHeader, { title: "\uD83D\uDCCB Plans de maintenance", subtitle: plans.length + " plans au total", action: h(Button, { onClick: openNew }, "+ Nouveau plan") }),
+        h(PageHeader, { title: h(IconText, { icon: "clipboard-list", size: 20 }, "Plans de maintenance"), subtitle: plans.length + " plans au total", action: h(Button, { onClick: openNew }, "+ Nouveau plan") }),
         h("div", { style: { marginBottom: 16 } }, h(SearchInput, { placeholder: "Rechercher un plan...", value: search, onChange: setSearch })),
         h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: 12 } },
           filtered.length === 0 ? h(Card, null, h("p", { style: { textAlign: "center", color: "#9ca3af", padding: 20 } }, "Aucun plan trouve")) :
@@ -389,12 +423,12 @@
                   h("div", { style: { fontSize: 12, color: "#6b7280", marginTop: 2 } }, p.Frequence)),
                 h("div", { style: { display: "flex", gap: 4, alignItems: "center" } },
                   h(StatusBadge, { status: p.Statut }),
-                  h("button", { onClick: () => openEdit(p), style: { background: "transparent", border: "none", cursor: "pointer", fontSize: 16, padding: 4 }, title: "Modifier" }, "\u270F\uFE0F"),
-                  h("button", { onClick: () => setToDelete(p), style: { background: "transparent", border: "none", cursor: "pointer", fontSize: 16, padding: 4, color: "#dc2626" }, title: "Supprimer" }, "\uD83D\uDDD1\uFE0F"))),
+                  h("button", { onClick: () => openEdit(p), style: { background: "transparent", border: "none", cursor: "pointer", fontSize: 16, padding: 4 }, title: "Modifier" }, h(Icon, { name: "pencil", size: 15 })),
+                  h("button", { onClick: () => setToDelete(p), style: { background: "transparent", border: "none", cursor: "pointer", fontSize: 16, padding: 4, color: "#dc2626" }, title: "Supprimer" }, h(Icon, { name: "trash-2", size: 15, color: "#dc2626" })))),
               h("div", { style: { fontSize: 13, color: "#4b5563", marginBottom: 10 } }, p.Description),
               h("div", { style: { fontSize: 12, color: "#6b7280", display: "flex", flexDirection: "column", gap: 4 } },
-                p.Equipements && h("div", null, "\uD83D\uDD27 Equipements: " + p.Equipements),
-                p.ProchainIntervention && h("div", null, "\uD83D\uDCC5 Prochaine: " + p.ProchainIntervention))))),
+                p.Equipements && h("div", null, h(IconText, { icon: "wrench", size: 12, color: "#6b7280" }, "Equipements: ") + p.Equipements),
+                p.ProchainIntervention && h("div", null, h(IconText, { icon: "calendar", size: 12, color: "#6b7280" }, "Prochaine: ") + p.ProchainIntervention))))),
         showModal && h(Modal, { title: editing ? "Modifier le plan" : "Nouveau plan de maintenance", onClose: () => { setShowModal(false); setEditing(null); } },
           h(PlanForm, { onSave: handleSave, onCancel: () => { setShowModal(false); setEditing(null); }, editItem: editing })),
         toDelete && h(ConfirmDialog, { title: "Supprimer le plan ?", message: "Confirmer la suppression du plan \"" + toDelete.Title + "\" ?", onConfirm: handleConfirmDelete, onCancel: () => setToDelete(null) }));
@@ -421,8 +455,8 @@
         finally { setSaving(false); }
       };
       return h("div", null,
-        h(PageHeader, { title: editItem ? "\u270F\uFE0F Modifier l'intervention" : "\uD83D\uDD27 Nouvelle intervention", subtitle: "Saisir les informations" }),
-        saved && h("div", { style: { background: "#dcfce7", border: "1px solid #86efac", borderRadius: 8, padding: "12px 16px", marginBottom: 16, color: "#166534", fontWeight: 600 } }, "\u2705 Intervention enregistree !"),
+        h(PageHeader, { title: editItem ? h(IconText, { icon: "pencil", size: 20 }, "Modifier l'intervention") : h(IconText, { icon: "wrench", size: 20 }, "Nouvelle intervention"), subtitle: "Saisir les informations" }),
+        saved && h("div", { style: { background: "#dcfce7", border: "1px solid #86efac", borderRadius: 8, padding: "12px 16px", marginBottom: 16, color: "#166534", fontWeight: 600 } }, h(IconText, { icon: "check-circle", size: 16, color: "#166534" }, "Intervention enregistree !")),
         h(Card, null,
           h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 } },
             h(FormField, { label: "Titre / Description" }, h("input", { style: inputStyle, value: f.Title, onChange: (e) => upd("Title", e.target.value), placeholder: "Ex: Vidange D36" })),
@@ -444,7 +478,7 @@
               h(FormField, { label: "Travaux effectues" }, h("textarea", { style: { ...inputStyle, minHeight: 80, resize: "vertical" }, value: f.Travaux_Effectues, onChange: (e) => upd("Travaux_Effectues", e.target.value), placeholder: "Decrivez les travaux..." })))),
           h("div", { style: { display: "flex", gap: 12, marginTop: 20, justifyContent: "flex-end" } },
             h(Button, { variant: "secondary", onClick: () => onNavigate("accueil"), disabled: saving }, "Annuler"),
-            h(Button, { onClick: submit, disabled: saving }, saving ? "Enregistrement..." : (editItem ? "\uD83D\uDCBE Modifier" : "\uD83D\uDCBE Enregistrer")))));
+            h(Button, { onClick: submit, disabled: saving }, saving ? "Enregistrement..." : (editItem ? h(IconText, { icon: "save", size: 14 }, "Modifier") : h(IconText, { icon: "save", size: 14 }, "Enregistrer"))))));
     }
 
     // ─── Formulaire Equipement ──────────────────────────────────────────
@@ -477,15 +511,15 @@
             typesDispos.length === 0 ? h("option", { value: "" }, "(aucun, ajoutez dans Parametres)") : typesDispos.map((x) => h("option", { key: x, value: x }, x)))),
           h(FormField, { label: "Localisation" }, h("select", { style: selectStyle, value: f.Localisation, onChange: (e) => upd("Localisation", e.target.value) },
             h("option", { value: "" }, "--"), localisations.map((x) => h("option", { key: x, value: x }, x)))),
-          h(FormField, { label: "Horametre (h)" + (horametreEditable ? "" : " \uD83D\uDD12") }, h("input", { type: "number", style: horametreEditable ? inputStyle : lockedInput, value: f.Horametre, onChange: (e) => upd("Horametre", e.target.value), readOnly: !horametreEditable, title: horametreEditable ? "" : "Reserve a l'admin. Utilisez un releve pour mettre a jour." })),
-          h(FormField, { label: "Kilometrage (km)" + (horametreEditable ? "" : " \uD83D\uDD12") }, h("input", { type: "number", style: horametreEditable ? inputStyle : lockedInput, value: f.KM, onChange: (e) => upd("KM", e.target.value), readOnly: !horametreEditable, title: horametreEditable ? "" : "Reserve a l'admin. Utilisez un releve pour mettre a jour." })),
+          h(FormField, { label: "Horametre (h)" + (horametreEditable ? "" : " (admin)") }, h("input", { type: "number", style: horametreEditable ? inputStyle : lockedInput, value: f.Horametre, onChange: (e) => upd("Horametre", e.target.value), readOnly: !horametreEditable, title: horametreEditable ? "" : "Reserve a l'admin. Utilisez un releve pour mettre a jour." })),
+          h(FormField, { label: "Kilometrage (km)" + (horametreEditable ? "" : " (admin)") }, h("input", { type: "number", style: horametreEditable ? inputStyle : lockedInput, value: f.KM, onChange: (e) => upd("KM", e.target.value), readOnly: !horametreEditable, title: horametreEditable ? "" : "Reserve a l'admin. Utilisez un releve pour mettre a jour." })),
           h(FormField, { label: "Statut" }, h("select", { style: selectStyle, value: f.Statut, onChange: (e) => upd("Statut", e.target.value) },
             ["En service", "En panne", "En maintenance", "Reforme"].map((x) => h("option", { key: x, value: x }, x)))),
           h(FormField, { label: "Mise en service" }, h("input", { type: "date", style: inputStyle, value: f.DateMiseEnService, onChange: (e) => upd("DateMiseEnService", e.target.value) }))),
-        !horametreEditable && h("p", { style: { fontSize: 12, color: "#6b7280", marginTop: 8, fontStyle: "italic" } }, "\uD83D\uDD12 Les champs Horametre et Kilometrage sont modifiables uniquement par l'admin. Utilisez la fonction \"+ Releve H/KM\" pour enregistrer une nouvelle valeur."),
+        !horametreEditable && h("p", { style: { fontSize: 12, color: "#6b7280", marginTop: 8, fontStyle: "italic" } }, h("span", { style: { display: "inline-flex", alignItems: "center", gap: 6 } }, h(Icon, { name: "lock", size: 12, color: "#6b7280" }), "Les champs Horametre et Kilometrage sont modifiables uniquement par l'admin. Utilisez la fonction \"+ Releve H/KM\" pour enregistrer une nouvelle valeur."),
         h("div", { style: { display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 20 } },
           h(Button, { variant: "secondary", onClick: onCancel, disabled: saving }, "Annuler"),
-          h(Button, { onClick: submit, disabled: saving }, saving ? "Enregistrement..." : "\uD83D\uDCBE Enregistrer")));
+          h(Button, { onClick: submit, disabled: saving }, saving ? "Enregistrement..." : h(IconText, { icon: "save", size: 14 }, "Enregistrer"))));
     }
 
     // ─── Ecran Equipements ──────────────────────────────────────────────
@@ -511,10 +545,10 @@
       const nbVL = equipements.filter((e) => e.Categorie === "VL").length;
       const tabStyle = (active) => ({ padding: "10px 20px", background: active ? "#6d28d9" : "white", color: active ? "white" : "#6d28d9", borderRadius: 8, fontWeight: 600, cursor: "pointer", fontSize: 14, border: "2px solid #6d28d9", transition: "all 0.2s" });
       return h("div", null,
-        h(PageHeader, { title: "\u2699\uFE0F Equipements", subtitle: equipements.length + " equipements (" + nbEngins + " engins / " + nbVL + " VL)", action: h(Button, { onClick: openNew }, "+ Nouvel equipement") }),
+        h(PageHeader, { title: h(IconText, { icon: "settings", size: 20 }, "Equipements"), subtitle: equipements.length + " equipements (" + nbEngins + " engins / " + nbVL + " VL)", action: h(Button, { onClick: openNew }, "+ Nouvel equipement") }),
         h("div", { style: { display: "flex", gap: 8, marginBottom: 16 } },
-          h("button", { onClick: () => setOnglet("Engin"), style: tabStyle(onglet === "Engin") }, "\uD83D\uDEA7 Engins (" + nbEngins + ")"),
-          h("button", { onClick: () => setOnglet("VL"), style: tabStyle(onglet === "VL") }, "\uD83D\uDE9A VL (" + nbVL + ")")),
+          h("button", { onClick: () => setOnglet("Engin"), style: tabStyle(onglet === "Engin") }, h(IconText, { icon: "hard-hat", size: 14 }, "Engins (" + nbEngins + ")")),
+          h("button", { onClick: () => setOnglet("VL"), style: tabStyle(onglet === "VL") }, h(IconText, { icon: "car", size: 14 }, "VL (" + nbVL + ")"))),
         h("div", { style: { marginBottom: 16 } }, h(SearchInput, { placeholder: "Rechercher par code, nom, type...", value: search, onChange: setSearch })),
         h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 12 } },
           filtered.length === 0 ? h(Card, null, h("p", { style: { textAlign: "center", color: "#9ca3af", padding: 20 } }, "Aucun " + (onglet === "Engin" ? "engin" : "VL"))) :
@@ -528,15 +562,15 @@
                 h("div", { style: { display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" } },
                   h("div", { style: { display: "flex", gap: 4, alignItems: "center" } },
                     h(StatusBadge, { status: eq.Statut }),
-                    h("button", { onClick: (e) => openEdit(eq, e), style: { background: "transparent", border: "none", cursor: "pointer", fontSize: 15, padding: 4 }, title: "Modifier" }, "\u270F\uFE0F"),
-                    h("button", { onClick: (e) => askDelete(eq, e), style: { background: "transparent", border: "none", cursor: "pointer", fontSize: 15, padding: 4, color: "#dc2626" }, title: "Supprimer" }, "\uD83D\uDDD1\uFE0F")),
-                  visitesDues > 0 && h("span", { style: { background: "#fee2e2", color: "#991b1b", padding: "4px 10px", borderRadius: 20, fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" } }, "\u23F0 " + visitesDues + " visite" + (visitesDues > 1 ? "s" : "") + " due" + (visitesDues > 1 ? "s" : "")))),
+                    h("button", { onClick: (e) => openEdit(eq, e), style: { background: "transparent", border: "none", cursor: "pointer", fontSize: 15, padding: 4 }, title: "Modifier" }, h(Icon, { name: "pencil", size: 15 })),
+                    h("button", { onClick: (e) => askDelete(eq, e), style: { background: "transparent", border: "none", cursor: "pointer", fontSize: 15, padding: 4, color: "#dc2626" }, title: "Supprimer" }, h(Icon, { name: "trash-2", size: 15, color: "#dc2626" }))),
+                  visitesDues > 0 && h("span", { style: { background: "#fee2e2", color: "#991b1b", padding: "4px 10px", borderRadius: 20, fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" } }, h(IconText, { icon: "bell-ring", size: 12, color: "#991b1b" }, visitesDues + " visite") + (visitesDues > 1 ? "s" : "") + " due" + (visitesDues > 1 ? "s" : "")))),
               h("div", { style: { display: "flex", flexDirection: "column", gap: 4, fontSize: 13, color: "#6b7280" } },
-                h("span", null, "\uD83D\uDCE6 Type: " + eq.Type),
-                eq.Localisation && h("span", null, "\uD83D\uDCCD Localisation: " + eq.Localisation),
-                h("span", null, "\u23F1\uFE0F Horametre: " + fmtNum(eq.Horametre) + " h"),
-                (eq.KM && eq.KM !== "0") && h("span", null, "\uD83D\uDEE3\uFE0F KM: " + fmtNum(eq.KM)),
-                eq.DateMiseEnService && h("span", null, "\uD83D\uDCC5 Mise en service: " + eq.DateMiseEnService)));
+                h("span", null, h(IconText, { icon: "box", size: 12, color: "#6b7280" }, "Type: " + eq.Type)),
+                eq.Localisation && h("span", null, h(IconText, { icon: "map-pin", size: 12, color: "#6b7280" }, "Localisation: " + eq.Localisation)),
+                h("span", null, h(IconText, { icon: "timer", size: 12, color: "#6b7280" }, "Horametre: " + fmtNum(eq.Horametre) + " h")),
+                (eq.KM && eq.KM !== "0") && h("span", null, h(IconText, { icon: "milestone", size: 12, color: "#6b7280" }, "KM: " + fmtNum(eq.KM))),
+                eq.DateMiseEnService && h("span", null, h(IconText, { icon: "calendar", size: 12, color: "#6b7280" }, "Mise en service: " + eq.DateMiseEnService))));
           })),
         showModal && h(Modal, { title: editing ? "Modifier l'equipement" : "Nouvel equipement", onClose: () => { setShowModal(false); setEditing(null); } },
           h(EquipementForm, { onSave: handleSave, onCancel: () => { setShowModal(false); setEditing(null); }, editItem: editing || { Title: "", Nom: "", Categorie: onglet, Type: onglet === "VL" ? "Vehicule leger" : "Engin de chantier", Localisation: "Zone A", Horametre: "0", KM: "0", Statut: "En service", DateMiseEnService: new Date().toISOString().split("T")[0] } })),
@@ -547,7 +581,7 @@
     function EcranFicheEquipement({ onNavigate, equipement }) {
       const { interventions, releves, addReleve, deleteReleve, plans, pieces, piecesEquipements, linkPieceEquipement, unlinkPieceEquipement, isAdmin } = useAppData();
       const eq = equipement;
-      if (!eq) return h("div", null, h(Button, { variant: "secondary", onClick: () => onNavigate("equipements") }, "\u2190 Retour"));
+      if (!eq) return h("div", null, h(Button, { variant: "secondary", onClick: () => onNavigate("equipements") }, h(IconText, { icon: "arrow-left", size: 14 }, "Retour")));
       const eqInterventions = interventions.filter((i) => i.EquipementId === eq.Id || i.Equipement === eq.Title);
       const eqReleves = releves.filter((r) => r.EquipementId === eq.Id || r.Equipement === eq.Title).sort((a, b) => (b.Date || "").localeCompare(a.Date || ""));
       const releveAsc = [...eqReleves].reverse();
@@ -584,11 +618,11 @@
       const dataKM = releveAsc.filter((r) => r.KM && r.KM !== "" && r.KM !== "0").map((r) => ({ date: r.Date, value: parseFloat(r.KM) }));
 
       return h("div", null,
-        h(PageHeader, { title: "\uD83D\uDCCB " + eq.Title + " \u2014 " + eq.Nom, subtitle: "Details et historique", action: h("div", { style: { display: "flex", gap: 8 } },
-          h(Button, { variant: "secondary", onClick: () => onNavigate("equipements") }, "\u2190 Retour"),
+        h(PageHeader, { title: h(IconText, { icon: "clipboard-list", size: 20 }, eq.Title + " \u2014 " + eq.Nom), subtitle: "Details et historique", action: h("div", { style: { display: "flex", gap: 8 } },
+          h(Button, { variant: "secondary", onClick: () => onNavigate("equipements") }, h(IconText, { icon: "arrow-left", size: 14 }, "Retour")),
           h(Button, { onClick: () => setShowReleveModal(true) }, "+ Releve H/KM")) }),
         visitesDues > 0 && h("div", { style: { background: "#fef2f2", border: "1px solid #fca5a5", color: "#991b1b", padding: "12px 16px", borderRadius: 8, marginBottom: 16, fontWeight: 600, display: "flex", alignItems: "center", gap: 10 } },
-          h("span", { style: { fontSize: 20 } }, "\u23F0"),
+          h(Icon, { name: "bell-ring", size: 20, color: "#991b1b" }),
           visitesDues + " visite" + (visitesDues > 1 ? "s" : "") + " preventive" + (visitesDues > 1 ? "s" : "") + " a declencher sur cet equipement"),
         h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 24 } },
           h(Card, null,
@@ -608,16 +642,16 @@
                   h("div", { style: { fontSize: 12, color: "#6b7280" } }, l)))))),
         // Graphique Horametre
         dataHor.length >= 2 && h(Card, { style: { marginBottom: 20 } },
-          h("h3", { style: { margin: "0 0 12px", fontSize: 16, fontWeight: 700 } }, "\uD83D\uDCC8 Evolution Horametre"),
+          h("h3", { style: { margin: "0 0 12px", fontSize: 16, fontWeight: 700 } }, h(IconText, { icon: "trending-up", size: 16 }, "Evolution Horametre")),
           h(LineChart, { data: dataHor, color: "#6d28d9", unit: " h" })),
         // Graphique Kilometre
         dataKM.length >= 2 && h(Card, { style: { marginBottom: 20 } },
-          h("h3", { style: { margin: "0 0 12px", fontSize: 16, fontWeight: 700 } }, "\uD83D\uDCC8 Evolution Kilometrage"),
+          h("h3", { style: { margin: "0 0 12px", fontSize: 16, fontWeight: 700 } }, h(IconText, { icon: "trending-up", size: 16 }, "Evolution Kilometrage")),
           h(LineChart, { data: dataKM, color: "#2563eb", unit: " km" })),
         // Zone Pieces detachees liees
         h(Card, { style: { marginBottom: 20 } },
           h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 } },
-            h("h3", { style: { margin: 0, fontSize: 16, fontWeight: 700 } }, "\uD83D\uDD29 Pieces detachees liees (" + piecesLiees.length + ")"),
+            h("h3", { style: { margin: 0, fontSize: 16, fontWeight: 700 } }, h(IconText, { icon: "package", size: 16 }, "Pieces detachees liees (" + piecesLiees.length + ")")),
             h(Button, { variant: "secondary", onClick: () => setShowPieceModal(true), style: { padding: "8px 14px", fontSize: 13 } }, "+ Lier une piece")),
           piecesLiees.length === 0 ? h("p", { style: { textAlign: "center", color: "#9ca3af", padding: 20 } }, "Aucune piece liee. Cliquez sur '+ Lier une piece' pour en ajouter.") :
             h("div", { style: { overflowX: "auto" } },
@@ -635,10 +669,10 @@
                     h("td", { style: { padding: "10px 12px" } }, fmtMoney(p.PrixUnitaire)),
                     h("td", { style: { padding: "10px 12px" } }, h(StatusBadge, { status: stAct })),
                     h("td", { style: { padding: "10px 12px" } },
-                      h("button", { onClick: async () => { if (confirm("Retirer cette piece de l'equipement ?")) await unlinkPieceEquipement(p.Id, eq.Id); }, style: { background: "transparent", border: "none", cursor: "pointer", fontSize: 16, padding: 4, color: "#dc2626" }, title: "Retirer" }, "\uD83D\uDDD1\uFE0F")));
+                      h("button", { onClick: async () => { if (confirm("Retirer cette piece de l'equipement ?")) await unlinkPieceEquipement(p.Id, eq.Id); }, style: { background: "transparent", border: "none", cursor: "pointer", fontSize: 16, padding: 4, color: "#dc2626" }, title: "Retirer" }, h(Icon, { name: "trash-2", size: 15, color: "#dc2626" }))));
                 }))))),
         h(Card, { style: { marginBottom: 20 } },
-          h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, "\u23F1\uFE0F Historique Horametre / KM"),
+          h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, h(IconText, { icon: "timer", size: 16 }, "Historique Horametre / KM")),
           eqReleves.length === 0 ? h("p", { style: { textAlign: "center", color: "#9ca3af", padding: 20 } }, "Aucun releve") :
             h("div", { style: { overflowX: "auto" } },
               h("table", { style: { width: "100%", borderCollapse: "collapse", fontSize: 13 } },
@@ -656,11 +690,11 @@
                     h("td", { style: { padding: "10px 12px" } }, r.Technicien || "\u2014"),
                     h("td", { style: { padding: "10px 12px", textAlign: "right" } },
                       isAdmin
-                        ? h("button", { onClick: () => setReleveToDelete(r), style: { background: "transparent", border: "none", cursor: "pointer", fontSize: 15, padding: 4, color: "#dc2626" }, title: "Supprimer ce releve" }, "\uD83D\uDDD1\uFE0F")
-                        : h("span", { style: { color: "#d1d5db", fontSize: 14 }, title: "Reserve a l'admin" }, "\uD83D\uDD12")));
+                        ? h("button", { onClick: () => setReleveToDelete(r), style: { background: "transparent", border: "none", cursor: "pointer", fontSize: 15, padding: 4, color: "#dc2626" }, title: "Supprimer ce releve" }, h(Icon, { name: "trash-2", size: 15, color: "#dc2626" }))
+                        : h(Icon, { name: "lock", size: 14, color: "#d1d5db" })));
                 }))))),
         h(Card, null,
-          h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, "\uD83D\uDD27 Historique des interventions"),
+          h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, h(IconText, { icon: "wrench", size: 16 }, "Historique des interventions")),
           eqInterventions.length === 0 ? h("p", { style: { textAlign: "center", color: "#9ca3af", padding: 20 } }, "Aucune intervention") :
             h("div", { style: { overflowX: "auto" } },
               h("table", { style: { width: "100%", borderCollapse: "collapse", fontSize: 13 } },
@@ -682,7 +716,7 @@
             h(FormField, { label: "Kilometrage (km)" }, h("input", { type: "number", style: inputStyle, value: newReleve.KM, onChange: (e) => setNewReleve((p) => ({ ...p, KM: e.target.value })), placeholder: "Ex: 20500" }))),
           h("div", { style: { display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 20 } },
             h(Button, { variant: "secondary", onClick: () => setShowReleveModal(false), disabled: saving }, "Annuler"),
-            h(Button, { onClick: submitReleve, disabled: saving }, saving ? "Enregistrement..." : "\uD83D\uDCBE Enregistrer"))),
+            h(Button, { onClick: submitReleve, disabled: saving }, saving ? "Enregistrement..." : h(IconText, { icon: "save", size: 14 }, "Enregistrer")))),
         showPieceModal && h(Modal, { title: "Lier une piece detachee a " + eq.Title, onClose: () => setShowPieceModal(false), size: 640 },
           h("div", { style: { marginBottom: 12 } }, h(SearchInput, { placeholder: "Rechercher reference ou designation...", value: pieceSearch, onChange: setPieceSearch })),
           piecesNonLieesFilter.length === 0 ?
@@ -716,7 +750,7 @@
         return mt && mm && md && mi && ms;
       });
       return h("div", null,
-        h(PageHeader, { title: "\uD83D\uDCDC Historique des interventions", subtitle: interventions.length + " interventions", action: h(Button, { onClick: () => onNavigate("interventions") }, "+ Nouvelle intervention") }),
+        h(PageHeader, { title: h(IconText, { icon: "scroll-text", size: 20 }, "Historique des interventions"), subtitle: interventions.length + " interventions", action: h(Button, { onClick: () => onNavigate("interventions") }, "+ Nouvelle intervention") }),
         h(Card, { style: { marginBottom: 16 } },
           h("div", { style: { display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12 } },
             h(SearchInput, { placeholder: "Travaux...", value: sT, onChange: setST }),
@@ -731,15 +765,15 @@
                 h("div", { style: { flex: 1, cursor: "pointer" }, onClick: () => onNavigate("interventions", item) },
                   h("div", { style: { fontWeight: 700, fontSize: 14, marginBottom: 4 } }, item.Travaux_Effectues || item.Title),
                   h("div", { style: { display: "flex", gap: 16, fontSize: 13, color: "#6b7280", flexWrap: "wrap" } },
-                    h("span", null, "\uD83C\uDFD7\uFE0F " + item.Equipement),
-                    h("span", null, "\uD83D\uDCC5 " + item.Date_Intervention),
-                    item.Technicien && h("span", null, "\uD83D\uDC77 " + item.Technicien),
-                    item.Horametre && h("span", null, "\u23F1\uFE0F " + fmtNum(item.Horametre) + " h"),
-                    item.Type && h("span", null, (item.Type === "Preventive" ? "\uD83D\uDD35 " : "\uD83D\uDD34 ") + item.Type))),
+                    h("span", null, h(IconText, { icon: "hard-hat", size: 12, color: "#6b7280" }, item.Equipement)),
+                    h("span", null, h(IconText, { icon: "calendar", size: 12, color: "#6b7280" }, item.Date_Intervention)),
+                    item.Technicien && h("span", null, h(IconText, { icon: "user", size: 12, color: "#6b7280" }, item.Technicien)),
+                    item.Horametre && h("span", null, h(IconText, { icon: "timer", size: 12, color: "#6b7280" }, fmtNum(item.Horametre) + " h")),
+                    item.Type && h("span", null, h(IconText, { icon: item.Type === "Preventive" ? "shield-check" : "flame", size: 12, color: item.Type === "Preventive" ? "#2563eb" : "#dc2626" }, item.Type)))),
                 h("div", { style: { display: "flex", gap: 6, alignItems: "center" } },
                   h(StatusBadge, { status: item.Statut_Intervention }),
-                  h("button", { onClick: () => onNavigate("interventions", item), style: { background: "transparent", border: "none", cursor: "pointer", fontSize: 16, padding: 4 }, title: "Modifier" }, "\u270F\uFE0F"),
-                  h("button", { onClick: () => setToDelete(item), style: { background: "transparent", border: "none", cursor: "pointer", fontSize: 16, padding: 4, color: "#dc2626" }, title: "Supprimer" }, "\uD83D\uDDD1\uFE0F")))))),
+                  h("button", { onClick: () => onNavigate("interventions", item), style: { background: "transparent", border: "none", cursor: "pointer", fontSize: 16, padding: 4 }, title: "Modifier" }, h(Icon, { name: "pencil", size: 15 })),
+                  h("button", { onClick: () => setToDelete(item), style: { background: "transparent", border: "none", cursor: "pointer", fontSize: 16, padding: 4, color: "#dc2626" }, title: "Supprimer" }, h(Icon, { name: "trash-2", size: 15, color: "#dc2626" }))))))),
         toDelete && h(ConfirmDialog, { title: "Supprimer l'intervention ?", message: "Confirmer la suppression de \"" + (toDelete.Title || toDelete.Travaux_Effectues || "intervention") + "\" ?", onConfirm: async () => { await deleteIntervention(toDelete.Id); setToDelete(null); }, onCancel: () => setToDelete(null) }));
     }
 
@@ -768,7 +802,7 @@
         h(FormField, { label: "Compatible avec" }, h("input", { style: inputStyle, value: f.Compatible, onChange: (e) => upd("Compatible", e.target.value), placeholder: "Ex: 427 686 NC ou Tous" })),
         h("div", { style: { display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 20 } },
           h(Button, { variant: "secondary", onClick: onCancel, disabled: saving }, "Annuler"),
-          h(Button, { onClick: submit, disabled: saving }, saving ? "Enregistrement..." : "\uD83D\uDCBE Enregistrer")));
+          h(Button, { onClick: submit, disabled: saving }, saving ? "Enregistrement..." : h(IconText, { icon: "save", size: 14 }, "Enregistrer"))));
     }
 
     // ─── Ecran Pieces ───────────────────────────────────────────────────
@@ -801,11 +835,11 @@
       const openNew = () => { setEditing(null); setShowModal(true); };
 
       return h("div", null,
-        h(PageHeader, { title: "\uD83D\uDD29 Pieces detachees", subtitle: pieces.length + " references \u2014 " + fmtMoney(totalValeur) + " en stock", action: h(Button, { onClick: openNew }, "+ Nouvelle piece") }),
+        h(PageHeader, { title: h(IconText, { icon: "package", size: 20 }, "Pieces detachees"), subtitle: pieces.length + " references \u2014 " + fmtMoney(totalValeur) + " en stock", action: h(Button, { onClick: openNew }, "+ Nouvelle piece") }),
         h("div", { style: { display: "flex", gap: 16, marginBottom: 16, flexWrap: "wrap" } },
-          h(KPICard, { icon: "\uD83D\uDD29", label: "References", value: fmtNum(pieces.length), color: "#6d28d9" }),
-          h(KPICard, { icon: "\u26A0\uFE0F", label: "Stock faible", value: fmtNum(faibles), color: "#d97706" }),
-          h(KPICard, { icon: "\uD83D\uDCB0", label: "Valeur stock", value: fmtMoney(totalValeur), color: "#16a34a" })),
+          h(KPICard, { icon: h(Icon, { name: "package", size: 32, color: "#6d28d9" }), label: "References", value: fmtNum(pieces.length), color: "#6d28d9" }),
+          h(KPICard, { icon: h(Icon, { name: "alert-triangle", size: 32, color: "#d97706" }), label: "Stock faible", value: fmtNum(faibles), color: "#d97706" }),
+          h(KPICard, { icon: h(Icon, { name: "coins", size: 32, color: "#16a34a" }), label: "Valeur stock", value: fmtMoney(totalValeur), color: "#16a34a" })),
         h("div", { style: { display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap" } },
           h("div", { style: { flex: 1, minWidth: 250 } }, h(SearchInput, { placeholder: "Reference, designation, fournisseur...", value: search, onChange: setSearch })),
           h("select", { value: categorie, onChange: (e) => setCategorie(e.target.value), style: { ...selectStyle, width: "auto", minWidth: 180 } },
@@ -828,8 +862,8 @@
                   h("td", { style: { padding: "10px 12px", fontSize: 12 } }, p.Compatible),
                   h("td", { style: { padding: "10px 12px" } }, h(StatusBadge, { status: statusOf(p) })),
                   h("td", { style: { padding: "10px 12px", whiteSpace: "nowrap" } },
-                    h("button", { onClick: () => openEdit(p), style: { background: "transparent", border: "none", cursor: "pointer", fontSize: 16, padding: 4 }, title: "Modifier" }, "\u270F\uFE0F"),
-                    h("button", { onClick: () => setToDelete(p), style: { background: "transparent", border: "none", cursor: "pointer", fontSize: 16, padding: 4, color: "#dc2626" }, title: "Supprimer" }, "\uD83D\uDDD1\uFE0F")))))))),
+                    h("button", { onClick: () => openEdit(p), style: { background: "transparent", border: "none", cursor: "pointer", fontSize: 16, padding: 4 }, title: "Modifier" }, h(Icon, { name: "pencil", size: 15 })),
+                    h("button", { onClick: () => setToDelete(p), style: { background: "transparent", border: "none", cursor: "pointer", fontSize: 16, padding: 4, color: "#dc2626" }, title: "Supprimer" }, h(Icon, { name: "trash-2", size: 15, color: "#dc2626" }))))))))),
         showModal && h(Modal, { title: editing ? "Modifier la piece" : "Nouvelle piece detachee", onClose: () => { setShowModal(false); setEditing(null); } },
           h(PieceForm, { onSave: handleSave, onCancel: () => { setShowModal(false); setEditing(null); }, editItem: editing })),
         toDelete && h(ConfirmDialog, { title: "Supprimer la piece ?", message: "Confirmer la suppression de \"" + toDelete.Reference + " - " + toDelete.Designation + "\" ?", onConfirm: async () => { await deletePiece(toDelete.Id); setToDelete(null); }, onCancel: () => setToDelete(null) }));
@@ -841,18 +875,18 @@
         h("p", { style: { fontSize: 14, color: "#374151", marginBottom: 20 } }, message || "Etes-vous sur ?"),
         h("div", { style: { display: "flex", gap: 10, justifyContent: "flex-end" } },
           h(Button, { variant: "secondary", onClick: onCancel }, "Annuler"),
-          h(Button, { variant: "danger", onClick: onConfirm }, "\uD83D\uDDD1\uFE0F " + confirmLabel)));
+          h(Button, { variant: "danger", onClick: onConfirm }, h(IconText, { icon: "trash-2", size: 14 }, confirmLabel))));
     }
 
     // ─── Ecran Parametres (gestion des listes deroulantes) ─────────────
     function EcranParametres() {
       const { parametres, addParametre, updateParametre, deleteParametre } = useAppData();
       const categories = [
-        { key: "type_engin", label: "\uD83D\uDEA7 Types d'engin" },
-        { key: "type_vl", label: "\uD83D\uDE9A Types de VL" },
-        { key: "localisation", label: "\uD83D\uDCCD Localisations" },
-        { key: "cat_piece", label: "\uD83D\uDD29 Categories de piece" },
-        { key: "frequence_plan", label: "\uD83D\uDCC5 Frequences de plan" },
+        { key: "type_engin", label: "Types d'engin", lucide: "hard-hat" },
+        { key: "type_vl", label: "Types de VL", lucide: "car" },
+        { key: "localisation", label: "Localisations", lucide: "map-pin" },
+        { key: "cat_piece", label: "Categories de piece", lucide: "package" },
+        { key: "frequence_plan", label: "Frequences de plan", lucide: "calendar" },
       ];
       const [selected, setSelected] = useState("type_engin");
       const [newValeur, setNewValeur] = useState("");
@@ -887,13 +921,13 @@
         await updateParametre(p.id, { valeur: nv.trim() });
       };
       return h("div", null,
-        h(PageHeader, { title: "\u2699\uFE0F Parametres", subtitle: "Gerer les listes deroulantes de l'application" }),
+        h(PageHeader, { title: h(IconText, { icon: "settings", size: 20 }, "Parametres"), subtitle: "Gerer les listes deroulantes de l'application" }),
         h("div", { style: { display: "grid", gridTemplateColumns: "240px 1fr", gap: 16 } },
           // Colonne gauche : categories
           h(Card, { style: { padding: 12 } },
             h("div", { style: { fontSize: 12, color: "#6b7280", fontWeight: 700, textTransform: "uppercase", marginBottom: 8 } }, "Categories"),
             categories.map((c) => h("button", { key: c.key, onClick: () => setSelected(c.key),
-              style: { display: "block", width: "100%", textAlign: "left", padding: "10px 12px", marginBottom: 4, border: "none", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: selected === c.key ? 700 : 500, background: selected === c.key ? "#ede9fe" : "transparent", color: selected === c.key ? "#6d28d9" : "#374151" } }, c.label))),
+              style: { display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left", padding: "10px 12px", marginBottom: 4, border: "none", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: selected === c.key ? 700 : 500, background: selected === c.key ? "#ede9fe" : "transparent", color: selected === c.key ? "#6d28d9" : "#374151" } }, c.lucide && h(Icon, { name: c.lucide, size: 14 }), c.label))),
           // Colonne droite : valeurs
           h(Card, null,
             h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, (categories.find((c) => c.key === selected) || {}).label),
@@ -905,35 +939,35 @@
                 liste.map((p, idx) => h("div", { key: p.id, style: { display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "#f9fafb", borderRadius: 8 } },
                   h("span", { style: { fontSize: 12, color: "#9ca3af", width: 24 } }, idx + 1),
                   h("span", { style: { flex: 1, fontWeight: 600, fontSize: 14 } }, p.valeur),
-                  h("button", { onClick: () => handleMove(p, -1), disabled: idx === 0, style: { background: "transparent", border: "none", cursor: idx === 0 ? "not-allowed" : "pointer", fontSize: 14, padding: 4, opacity: idx === 0 ? 0.3 : 1 }, title: "Monter" }, "\u2B06\uFE0F"),
-                  h("button", { onClick: () => handleMove(p, 1), disabled: idx === liste.length - 1, style: { background: "transparent", border: "none", cursor: idx === liste.length - 1 ? "not-allowed" : "pointer", fontSize: 14, padding: 4, opacity: idx === liste.length - 1 ? 0.3 : 1 }, title: "Descendre" }, "\u2B07\uFE0F"),
-                  h("button", { onClick: () => handleRename(p), style: { background: "transparent", border: "none", cursor: "pointer", fontSize: 14, padding: 4 }, title: "Renommer" }, "\u270F\uFE0F"),
-                  h("button", { onClick: () => setToDelete(p), style: { background: "transparent", border: "none", cursor: "pointer", fontSize: 14, padding: 4, color: "#dc2626" }, title: "Supprimer" }, "\uD83D\uDDD1\uFE0F")))))),
+                  h("button", { onClick: () => handleMove(p, -1), disabled: idx === 0, style: { background: "transparent", border: "none", cursor: idx === 0 ? "not-allowed" : "pointer", fontSize: 14, padding: 4, opacity: idx === 0 ? 0.3 : 1 }, title: "Monter" }, h(Icon, { name: "chevron-up", size: 14 })),
+                  h("button", { onClick: () => handleMove(p, 1), disabled: idx === liste.length - 1, style: { background: "transparent", border: "none", cursor: idx === liste.length - 1 ? "not-allowed" : "pointer", fontSize: 14, padding: 4, opacity: idx === liste.length - 1 ? 0.3 : 1 }, title: "Descendre" }, h(Icon, { name: "chevron-down", size: 14 })),
+                  h("button", { onClick: () => handleRename(p), style: { background: "transparent", border: "none", cursor: "pointer", fontSize: 14, padding: 4 }, title: "Renommer" }, h(Icon, { name: "pencil", size: 15 })),
+                  h("button", { onClick: () => setToDelete(p), style: { background: "transparent", border: "none", cursor: "pointer", fontSize: 14, padding: 4, color: "#dc2626" }, title: "Supprimer" }, h(Icon, { name: "trash-2", size: 15, color: "#dc2626" }))))))),
         toDelete && h(ConfirmDialog, { title: "Supprimer la valeur ?", message: "Confirmer la suppression de \"" + toDelete.valeur + "\" ?", onConfirm: handleConfirmDelete, onCancel: () => setToDelete(null) }));
     }
 
     // ─── Sidebar ────────────────────────────────────────────────────────
     function Sidebar({ currentPage, onNavigate, userEmail, onLogout }) {
       const pages = [
-        { key: "accueil", label: "Accueil", icon: "\uD83C\uDFE0" },
-        { key: "plans", label: "Plans", icon: "\uD83D\uDCCB" },
-        { key: "interventions", label: "Interventions", icon: "\uD83D\uDD27" },
-        { key: "equipements", label: "Equipements", icon: "\u2699\uFE0F" },
-        { key: "pieces", label: "Pieces detachees", icon: "\uD83D\uDD29" },
-        { key: "historique", label: "Historique", icon: "\uD83D\uDCDC" },
-        { key: "parametres", label: "Parametres", icon: "\u2699\uFE0F" },
+        { key: "accueil", label: "Accueil", lucide: "home" },
+        { key: "plans", label: "Plans", lucide: "clipboard-list" },
+        { key: "interventions", label: "Interventions", lucide: "wrench" },
+        { key: "equipements", label: "Equipements", lucide: "settings" },
+        { key: "pieces", label: "Pieces detachees", lucide: "package" },
+        { key: "historique", label: "Historique", lucide: "scroll-text" },
+        { key: "parametres", label: "Parametres", lucide: "sliders-horizontal" },
       ];
       return h("div", { style: { width: 220, background: "#1e1b4b", color: "white", minHeight: "100vh", display: "flex", flexDirection: "column", flexShrink: 0 } },
         h("div", { style: { padding: "20px 16px", borderBottom: "1px solid #312e81" } },
-          h("div", { style: { fontSize: 18, fontWeight: 800, letterSpacing: -0.5 } }, "\uD83D\uDEE0\uFE0F Maintenance"),
+          h("div", { style: { fontSize: 18, fontWeight: 800, letterSpacing: -0.5 } }, h(IconText, { icon: "wrench", size: 18, color: "white", gap: 8 }, "Maintenance")),
           h("div", { style: { fontSize: 11, color: "#a5b4fc", marginTop: 2 } }, "Gestion & Suivi")),
         h("nav", { style: { flex: 1, padding: "12px 8px" } },
           pages.map((p) => h("button", { key: p.key, onClick: () => onNavigate(p.key),
             style: { display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "12px 14px", border: "none", borderRadius: 8, marginBottom: 4, cursor: "pointer", fontSize: 14, fontWeight: currentPage === p.key ? 700 : 500, transition: "all 0.2s", background: currentPage === p.key ? "#4c1d95" : "transparent", color: currentPage === p.key ? "white" : "#c4b5fd" } },
-            h("span", { style: { fontSize: 18 } }, p.icon), p.label))),
+            h(Icon, { name: p.lucide, size: 18, color: currentPage === p.key ? "white" : "#c4b5fd" }), p.label))),
         h("div", { style: { padding: "12px 16px", borderTop: "1px solid #312e81" } },
           h("div", { style: { fontSize: 11, color: "#a5b4fc", marginBottom: 8, wordBreak: "break-all" } }, userEmail || ""),
-          h("button", { onClick: onLogout, style: { width: "100%", padding: "8px 12px", background: "transparent", color: "#c4b5fd", border: "1px solid #4c1d95", borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 600 } }, "\uD83D\uDEAA Deconnexion")));
+          h("button", { onClick: onLogout, style: { width: "100%", padding: "8px 12px", background: "transparent", color: "#c4b5fd", border: "1px solid #4c1d95", borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 600 } }, h(IconText, { icon: "log-out", size: 14, color: "#c4b5fd" }, "Deconnexion"))));
     }
 
     // ─── App principale ─────────────────────────────────────────────────
