@@ -462,8 +462,8 @@
                   h("button", { onClick: () => setToDelete(p), style: { background: "transparent", border: "none", cursor: "pointer", fontSize: 16, padding: 4, color: "#dc2626" }, title: "Supprimer" }, h(Icon, { name: "trash-2", size: 15, color: "#dc2626" })))),
               h("div", { style: { fontSize: 13, color: "#4b5563", marginBottom: 10 } }, p.Description),
               h("div", { style: { fontSize: 12, color: "#6b7280", display: "flex", flexDirection: "column", gap: 4 } },
-                p.Equipements && h("div", null, h(IconText, { icon: "wrench", size: 12, color: "#6b7280" }, "Equipements: ") + p.Equipements),
-                p.ProchainIntervention && h("div", null, h(IconText, { icon: "calendar", size: 12, color: "#6b7280" }, "Prochaine: ") + p.ProchainIntervention))))),
+                p.Equipements && h("div", { style: { display: "flex", alignItems: "center", gap: 4 } }, h(Icon, { name: "wrench", size: 12, color: "#6b7280" }), "Equipements: " + p.Equipements),
+                p.ProchainIntervention && h("div", { style: { display: "flex", alignItems: "center", gap: 4 } }, h(Icon, { name: "calendar", size: 12, color: "#6b7280" }), "Prochaine: " + p.ProchainIntervention))))),
         showModal && h(Modal, { title: editing ? "Modifier le plan" : "Nouveau plan de maintenance", onClose: () => { setShowModal(false); setEditing(null); } },
           h(PlanForm, { onSave: handleSave, onCancel: () => { setShowModal(false); setEditing(null); }, editItem: editing })),
         toDelete && h(ConfirmDialog, { title: "Supprimer le plan ?", message: "Confirmer la suppression du plan \"" + toDelete.Title + "\" ?", onConfirm: handleConfirmDelete, onCancel: () => setToDelete(null) }));
