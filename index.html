@@ -982,21 +982,315 @@
     }
 
     // ─── Ecran Organisation ─────────────────────────────────────────────
+    // ─── Ecran Personnel ──────────────────────────────────────────────
+    var PERSONNEL_STORAGE_KEY = "personnel_data";
+
+    function loadPersonnelFromParametres(parametres) {
+      var row = parametres.find(function(p) { return p.categorie === PERSONNEL_STORAGE_KEY; });
+      if (row && row.valeur) {
+        try { return JSON.parse(row.valeur); } catch(e) { return []; }
+      }
+      return [];
+    }
+
+    function savePersonnel(parametres, newList, setSaving) {
+      setSaving(true);
+      var row = parametres.find(function(p) { return p.categorie === PERSONNEL_STORAGE_KEY; });
+      var jsonVal = JSON.stringify(newList);
+      if (row) {
+        supabase.from("parametres").update({ valeur: jsonVal }).eq("id", row.id).then(function(res) {
+          setSaving(false);
+          if (res.error) { console.error("Erreur sauvegarde personnel:", res.error.message); }
+          else { row.valeur = jsonVal; }
+        });
+      } else {
+        supabase.from("parametres").insert({ categorie: PERSONNEL_STORAGE_KEY, valeur: jsonVal, ordre: 0 }).select().single().then(function(res) {
+          setSaving(false);
+          if (res.error) { console.error("Erreur creation personnel:", res.error.message); }
+          else { parametres.push(res.data); }
+        });
+      }
+    }
+
+    function PersonnelForm({ onSave, onCancel, editItem }) {
+      var _nom = useState(editItem ? editItem.nom : "");
+      var _prenom = useState(editItem ? editItem.prenom : "");
+      var _dateNaissance = useState(editItem ? editItem.dateNaissance : "");
+      var _lieuContrat = useState(editItem ? editItem.lieuContrat : "");
+      var _salaire = useState(editItem ? editItem.salaire : "");
+      var _dateEmbauche = useState(editItem ? editItem.dateEmbauche : "");
+
+      function handleSubmit() {
+        if (!_nom[0].trim() || !_prenom[0].trim()) { alert("Nom et prenom sont obligatoires."); return; }
+        onSave({
+          id: editItem ? editItem.id : Date.now(),
+          nom: _nom[0].trim(),
+          prenom: _prenom[0].trim(),
+          dateNaissance: _dateNaissance[0],
+          lieuContrat: _lieuContrat[0].trim(),
+          salaire: _salaire[0],
+          dateEmbauche: _dateEmbauche[0]
+        });
+      }
+
+      return h("div", null,
+        h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 } },
+          h(FormField, { label: "Nom" }, h("input", { style: inputStyle, value: _nom[0], onChange: function(e) { _nom[1](e.target.value); }, placeholder: "Nom de famille" })),
+          h(FormField, { label: "Prenom" }, h("input", { style: inputStyle, value: _prenom[0], onChange: function(e) { _prenom[1](e.target.value); }, placeholder: "Prenom" })),
+          h(FormField, { label: "Date de naissance" }, h("input", { type: "date", style: inputStyle, value: _dateNaissance[0], onChange: function(e) { _dateNaissance[1](e.target.value); } })),
+          h(FormField, { label: "Date d'embauche" }, h("input", { type: "date", style: inputStyle, value: _dateEmbauche[0], onChange: function(e) { _dateEmbauche[1](e.target.value); } })),
+          h(FormField, { label: "Lieu de contrat" }, h("input", { style: inputStyle, value: _lieuContrat[0], onChange: function(e) { _lieuContrat[1](e.target.value); }, placeholder: "Ex: Noumea, Bourail..." })),
+          h(FormField, { label: "Salaire (XPF)" }, h("input", { type: "number", style: inputStyle, value: _salaire[0], onChange: function(e) { _salaire[1](e.target.value); }, placeholder: "Montant mensuel" }))
+        ),
+        h("div", { style: { display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 20 } },
+          h(Button, { variant: "secondary", onClick: onCancel }, "Annuler"),
+          h(Button, { onClick: handleSubmit }, h(IconText, { icon: "check", size: 14 }, editItem ? "Enregistrer" : "Ajouter"))
+        )
+      );
+    }
+
+    function EcranPersonnel({ onNavigate }) {
+      var ctx = useAppData();
+      var parametres = ctx.parametres;
+      var _personnel = useState(function() { return loadPersonnelFromParametres(parametres); });
+      var personnel = _personnel[0], setPersonnelRaw = _personnel[1];
+      var _saving = useState(false);
+      var saving = _saving[0], setSaving = _saving[1];
+      var _search = useState("");
+      var search = _search[0], setSearch = _search[1];
+      var _showModal = useState(false);
+      var showModal = _showModal[0], setShowModal = _showModal[1];
+      var _editing = useState(null);
+      var editing = _editing[0], setEditing = _editing[1];
+      var _toDelete = useState(null);
+      var toDelete = _toDelete[0], setToDelete = _toDelete[1];
+      var _viewFiche = useState(null);
+      var viewFiche = _viewFiche[0], setViewFiche = _viewFiche[1];
+
+      // Recharge si parametres change
+      var _loaded = React.useRef(false);
+      useEffect(function() {
+        if (!_loaded.current) { _loaded.current = true; return; }
+        var fresh = loadPersonnelFromParametres(parametres);
+        if (fresh.length > 0 || personnel.length === 0) { setPersonnelRaw(fresh); }
+      }, [parametres]);
+
+      var _pendingSave = React.useRef(null);
+      function setPersonnel(updater) {
+        setPersonnelRaw(function(prev) {
+          var next = typeof updater === "function" ? updater(prev) : updater;
+          _pendingSave.current = next;
+          return next;
+        });
+      }
+      useEffect(function() {
+        if (_pendingSave.current !== null) {
+          savePersonnel(parametres, _pendingSave.current, setSaving);
+          _pendingSave.current = null;
+        }
+      });
+
+      function handleSave(emp) {
+        if (editing) {
+          setPersonnel(function(p) { return p.map(function(x) { return x.id === emp.id ? emp : x; }); });
+        } else {
+          setPersonnel(function(p) { return p.concat(emp); });
+        }
+        setShowModal(false);
+        setEditing(null);
+      }
+      function handleDelete(id) {
+        setPersonnel(function(p) { return p.filter(function(x) { return x.id !== id; }); });
+        setToDelete(null);
+      }
+
+      var filtered = personnel.filter(function(emp) {
+        if (!search) return true;
+        var s = search.toLowerCase();
+        return (emp.nom + " " + emp.prenom).toLowerCase().indexOf(s) !== -1 || (emp.lieuContrat || "").toLowerCase().indexOf(s) !== -1;
+      });
+
+      function formatDate(d) { if (!d) return "-"; var parts = d.split("-"); return parts.length === 3 ? parts[2] + "/" + parts[1] + "/" + parts[0] : d; }
+      function getInitials(emp) { return (emp.prenom ? emp.prenom.charAt(0) : "") + (emp.nom ? emp.nom.charAt(0) : ""); }
+      function getAnciennete(d) {
+        if (!d) return "-";
+        var start = new Date(d);
+        var now = new Date();
+        var years = now.getFullYear() - start.getFullYear();
+        var months = now.getMonth() - start.getMonth();
+        if (months < 0) { years--; months += 12; }
+        if (years > 0) return years + " an" + (years > 1 ? "s" : "") + (months > 0 ? " " + months + " mois" : "");
+        return months + " mois";
+      }
+
+      // Fiche employe detail (modal)
+      function renderFiche(emp) {
+        var avatarColor = GROUP_COLORS[(emp.id % GROUP_COLORS.length)];
+        return h(Modal, { title: "Fiche employe", onClose: function() { setViewFiche(null); }, size: 520 },
+          h("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", marginBottom: 24 } },
+            h("div", { style: { width: 64, height: 64, borderRadius: "50%", background: avatarColor, color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, fontWeight: 700, marginBottom: 12 } }, getInitials(emp)),
+            h("h3", { style: { fontSize: 20, fontWeight: 700, margin: 0 } }, emp.prenom + " " + emp.nom),
+            emp.lieuContrat ? h("span", { style: { fontSize: 13, color: "#64748b", marginTop: 4 } }, h(Icon, { name: "map-pin", size: 12, color: "#64748b" }), " " + emp.lieuContrat) : null
+          ),
+          h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 } },
+            h("div", { style: { background: "#f9fafb", borderRadius: 8, padding: 14 } },
+              h("div", { style: { fontSize: 11, color: "#6b7280", marginBottom: 4 } }, "Date de naissance"),
+              h("div", { style: { fontSize: 14, fontWeight: 600 } }, formatDate(emp.dateNaissance))
+            ),
+            h("div", { style: { background: "#f9fafb", borderRadius: 8, padding: 14 } },
+              h("div", { style: { fontSize: 11, color: "#6b7280", marginBottom: 4 } }, "Date d'embauche"),
+              h("div", { style: { fontSize: 14, fontWeight: 600 } }, formatDate(emp.dateEmbauche))
+            ),
+            h("div", { style: { background: "#f9fafb", borderRadius: 8, padding: 14 } },
+              h("div", { style: { fontSize: 11, color: "#6b7280", marginBottom: 4 } }, "Anciennete"),
+              h("div", { style: { fontSize: 14, fontWeight: 600 } }, getAnciennete(emp.dateEmbauche))
+            ),
+            h("div", { style: { background: "#f9fafb", borderRadius: 8, padding: 14 } },
+              h("div", { style: { fontSize: 11, color: "#6b7280", marginBottom: 4 } }, "Salaire mensuel"),
+              h("div", { style: { fontSize: 14, fontWeight: 600, color: "#059669" } }, emp.salaire ? fmtMoney(emp.salaire) : "-")
+            )
+          ),
+          h("div", { style: { display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 24 } },
+            h(Button, { variant: "secondary", onClick: function() { setViewFiche(null); setEditing(emp); setShowModal(true); } }, h(IconText, { icon: "pencil", size: 14 }, "Modifier")),
+            h(Button, { variant: "danger", onClick: function() { setViewFiche(null); setToDelete(emp); } }, h(IconText, { icon: "trash-2", size: 14 }, "Supprimer"))
+          )
+        );
+      }
+
+      return h("div", null,
+        h(PageHeader, { title: h(IconText, { icon: "user-round", size: 20 }, "Personnel"), subtitle: saving ? "Sauvegarde en cours..." : personnel.length + " employe" + (personnel.length > 1 ? "s" : "") + " enregistre" + (personnel.length > 1 ? "s" : ""), action: h("div", { style: { display: "flex", gap: 10 } },
+          h(Button, { variant: "secondary", onClick: function() { onNavigate("organisation"); } }, h(IconText, { icon: "users", size: 14 }, "Organisation")),
+          h(Button, { onClick: function() { setEditing(null); setShowModal(true); } }, h(IconText, { icon: "plus", size: 14 }, "Nouvel employe"))
+        ) }),
+        h("div", { style: { display: "flex", gap: 16, marginBottom: 16, flexWrap: "wrap" } },
+          h(KPICard, { icon: h(Icon, { name: "user-round", size: 32, color: "#6d28d9" }), label: "Effectif total", value: String(personnel.length), color: "#6d28d9" }),
+          h(KPICard, { icon: h(Icon, { name: "map-pin", size: 32, color: "#059669" }), label: "Lieux de contrat", value: String(Array.from(new Set(personnel.map(function(e) { return e.lieuContrat; }).filter(Boolean))).length), color: "#059669" })
+        ),
+        h("div", { style: { marginBottom: 16 } }, h(SearchInput, { placeholder: "Rechercher un employe...", value: search, onChange: setSearch })),
+        h(Card, { style: { padding: 0, overflow: "hidden" } },
+          h("div", { style: { overflowX: "auto" } },
+            h("table", { style: { width: "100%", borderCollapse: "collapse", fontSize: 13 } },
+              h("thead", null, h("tr", { style: { background: "#f9fafb", textAlign: "left" } },
+                ["", "Nom", "Prenom", "Lieu de contrat", "Date d'embauche", "Anciennete", "Salaire", ""].map(function(x, i) {
+                  return h("th", { key: i, style: { padding: "12px", fontWeight: 600, color: "#6b7280", borderBottom: "1px solid #e5e7eb" } }, x);
+                })
+              )),
+              h("tbody", null, filtered.length === 0 ?
+                h("tr", null, h("td", { colSpan: 8, style: { padding: 40, textAlign: "center", color: "#9ca3af" } }, "Aucun employe enregistre")) :
+                filtered.map(function(emp) {
+                  var avatarColor = GROUP_COLORS[(emp.id % GROUP_COLORS.length)];
+                  return h("tr", { key: emp.id, style: { borderBottom: "1px solid #f3f4f6", cursor: "pointer" }, onClick: function() { setViewFiche(emp); } },
+                    h("td", { style: { padding: "10px 12px" } },
+                      h("div", { style: { width: 32, height: 32, borderRadius: "50%", background: avatarColor, color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700 } }, getInitials(emp))
+                    ),
+                    h("td", { style: { padding: "10px 12px", fontWeight: 700 } }, emp.nom),
+                    h("td", { style: { padding: "10px 12px" } }, emp.prenom),
+                    h("td", { style: { padding: "10px 12px" } }, emp.lieuContrat || "-"),
+                    h("td", { style: { padding: "10px 12px" } }, formatDate(emp.dateEmbauche)),
+                    h("td", { style: { padding: "10px 12px", fontSize: 12 } }, getAnciennete(emp.dateEmbauche)),
+                    h("td", { style: { padding: "10px 12px", fontWeight: 600, color: "#059669" } }, emp.salaire ? fmtMoney(emp.salaire) : "-"),
+                    h("td", { style: { padding: "10px 12px", whiteSpace: "nowrap" }, onClick: function(e) { e.stopPropagation(); } },
+                      h("button", { onClick: function() { setEditing(emp); setShowModal(true); }, style: { background: "transparent", border: "none", cursor: "pointer", padding: 4 }, title: "Modifier" }, h(Icon, { name: "pencil", size: 15 })),
+                      h("button", { onClick: function() { setToDelete(emp); }, style: { background: "transparent", border: "none", cursor: "pointer", padding: 4, color: "#dc2626" }, title: "Supprimer" }, h(Icon, { name: "trash-2", size: 15, color: "#dc2626" }))
+                    )
+                  );
+                })
+              )
+            )
+          )
+        ),
+        showModal && h(Modal, { title: editing ? "Modifier l'employe" : "Nouvel employe", onClose: function() { setShowModal(false); setEditing(null); } },
+          h(PersonnelForm, { onSave: handleSave, onCancel: function() { setShowModal(false); setEditing(null); }, editItem: editing })),
+        toDelete && h(ConfirmDialog, { title: "Supprimer l'employe ?", message: "Confirmer la suppression de \"" + toDelete.prenom + " " + toDelete.nom + "\" ?", onConfirm: function() { handleDelete(toDelete.id); }, onCancel: function() { setToDelete(null); } }),
+        viewFiche && renderFiche(viewFiche)
+      );
+    }
+
+    // Palette de couleurs pour les groupes sur la carte
+    var GROUP_COLORS = ["#7c3aed", "#059669", "#dc2626", "#d97706", "#2563eb", "#db2777", "#0891b2", "#65a30d", "#9333ea", "#ea580c"];
+    function getGroupColor(idx) { return GROUP_COLORS[idx % GROUP_COLORS.length]; }
+
+    // Cree un marqueur Leaflet colore (cercle SVG)
+    function coloredMarkerIcon(color) {
+      return window.L.divIcon({
+        className: "",
+        iconSize: [28, 28],
+        iconAnchor: [14, 28],
+        popupAnchor: [0, -28],
+        html: '<svg width="28" height="28" viewBox="0 0 28 28"><path d="M14 2C8.48 2 4 6.48 4 12c0 7 10 14 10 14s10-7 10-14c0-5.52-4.48-10-10-10z" fill="' + color + '" stroke="#fff" stroke-width="2"/><circle cx="14" cy="12" r="4" fill="#fff"/></svg>'
+      });
+    }
+
+    var ORG_STORAGE_KEY = "org_groupes";
+
     function EcranOrganisation({ onNavigate }) {
       var ctx = useAppData();
       var equipements = ctx.equipements;
-      var allMembers = [
-        { id: 1, name: "Tom Wallis", avatar: "T" },
-        { id: 2, name: "Jean Martin", avatar: "J" },
-        { id: 3, name: "Marie Dupont", avatar: "M" },
-        { id: 4, name: "Sophie Bernard", avatar: "S" },
-        { id: 5, name: "Luc Moreau", avatar: "L" },
-      ];
-      var _groups = useState([
-        { id: 1, name: "Groupe Nord", members: [1, 2], equips: [], address: "Noumea Centre", lat: -22.2758, lng: 166.458 },
-        { id: 2, name: "Groupe Sud", members: [3], equips: [], address: "", lat: null, lng: null },
-      ]);
-      var groups = _groups[0], setGroups = _groups[1];
+      var parametres = ctx.parametres;
+      // Charge le personnel reel depuis parametres Supabase
+      var personnelList = loadPersonnelFromParametres(parametres);
+      var allMembers = personnelList.map(function(emp) {
+        return { id: emp.id, name: emp.prenom + " " + emp.nom, avatar: (emp.prenom ? emp.prenom.charAt(0) : "") + (emp.nom ? emp.nom.charAt(0) : "") };
+      });
+
+      // Charge les groupes depuis parametres (Supabase)
+      function loadGroupsFromParametres() {
+        var row = parametres.find(function(p) { return p.categorie === ORG_STORAGE_KEY; });
+        if (row && row.valeur) {
+          try { return JSON.parse(row.valeur); } catch(e) { return []; }
+        }
+        return [];
+      }
+
+      var _groups = useState(function() { return loadGroupsFromParametres(); });
+      var groups = _groups[0], setGroupsRaw = _groups[1];
+      var _saving = useState(false);
+      var saving = _saving[0], setSaving = _saving[1];
+
+      // Recharge les groupes si parametres change (ex: apres loadAll)
+      var _loaded = React.useRef(false);
+      useEffect(function() {
+        if (!_loaded.current) { _loaded.current = true; return; }
+        var fresh = loadGroupsFromParametres();
+        if (fresh.length > 0 || groups.length === 0) { setGroupsRaw(fresh); }
+      }, [parametres]);
+
+      // Sauvegarde les groupes dans Supabase parametres (sans toucher au state React)
+      function saveGroups(newGroups) {
+        setSaving(true);
+        var row = parametres.find(function(p) { return p.categorie === ORG_STORAGE_KEY; });
+        var jsonVal = JSON.stringify(newGroups);
+        if (row) {
+          supabase.from("parametres").update({ valeur: jsonVal }).eq("id", row.id).then(function(res) {
+            setSaving(false);
+            if (res.error) { console.error("Erreur sauvegarde groupes:", res.error.message); }
+            else { row.valeur = jsonVal; }
+          });
+        } else {
+          supabase.from("parametres").insert({ categorie: ORG_STORAGE_KEY, valeur: jsonVal, ordre: 0 }).select().single().then(function(res) {
+            setSaving(false);
+            if (res.error) { console.error("Erreur creation groupes:", res.error.message); }
+            else { parametres.push(res.data); }
+          });
+        }
+      }
+
+      // Ref pour stocker la derniere version a sauvegarder
+      var _pendingSave = React.useRef(null);
+      function setGroups(updater) {
+        setGroupsRaw(function(prev) {
+          var next = typeof updater === "function" ? updater(prev) : updater;
+          _pendingSave.current = next;
+          return next;
+        });
+      }
+      // Sauvegarde automatique quand groups change
+      useEffect(function() {
+        if (_pendingSave.current !== null) {
+          saveGroups(_pendingSave.current);
+          _pendingSave.current = null;
+        }
+      });
       var _drag = useState(null);
       var dragItem = _drag[0], setDragItem = _drag[1];
       var _map = useState(null);
@@ -1023,16 +1317,17 @@
         return function() { clearTimeout(t); };
       }, []);
 
-      // Update map markers whenever groups or map change
+      // Update map markers whenever groups or map change — each group gets a unique color
       useEffect(function() {
         if (!mapObj) return;
         // Remove old markers
         Object.values(markers).forEach(function(mk) { mapObj.removeLayer(mk); });
         var newMarkers = {};
         var bounds = [];
-        groups.forEach(function(g) {
+        groups.forEach(function(g, idx) {
           if (g.lat && g.lng) {
-            var mk = window.L.marker([g.lat, g.lng]).addTo(mapObj).bindPopup("<b>" + g.name + "</b><br>" + (g.address || ""));
+            var icon = coloredMarkerIcon(getGroupColor(idx));
+            var mk = window.L.marker([g.lat, g.lng], { icon: icon }).addTo(mapObj).bindPopup("<b style='color:" + getGroupColor(idx) + "'>" + g.name + "</b><br>" + (g.address || ""));
             newMarkers[g.id] = mk;
             bounds.push([g.lat, g.lng]);
           }
@@ -1102,12 +1397,16 @@
       var avatarStyle = { width: 20, height: 20, background: "#6d28d9", color: "white", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700 };
       var actionBtn = { background: "transparent", border: "none", cursor: "pointer", padding: 4, borderRadius: 4 };
 
-      function renderGroup(g) {
+      function renderGroup(g, gIdx) {
+        var gColor = getGroupColor(gIdx);
         var mList = g.members.map(function(mid) { return allMembers.find(function(m) { return m.id === mid; }); }).filter(Boolean);
         var eList = g.equips.map(function(eid) { return equipements.find(function(e) { return e.Id === eid; }); }).filter(Boolean);
-        return h("div", { key: g.id, style: { background: "#f9fafb", borderRadius: 10, padding: 12, border: "2px dashed #e2e8f0", transition: "all 0.15s" }, onDragOver: onDragOver, onDrop: function(ev) { onDrop(ev, g.id); } },
+        return h("div", { key: g.id, style: { background: "#f9fafb", borderRadius: 10, padding: 12, borderLeft: "4px solid " + gColor, border: "2px dashed #e2e8f0", borderLeftWidth: 4, borderLeftStyle: "solid", borderLeftColor: gColor, transition: "all 0.15s" }, onDragOver: onDragOver, onDrop: function(ev) { onDrop(ev, g.id); } },
           h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 } },
-            h("div", { style: { fontWeight: 700, fontSize: 14, color: "#6d28d9" } }, g.name),
+            h("div", { style: { display: "flex", alignItems: "center", gap: 8 } },
+              h("span", { style: { width: 12, height: 12, borderRadius: "50%", background: gColor, flexShrink: 0 } }),
+              h("span", { style: { fontWeight: 700, fontSize: 14, color: gColor } }, g.name)
+            ),
             h("div", { style: { display: "flex", gap: 2 } },
               h("button", { onClick: function() { setGroupLocation(g.id); }, style: actionBtn, title: "Localisation" }, h(Icon, { name: "map-pin", size: 14, color: g.lat ? "#059669" : "#9ca3af" })),
               h("button", { onClick: function() { renameGroup(g.id); }, style: actionBtn, title: "Renommer" }, h(Icon, { name: "pencil", size: 14, color: "#64748b" })),
@@ -1129,7 +1428,7 @@
       }
 
       return h("div", null,
-        h(PageHeader, { title: h(IconText, { icon: "users", size: 20 }, "Organisation"), subtitle: "Groupes de travail et localisation", action: h(Button, { onClick: addGroup }, h(IconText, { icon: "plus", size: 14 }, "Nouveau groupe")) }),
+        h(PageHeader, { title: h(IconText, { icon: "users", size: 20 }, "Organisation"), subtitle: saving ? "Sauvegarde en cours..." : "Groupes de travail et localisation", action: h("div", { style: { display: "flex", gap: 10 } }, h(Button, { variant: "secondary", onClick: function() { onNavigate("personnel"); } }, h(IconText, { icon: "user-round", size: 14 }, "Personnel")), h(Button, { onClick: addGroup }, h(IconText, { icon: "plus", size: 14 }, "Nouveau groupe"))) }),
         h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 } },
           // Left column
           h("div", { style: { display: "flex", flexDirection: "column", gap: 12 } },
@@ -1137,11 +1436,12 @@
               h("h3", { style: { margin: "0 0 12px", fontSize: 16, fontWeight: 700 } }, h(IconText, { icon: "users", size: 16, color: "#6d28d9" }, "Groupes de travail")),
               groups.length === 0 ? h("p", { style: { color: "#9ca3af", textAlign: "center", padding: 20 } }, "Aucun groupe. Cliquez sur '+ Nouveau groupe'.") :
               h("div", { style: { display: "flex", flexDirection: "column", gap: 10 } },
-                groups.map(renderGroup)
+                groups.map(function(g, idx) { return renderGroup(g, idx); })
               )
             ),
             h(Card, null,
-              h("h4", { style: { margin: "0 0 8px", fontSize: 13, fontWeight: 700, color: "#374151" } }, h(IconText, { icon: "user", size: 13 }, "Membres disponibles")),
+              h("h4", { style: { margin: "0 0 8px", fontSize: 13, fontWeight: 700, color: "#374151" } }, h(IconText, { icon: "user-round", size: 13 }, "Membres disponibles")),
+              allMembers.length === 0 ? h("div", { style: { fontSize: 12, color: "#9ca3af", padding: "8px 0" } }, "Aucun employe. ", h("a", { href: "#", onClick: function(e) { e.preventDefault(); onNavigate("personnel"); }, style: { color: "#6d28d9", fontWeight: 600 } }, "Ajouter du personnel")) :
               h("div", { style: { display: "flex", flexWrap: "wrap", gap: 6, minHeight: 28 } },
                 freeMbrs.length === 0 ? h("span", { style: { fontSize: 12, color: "#9ca3af" } }, "Tous assignes") :
                 freeMbrs.map(function(m) { return h("span", { key: m.id, draggable: true, onDragStart: function(ev) { onDragStart(ev, m, "member"); }, style: chipDragStyle }, h("span", { style: avatarStyle }, m.avatar), m.name); })
@@ -1161,13 +1461,11 @@
               groups.filter(function(g) { return g.lat; }).length === 0 ?
                 "Cliquez sur l'icone pin d'un groupe pour lui attribuer un lieu." :
                 h("div", { style: { display: "flex", flexDirection: "column", gap: 4 } },
-                  groups.filter(function(g) { return g.lat; }).map(function(g) {
-                    return h("div", { key: g.id, style: { display: "flex", alignItems: "center", gap: 6, padding: "6px 8px", background: "#f9fafb", borderRadius: 6 } },
-                      h(Icon, { name: "map-pin", size: 12, color: "#059669" }),
-                      h("span", { style: { fontWeight: 600 } }, g.name + " :"),
+                  groups.map(function(g, idx) { return g.lat ? h("div", { key: g.id, style: { display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: "#f9fafb", borderRadius: 6 } },
+                      h("span", { style: { width: 10, height: 10, borderRadius: "50%", background: getGroupColor(idx), flexShrink: 0 } }),
+                      h("span", { style: { fontWeight: 600, color: getGroupColor(idx) } }, g.name + " :"),
                       h("span", null, g.address)
-                    );
-                  })
+                    ) : null; }).filter(Boolean)
                 )
             )
           )
@@ -1185,6 +1483,7 @@
         ]},
         { name: "Ressources", pages: [
           { key: "equipements", label: "Equipements", lucide: "settings" },
+          { key: "personnel", label: "Personnel", lucide: "user-round" },
           { key: "organisation", label: "Organisation", lucide: "users" },
           { key: "pieces", label: "Pieces detachees", lucide: "package" },
         ]},
@@ -1577,6 +1876,7 @@
           case "interventions": return h(EcranInterventions, { onNavigate: navigate, editItem: pageData });
           case "equipements": return h(EcranEquipements, { onNavigate: navigate });
           case "fiche-equipement": return h(EcranFicheEquipement, { onNavigate: navigate, equipement: pageData });
+          case "personnel": return h(EcranPersonnel, { onNavigate: navigate });
           case "organisation": return h(EcranOrganisation, { onNavigate: navigate });
           case "historique": return h(EcranHistorique, { onNavigate: navigate });
           case "pieces": return h(EcranPieces, null);
