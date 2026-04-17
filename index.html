@@ -585,13 +585,13 @@
       const nbVL = equipements.filter((e) => e.Categorie === "VL").length;
       const tabStyle = (active) => ({ padding: "10px 20px", background: active ? "#6d28d9" : "white", color: active ? "white" : "#6d28d9", borderRadius: 8, fontWeight: 600, cursor: "pointer", fontSize: 14, border: "2px solid #6d28d9", transition: "all 0.2s" });
       return h("div", null,
-        h(PageHeader, { title: h(IconText, { icon: "settings", size: 20 }, "Equipements"), subtitle: equipements.length + " equipements (" + nbEngins + " engins / " + nbVL + " VL)", action: h(Button, { onClick: openNew }, "+ Nouvel equipement") }),
+        h(PageHeader, { title: h(IconText, { icon: "settings", size: 20 }, "Equipements"), subtitle: equipements.length + " equipements (" + nbEngins + " engins / " + nbVL + " vehicules)", action: h(Button, { onClick: openNew }, "+ Nouvel equipement") }),
         h("div", { style: { display: "flex", gap: 8, marginBottom: 16 } },
           h("button", { onClick: () => setOnglet("Engin"), style: tabStyle(onglet === "Engin") }, h(IconText, { icon: "hard-hat", size: 14 }, "Engins (" + nbEngins + ")")),
-          h("button", { onClick: () => setOnglet("VL"), style: tabStyle(onglet === "VL") }, h(IconText, { icon: "car", size: 14 }, "VL (" + nbVL + ")"))),
+          h("button", { onClick: () => setOnglet("VL"), style: tabStyle(onglet === "VL") }, h(IconText, { icon: "car", size: 14 }, "Vehicules (" + nbVL + ")"))),
         h("div", { style: { marginBottom: 16 } }, h(SearchInput, { placeholder: "Rechercher par code, nom, type...", value: search, onChange: setSearch })),
         (function() {
-          if (filtered.length === 0) return h(Card, null, h("p", { style: { textAlign: "center", color: "#9ca3af", padding: 20 } }, "Aucun " + (onglet === "Engin" ? "engin" : "VL")));
+          if (filtered.length === 0) return h(Card, null, h("p", { style: { textAlign: "center", color: "#9ca3af", padding: 20 } }, "Aucun " + (onglet === "Engin" ? "engin" : "vehicule")));
           var typeGroups = {};
           filtered.forEach(function(eq) { var t = eq.Type || "Autre"; if (!typeGroups[t]) typeGroups[t] = []; typeGroups[t].push(eq); });
           var typeNames = Object.keys(typeGroups).sort();
