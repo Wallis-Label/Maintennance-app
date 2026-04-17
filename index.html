@@ -590,28 +590,40 @@
           h("button", { onClick: () => setOnglet("Engin"), style: tabStyle(onglet === "Engin") }, h(IconText, { icon: "hard-hat", size: 14 }, "Engins (" + nbEngins + ")")),
           h("button", { onClick: () => setOnglet("VL"), style: tabStyle(onglet === "VL") }, h(IconText, { icon: "car", size: 14 }, "VL (" + nbVL + ")"))),
         h("div", { style: { marginBottom: 16 } }, h(SearchInput, { placeholder: "Rechercher par code, nom, type...", value: search, onChange: setSearch })),
-        h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 12 } },
-          filtered.length === 0 ? h(Card, null, h("p", { style: { textAlign: "center", color: "#9ca3af", padding: 20 } }, "Aucun " + (onglet === "Engin" ? "engin" : "VL"))) :
-          filtered.map((eq) => {
-            const visitesDues = computeVisitesADeclencher(eq, plans, interventions);
-            return h(Card, { key: eq.Id, onClick: () => onNavigate("fiche-equipement", eq) },
-              h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 } },
-                h("div", null,
-                  h("div", { style: { fontWeight: 700, fontSize: 18, color: "#6d28d9" } }, eq.Title),
-                  h("div", { style: { fontWeight: 600, fontSize: 15 } }, eq.Nom)),
-                h("div", { style: { display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" } },
-                  h("div", { style: { display: "flex", gap: 4, alignItems: "center" } },
-                    h(StatusBadge, { status: eq.Statut }),
-                    h("button", { onClick: (e) => openEdit(eq, e), style: { background: "transparent", border: "none", cursor: "pointer", fontSize: 15, padding: 4 }, title: "Modifier" }, h(Icon, { name: "pencil", size: 15 })),
-                    h("button", { onClick: (e) => askDelete(eq, e), style: { background: "transparent", border: "none", cursor: "pointer", fontSize: 15, padding: 4, color: "#dc2626" }, title: "Supprimer" }, h(Icon, { name: "trash-2", size: 15, color: "#dc2626" }))),
-                  visitesDues > 0 && h("span", { style: { background: "#fee2e2", color: "#991b1b", padding: "4px 10px", borderRadius: 20, fontSize: 12, fontWeight: 700, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 } }, h(Icon, { name: "bell-ring", size: 12, color: "#991b1b" }), visitesDues + " visite" + (visitesDues > 1 ? "s" : "") + " due" + (visitesDues > 1 ? "s" : "")))),
-              h("div", { style: { display: "flex", flexDirection: "column", gap: 4, fontSize: 13, color: "#6b7280" } },
-                h("span", null, h(IconText, { icon: "box", size: 12, color: "#6b7280" }, "Type: " + eq.Type)),
-                eq.Localisation && h("span", null, h(IconText, { icon: "map-pin", size: 12, color: "#6b7280" }, "Localisation: " + eq.Localisation)),
-                h("span", null, h(IconText, { icon: "timer", size: 12, color: "#6b7280" }, "Horametre: " + fmtNum(eq.Horametre) + " h")),
-                (eq.KM && eq.KM !== "0") && h("span", null, h(IconText, { icon: "milestone", size: 12, color: "#6b7280" }, "KM: " + fmtNum(eq.KM))),
-                eq.DateMiseEnService && h("span", null, h(IconText, { icon: "calendar", size: 12, color: "#6b7280" }, "Mise en service: " + eq.DateMiseEnService))));
-          })),
+        (function() {
+          if (filtered.length === 0) return h(Card, null, h("p", { style: { textAlign: "center", color: "#9ca3af", padding: 20 } }, "Aucun " + (onglet === "Engin" ? "engin" : "VL")));
+          var typeGroups = {};
+          filtered.forEach(function(eq) { var t = eq.Type || "Autre"; if (!typeGroups[t]) typeGroups[t] = []; typeGroups[t].push(eq); });
+          var typeNames = Object.keys(typeGroups).sort();
+          return h("div", { style: { display: "flex", flexDirection: "column", gap: 24 } },
+            typeNames.map(function(typeName) {
+              var eqs = typeGroups[typeName];
+              return h("div", { key: typeName },
+                h("div", { style: { display: "flex", alignItems: "center", gap: 10, marginBottom: 12 } },
+                  h("h3", { style: { margin: 0, fontSize: 16, fontWeight: 700, color: "#1f2937" } }, typeName),
+                  h("span", { style: { background: "#ede9fe", color: "#6d28d9", padding: "2px 10px", borderRadius: 12, fontSize: 12, fontWeight: 600 } }, eqs.length + " equipement" + (eqs.length > 1 ? "s" : "")),
+                  h("div", { style: { flex: 1, height: 1, background: "#e2e8f0" } })),
+                h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 12 } },
+                  eqs.map(function(eq) {
+                    var visitesDues = computeVisitesADeclencher(eq, plans, interventions);
+                    return h(Card, { key: eq.Id, onClick: function() { onNavigate("fiche-equipement", eq); } },
+                      h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 } },
+                        h("div", null,
+                          h("div", { style: { fontWeight: 700, fontSize: 18, color: "#6d28d9" } }, eq.Title)),
+                        h("div", { style: { display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" } },
+                          h("div", { style: { display: "flex", gap: 4, alignItems: "center" } },
+                            h(StatusBadge, { status: eq.Statut }),
+                            h("button", { onClick: function(e) { openEdit(eq, e); }, style: { background: "transparent", border: "none", cursor: "pointer", fontSize: 15, padding: 4 }, title: "Modifier" }, h(Icon, { name: "pencil", size: 15 })),
+                            h("button", { onClick: function(e) { askDelete(eq, e); }, style: { background: "transparent", border: "none", cursor: "pointer", fontSize: 15, padding: 4, color: "#dc2626" }, title: "Supprimer" }, h(Icon, { name: "trash-2", size: 15, color: "#dc2626" }))),
+                          visitesDues > 0 && h("span", { style: { background: "#fee2e2", color: "#991b1b", padding: "4px 10px", borderRadius: 20, fontSize: 12, fontWeight: 700, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 } }, h(Icon, { name: "bell-ring", size: 12, color: "#991b1b" }), visitesDues + " visite" + (visitesDues > 1 ? "s" : "") + " due" + (visitesDues > 1 ? "s" : "")))),
+                      h("div", { style: { display: "flex", flexDirection: "column", gap: 4, fontSize: 13, color: "#6b7280" } },
+                        eq.Localisation && h("span", null, h(IconText, { icon: "map-pin", size: 12, color: "#6b7280" }, "Localisation: " + eq.Localisation)),
+                        h("span", null, h(IconText, { icon: "timer", size: 12, color: "#6b7280" }, "Horametre: " + fmtNum(eq.Horametre) + " h")),
+                        (eq.KM && eq.KM !== "0") && h("span", null, h(IconText, { icon: "milestone", size: 12, color: "#6b7280" }, "KM: " + fmtNum(eq.KM))),
+                        eq.DateMiseEnService && h("span", null, h(IconText, { icon: "calendar", size: 12, color: "#6b7280" }, "Mise en service: " + eq.DateMiseEnService))));
+                  })));
+            }));
+        }()),
         showModal && h(Modal, { title: editing ? "Modifier l'equipement" : "Nouvel equipement", onClose: () => { setShowModal(false); setEditing(null); } },
           h(EquipementForm, { onSave: handleSave, onCancel: () => { setShowModal(false); setEditing(null); }, editItem: editing || { Title: "", Nom: "", Categorie: onglet, Type: onglet === "VL" ? "Vehicule leger" : "Engin de chantier", Localisation: "Zone A", Horametre: "0", KM: "0", Statut: "En service", DateMiseEnService: new Date().toISOString().split("T")[0] } })),
         toDelete && h(ConfirmDialog, { title: "Supprimer l'equipement ?", message: "Confirmer la suppression de \"" + toDelete.Title + " - " + toDelete.Nom + "\" ? (Les interventions et releves associes seront supprimes.)", onConfirm: handleConfirmDelete, onCancel: () => setToDelete(null) }));
