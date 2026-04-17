@@ -103,10 +103,10 @@
     const STATUT_PLAN_TO_DB = { "Actif": "actif", "En retard": "en_retard", "Suspendu": "suspendu" };
 
     function equipementFromDb(r) {
-      return { Id: r.id, Title: r.immatriculation || "", Nom: r.nom || "", Type: r.type || "", Categorie: r.categorie === "vl" ? "VL" : "Engin", Localisation: r.localisation || "", Horametre: String(r.horametre_actuel ?? 0), KM: String(r.km_actuel ?? 0), Statut: STATUT_EQ_TO_UI[r.statut] || "En service", DateMiseEnService: r.date_mise_en_service || "", Marque: r.marque || "", Modele: r.modele || "", Annee: r.annee || null, Notes: r.notes || "" };
+      return { Id: r.id, Title: r.immatriculation || "", Nom: r.nom || "", Type: r.type || "", Categorie: r.categorie === "vl" ? "Vehicule" : "Engin", Localisation: r.localisation || "", Horametre: String(r.horametre_actuel ?? 0), KM: String(r.km_actuel ?? 0), Statut: STATUT_EQ_TO_UI[r.statut] || "En service", DateMiseEnService: r.date_mise_en_service || "", Marque: r.marque || "", Modele: r.modele || "", Annee: r.annee || null, Notes: r.notes || "" };
     }
     function equipementToDb(e) {
-      return { immatriculation: e.Title, nom: e.Nom, type: e.Type, categorie: e.Categorie === "VL" ? "vl" : "engin", localisation: e.Localisation, horametre_actuel: parseFloat(e.Horametre) || 0, km_actuel: parseFloat(e.KM) || 0, statut: STATUT_EQ_TO_DB[e.Statut] || "actif", date_mise_en_service: e.DateMiseEnService || null, marque: e.Marque || null, modele: e.Modele || null, annee: e.Annee ? parseInt(e.Annee) : null, notes: e.Notes || null };
+      return { immatriculation: e.Title, nom: e.Nom, type: e.Type, categorie: e.Categorie === "Vehicule" ? "vl" : "engin", localisation: e.Localisation, horametre_actuel: parseFloat(e.Horametre) || 0, km_actuel: parseFloat(e.KM) || 0, statut: STATUT_EQ_TO_DB[e.Statut] || "actif", date_mise_en_service: e.DateMiseEnService || null, marque: e.Marque || null, modele: e.Modele || null, annee: e.Annee ? parseInt(e.Annee) : null, notes: e.Notes || null };
     }
     function interventionFromDb(r) {
       return { Id: r.id, Title: r.titre || "", Equipement: r._equipement_code || "", EquipementId: r.equipement_id, Date_Intervention: r.date_intervention || "", Technicien: r.technicien || "", Statut_Intervention: STATUT_INT_TO_UI[r.statut] || "Planifiee", Travaux_Effectues: r.travaux_effectues || r.description || "", Temps_Arret: r.temps_arret || "", Cout: String(r.cout_total ?? ""), Plan: r.plan_nom || "", Horametre: r.horametre != null ? String(r.horametre) : "", KM: r.km != null ? String(r.km) : "", Type: r.type === "preventive" ? "Preventive" : "Curative", CycleNumber: r.cycle_number != null ? r.cycle_number : null };
@@ -540,12 +540,12 @@
       const typesEngin = useParams("type_engin");
       const typesVL = useParams("type_vl");
       const localisations = useParams("localisation");
-      const typesDispos = f.Categorie === "VL" ? typesVL : typesEngin;
+      const typesDispos = f.Categorie === "Vehicule" ? typesVL : typesEngin;
       const lockedInput = { ...inputStyle, background: "#f3f4f6", color: "#6b7280", cursor: "not-allowed" };
       return h("div", null,
         h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
-          h(FormField, { label: "Categorie" }, h("select", { style: selectStyle, value: f.Categorie, onChange: (e) => { const c = e.target.value; upd("Categorie", c); const newList = c === "VL" ? typesVL : typesEngin; upd("Type", newList[0] || ""); } },
-            ["Engin", "VL"].map((x) => h("option", { key: x, value: x }, x)))),
+          h(FormField, { label: "Categorie" }, h("select", { style: selectStyle, value: f.Categorie, onChange: (e) => { const c = e.target.value; upd("Categorie", c); const newList = c === "Vehicule" ? typesVL : typesEngin; upd("Type", newList[0] || ""); } },
+            ["Engin", "Vehicule"].map((x) => h("option", { key: x, value: x }, x)))),
           h(FormField, { label: "Code / Immatriculation" }, h("input", { style: inputStyle, value: f.Title, onChange: (e) => upd("Title", e.target.value), placeholder: "Ex: 427 686 NC" })),
           h(FormField, { label: "Type" }, h("select", { style: selectStyle, value: f.Type, onChange: (e) => upd("Type", e.target.value) },
             typesDispos.length === 0 ? h("option", { value: "" }, "(aucun, ajoutez dans Parametres)") : typesDispos.map((x) => h("option", { key: x, value: x }, x)))),
@@ -569,7 +569,7 @@
       const [showModal, setShowModal] = useState(false);
       const [editing, setEditing] = useState(null);
       const [toDelete, setToDelete] = useState(null);
-      const [onglet, setOnglet] = useState("Engin"); // Engin | VL
+      const [onglet, setOnglet] = useState("Engin"); // Engin | Vehicule
       const eqCategorie = equipements.filter((e) => e.Categorie === onglet);
       const filtered = eqCategorie.filter((e) => !search || e.Title.toLowerCase().includes(search.toLowerCase()) || e.Nom.toLowerCase().includes(search.toLowerCase()) || (e.Type || "").toLowerCase().includes(search.toLowerCase()));
       const handleSave = async (eq) => {
@@ -582,13 +582,13 @@
       const askDelete = (eq, e) => { e && e.stopPropagation(); setToDelete(eq); };
       const handleConfirmDelete = async () => { if (toDelete) { await deleteEquipement(toDelete.Id); setToDelete(null); } };
       const nbEngins = equipements.filter((e) => e.Categorie === "Engin").length;
-      const nbVL = equipements.filter((e) => e.Categorie === "VL").length;
+      const nbVL = equipements.filter((e) => e.Categorie === "Vehicule").length;
       const tabStyle = (active) => ({ padding: "10px 20px", background: active ? "#6d28d9" : "white", color: active ? "white" : "#6d28d9", borderRadius: 8, fontWeight: 600, cursor: "pointer", fontSize: 14, border: "2px solid #6d28d9", transition: "all 0.2s" });
       return h("div", null,
         h(PageHeader, { title: h(IconText, { icon: "settings", size: 20 }, "Equipements"), subtitle: equipements.length + " equipements (" + nbEngins + " engins / " + nbVL + " vehicules)", action: h(Button, { onClick: openNew }, "+ Nouvel equipement") }),
         h("div", { style: { display: "flex", gap: 8, marginBottom: 16 } },
           h("button", { onClick: () => setOnglet("Engin"), style: tabStyle(onglet === "Engin") }, h(IconText, { icon: "hard-hat", size: 14 }, "Engins (" + nbEngins + ")")),
-          h("button", { onClick: () => setOnglet("VL"), style: tabStyle(onglet === "VL") }, h(IconText, { icon: "car", size: 14 }, "Vehicules (" + nbVL + ")"))),
+          h("button", { onClick: () => setOnglet("Vehicule"), style: tabStyle(onglet === "Vehicule") }, h(IconText, { icon: "car", size: 14 }, "Vehicules (" + nbVL + ")"))),
         h("div", { style: { marginBottom: 16 } }, h(SearchInput, { placeholder: "Rechercher par code, nom, type...", value: search, onChange: setSearch })),
         (function() {
           if (filtered.length === 0) return h(Card, null, h("p", { style: { textAlign: "center", color: "#9ca3af", padding: 20 } }, "Aucun " + (onglet === "Engin" ? "engin" : "vehicule")));
@@ -625,7 +625,7 @@
             }));
         }()),
         showModal && h(Modal, { title: editing ? "Modifier l'equipement" : "Nouvel equipement", onClose: () => { setShowModal(false); setEditing(null); } },
-          h(EquipementForm, { onSave: handleSave, onCancel: () => { setShowModal(false); setEditing(null); }, editItem: editing || { Title: "", Nom: "", Categorie: onglet, Type: onglet === "VL" ? "Vehicule leger" : "Engin de chantier", Localisation: "Zone A", Horametre: "0", KM: "0", Statut: "En service", DateMiseEnService: new Date().toISOString().split("T")[0] } })),
+          h(EquipementForm, { onSave: handleSave, onCancel: () => { setShowModal(false); setEditing(null); }, editItem: editing || { Title: "", Nom: "", Categorie: onglet, Type: onglet === "Vehicule" ? "Vehicule leger" : "Engin de chantier", Localisation: "Zone A", Horametre: "0", KM: "0", Statut: "En service", DateMiseEnService: new Date().toISOString().split("T")[0] } })),
         toDelete && h(ConfirmDialog, { title: "Supprimer l'equipement ?", message: "Confirmer la suppression de \"" + toDelete.Title + " - " + toDelete.Nom + "\" ? (Les interventions et releves associes seront supprimes.)", onConfirm: handleConfirmDelete, onCancel: () => setToDelete(null) }));
     }
 
