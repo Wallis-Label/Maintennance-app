@@ -478,6 +478,7 @@
     // ─── Ecran Interventions (Formulaire) ───────────────────────────────
     function EcranInterventions({ onNavigate, editItem }) {
       const { equipements, addIntervention, updateIntervention, addReleve } = useAppData();
+      const techniciens = useParams("technicien");
       const [f, setF] = useState(editItem || { Title: "", Equipement: "", Date_Intervention: new Date().toISOString().split("T")[0], Technicien: "", Statut_Intervention: "Planifiee", Travaux_Effectues: "", Temps_Arret: "", Cout: "", Plan: "", Horametre: "", KM: "", Type: "Preventive" });
       const [saved, setSaved] = useState(false);
       const [saving, setSaving] = useState(false);
@@ -505,7 +506,9 @@
               h("option", { value: "" }, "-- Selectionner --"),
               equipements.map((eq) => h("option", { key: eq.Id, value: eq.Title }, eq.Title + " \u2014 " + eq.Nom)))),
             h(FormField, { label: "Date d'intervention" }, h("input", { type: "date", style: inputStyle, value: f.Date_Intervention, onChange: (e) => upd("Date_Intervention", e.target.value) })),
-            h(FormField, { label: "Technicien" }, h("input", { style: inputStyle, value: f.Technicien, onChange: (e) => upd("Technicien", e.target.value), placeholder: "Nom du technicien" })),
+            h(FormField, { label: "Technicien" }, h("select", { style: selectStyle, value: f.Technicien, onChange: (e) => upd("Technicien", e.target.value) },
+              h("option", { value: "" }, "-- Selectionner --"),
+              techniciens.map((t) => h("option", { key: t, value: t }, t)))),
             h(FormField, { label: "Statut" }, h("select", { style: selectStyle, value: f.Statut_Intervention, onChange: (e) => upd("Statut_Intervention", e.target.value) },
               ["Planifiee", "En cours", "Termine", "Pas fait"].map((s) => h("option", { key: s, value: s }, s)))),
             h(FormField, { label: "Type" }, h("select", { style: selectStyle, value: f.Type, onChange: (e) => upd("Type", e.target.value) },
@@ -935,10 +938,11 @@
       const { parametres, addParametre, updateParametre, deleteParametre } = useAppData();
       const categories = [
         { key: "type_engin", label: "Types d'engin", lucide: "hard-hat" },
-        { key: "type_vl", label: "Types de VL", lucide: "car" },
+        { key: "type_vl", label: "Types de vehicule", lucide: "car" },
         { key: "localisation", label: "Localisations", lucide: "map-pin" },
         { key: "cat_piece", label: "Categories de piece", lucide: "package" },
         { key: "frequence_plan", label: "Frequences de plan", lucide: "calendar" },
+        { key: "technicien", label: "Techniciens", lucide: "user-round" },
       ];
       const [selected, setSelected] = useState("type_engin");
       const [newValeur, setNewValeur] = useState("");
@@ -1000,6 +1004,148 @@
 
     // ─── Ecran Organisation ─────────────────────────────────────────────
     // ─── Ecran Personnel ──────────────────────────────────────────────
+    // ─── Ecran Validations (admin) ──────────────────────────────────
+    function EcranValidations({ onNavigate }) {
+      var ctx = useAppData();
+      var pending = ctx.pendingValidations || [];
+      var log = ctx.validationLog || [];
+      var equipements = ctx.equipements;
+      var plans = ctx.plans;
+      var techniciens = useParams("technicien");
+      var typesEngin = useParams("type_engin");
+      var typesVL = useParams("type_vl");
+      var localisations = useParams("localisation");
+      var freqsPlan = useParams("frequence_plan");
+      var catsPiece = useParams("cat_piece");
+      var _tab = useState("pending");
+      var tab = _tab[0], setTab = _tab[1];
+      var _editingId = useState(null);
+      var editingId = _editingId[0], setEditingId = _editingId[1];
+      var _editData = useState(null);
+      var editData = _editData[0], setEditData = _editData[1];
+
+      var approvedThisMonth = log.filter(function(l) { return l.decision === "approved" && l.decidedAt && l.decidedAt.substring(0, 7) === new Date().toISOString().substring(0, 7); }).length;
+      var rejectedThisMonth = log.filter(function(l) { return l.decision === "rejected" && l.decidedAt && l.decidedAt.substring(0, 7) === new Date().toISOString().substring(0, 7); }).length;
+
+      function startEdit(item) { setEditingId(item.id); setEditData(Object.assign({}, item.data)); }
+      function cancelEdit() { setEditingId(null); setEditData(null); }
+      function saveEdit(pid) { ctx.updatePendingItem(pid, editData); setEditingId(null); setEditData(null); }
+      function updField(key, val) { setEditData(function(p) { return Object.assign({}, p, (function() { var o = {}; o[key] = val; return o; })()); }); }
+
+      function formatDate(iso) { if (!iso) return ""; var d = new Date(iso); return d.toLocaleDateString("fr-FR") + " " + d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }); }
+      function entityLabel(e) { return e === "equipement" ? "Equipement" : e === "intervention" ? "Intervention" : e === "plan" ? "Plan" : e === "piece" ? "Piece" : e; }
+      function actionLabel(a) { return a === "add" ? "Ajout" : "Modification"; }
+
+      function renderEditField(key, val, item) {
+        var entity = item.entity;
+        // Select fields based on entity type
+        if (key === "Statut" && entity === "equipement") return h("select", { style: selectStyle, value: val, onChange: function(e) { updField(key, e.target.value); } }, ["En service", "En panne", "En maintenance", "Reforme"].map(function(s) { return h("option", { key: s, value: s }, s); }));
+        if (key === "Categorie" && entity === "equipement") return h("select", { style: selectStyle, value: val, onChange: function(e) { updField(key, e.target.value); } }, ["Engin", "Vehicule"].map(function(s) { return h("option", { key: s, value: s }, s); }));
+        if (key === "Type" && entity === "equipement") {
+          var types = (editData && editData.Categorie === "Vehicule") ? typesVL : typesEngin;
+          return h("select", { style: selectStyle, value: val, onChange: function(e) { updField(key, e.target.value); } }, types.map(function(s) { return h("option", { key: s, value: s }, s); }));
+        }
+        if (key === "Localisation" && entity === "equipement") return h("select", { style: selectStyle, value: val, onChange: function(e) { updField(key, e.target.value); } }, h("option", { value: "" }, "--"), localisations.map(function(s) { return h("option", { key: s, value: s }, s); }));
+        if (key === "Equipement" && entity === "intervention") return h("select", { style: selectStyle, value: val, onChange: function(e) { updField(key, e.target.value); } }, h("option", { value: "" }, "--"), equipements.map(function(eq) { return h("option", { key: eq.Id, value: eq.Title }, eq.Title); }));
+        if (key === "Technicien") return h("select", { style: selectStyle, value: val, onChange: function(e) { updField(key, e.target.value); } }, h("option", { value: "" }, "--"), techniciens.map(function(t) { return h("option", { key: t, value: t }, t); }));
+        if (key === "Statut_Intervention") return h("select", { style: selectStyle, value: val, onChange: function(e) { updField(key, e.target.value); } }, ["Planifiee", "En cours", "Termine", "Pas fait"].map(function(s) { return h("option", { key: s, value: s }, s); }));
+        if (key === "Type" && entity === "intervention") return h("select", { style: selectStyle, value: val, onChange: function(e) { updField(key, e.target.value); } }, ["Preventive", "Curative"].map(function(s) { return h("option", { key: s, value: s }, s); }));
+        if (key === "Statut" && entity === "plan") return h("select", { style: selectStyle, value: val, onChange: function(e) { updField(key, e.target.value); } }, ["Actif", "En retard", "Suspendu"].map(function(s) { return h("option", { key: s, value: s }, s); }));
+        if (key === "Frequence" && entity === "plan") return h("select", { style: selectStyle, value: val, onChange: function(e) { updField(key, e.target.value); } }, freqsPlan.map(function(s) { return h("option", { key: s, value: s }, s); }));
+        if (key === "Categorie" && entity === "piece") return h("select", { style: selectStyle, value: val, onChange: function(e) { updField(key, e.target.value); } }, catsPiece.map(function(s) { return h("option", { key: s, value: s }, s); }));
+        // Default: text input
+        if (key === "Cout" || key === "PrixUnitaire" || key === "Horametre" || key === "KM" || key === "Stock" || key === "StockMin") return h("input", { type: "number", style: inputStyle, value: val || "", onChange: function(e) { updField(key, e.target.value); } });
+        if (key === "Date_Intervention" || key === "ProchainIntervention" || key === "DateMiseEnService") return h("input", { type: "date", style: inputStyle, value: val || "", onChange: function(e) { updField(key, e.target.value); } });
+        return h("input", { style: inputStyle, value: val || "", onChange: function(e) { updField(key, e.target.value); } });
+      }
+
+      // Keys to display per entity
+      var displayKeys = {
+        equipement: ["Title", "Categorie", "Type", "Localisation", "Horametre", "KM", "Statut", "DateMiseEnService"],
+        intervention: ["Title", "Equipement", "Date_Intervention", "Technicien", "Statut_Intervention", "Type", "Temps_Arret", "Cout", "Horametre", "KM", "Plan", "Travaux_Effectues"],
+        plan: ["Title", "Frequence", "Description", "Equipements", "ProchainIntervention", "Statut"],
+        piece: ["Reference", "Designation", "Categorie", "Fournisseur", "PrixUnitaire", "Stock", "StockMin", "Emplacement", "Compatible"]
+      };
+      var keyLabels = { Title: "Titre", Categorie: "Categorie", Type: "Type", Localisation: "Localisation", Horametre: "Horametre", KM: "KM", Statut: "Statut", DateMiseEnService: "Mise en service", Equipement: "Equipement", Date_Intervention: "Date", Technicien: "Technicien", Statut_Intervention: "Statut", Temps_Arret: "Temps arret", Cout: "Cout", Plan: "Plan", Travaux_Effectues: "Travaux", Frequence: "Frequence", Description: "Description", Equipements: "Equipements", ProchainIntervention: "Prochaine", Reference: "Reference", Designation: "Designation", Fournisseur: "Fournisseur", PrixUnitaire: "Prix u.", Stock: "Stock", StockMin: "Stock min", Emplacement: "Emplacement", Compatible: "Compatible" };
+
+      var tabStyle = function(active) { return { padding: "10px 20px", background: active ? "#6d28d9" : "white", color: active ? "white" : "#6d28d9", borderRadius: 8, fontWeight: 600, cursor: "pointer", fontSize: 14, border: "2px solid #6d28d9", transition: "all 0.2s", fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 8 }; };
+
+      function renderPendingItem(item) {
+        var isEditing = editingId === item.id;
+        var keys = displayKeys[item.entity] || Object.keys(item.data);
+        var borderColor = item.action === "add" ? "#7c3aed" : "#2563eb";
+        return h("div", { key: item.id, style: { background: "white", borderRadius: 12, padding: "16px 20px", border: "1px solid #e2e8f0", borderLeft: "4px solid " + borderColor, marginBottom: 10 } },
+          h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 } },
+            h("div", { style: { display: "flex", alignItems: "center", gap: 10 } },
+              h("span", { style: { display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 10px", borderRadius: 20, fontSize: 12, fontWeight: 600, background: item.action === "add" ? "#f3e8ff" : "#eff6ff", color: item.action === "add" ? "#7c3aed" : "#2563eb" } }, h(Icon, { name: item.action === "add" ? "plus-circle" : "pencil", size: 12 }), actionLabel(item.action)),
+              h("span", { style: { fontWeight: 700, fontSize: 15 } }, entityLabel(item.entity) + " : " + (item.data.Title || item.data.Reference || ""))
+            ),
+            h("div", { style: { display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#94a3b8" } },
+              h(Icon, { name: "user-round", size: 12 }), item.submittedBy,
+              h("span", null, " \u2014 " + formatDate(item.submittedAt)))
+          ),
+          h("div", { style: { background: "#f9fafb", borderRadius: 8, padding: 12, fontSize: 13 } },
+            keys.map(function(key) {
+              var val = isEditing ? (editData[key] || "") : (item.data[key] || "");
+              var origVal = item.originalData ? (item.originalData[key] || "") : null;
+              var changed = item.action === "update" && origVal !== null && String(origVal) !== String(item.data[key] || "");
+              return h("div", { key: key, style: { display: "flex", gap: 12, padding: "4px 0", alignItems: "center" } },
+                h("span", { style: { width: 120, color: "#94a3b8", fontWeight: 600, fontSize: 12, textTransform: "uppercase", flexShrink: 0 } }, keyLabels[key] || key),
+                isEditing ? renderEditField(key, val, item) :
+                  changed ? h("span", { style: { display: "flex", alignItems: "center", gap: 6 } },
+                    h("span", { style: { color: "#dc2626", textDecoration: "line-through" } }, String(origVal)),
+                    h("span", { style: { color: "#94a3b8" } }, "\u2192"),
+                    h("span", { style: { color: "#059669", fontWeight: 600 } }, String(val))
+                  ) : h("span", { style: { fontWeight: val ? 600 : 400, color: val ? "#059669" : "#94a3b8" } }, String(val) || "-")
+              );
+            })
+          ),
+          h("div", { style: { display: "flex", gap: 8, marginTop: 12 } },
+            isEditing ? [
+              h(Button, { key: "save", onClick: function() { saveEdit(item.id); } }, h(IconText, { icon: "check", size: 14 }, "Enregistrer")),
+              h(Button, { key: "cancel", variant: "secondary", onClick: cancelEdit }, "Annuler")
+            ] : [
+              h(Button, { key: "approve", onClick: function() { ctx.approvePending(item.id); }, style: { background: "#059669", color: "white", border: "none" } }, h(IconText, { icon: "check", size: 14 }, "Approuver")),
+              h(Button, { key: "edit", variant: "secondary", onClick: function() { startEdit(item); } }, h(IconText, { icon: "pencil", size: 14 }, "Modifier")),
+              h(Button, { key: "reject", onClick: function() { var r = prompt("Raison du refus :"); if (r !== null) ctx.rejectPending(item.id, r); }, style: { background: "#dc2626", color: "white", border: "none" } }, h(IconText, { icon: "x", size: 14 }, "Refuser"))
+            ]
+          )
+        );
+      }
+
+      return h("div", null,
+        h(PageHeader, { title: h(IconText, { icon: "shield-check", size: 20 }, "Validations"), subtitle: "Approuver ou refuser les modifications soumises par l'equipe" }),
+        h("div", { style: { display: "flex", gap: 16, marginBottom: 20, flexWrap: "wrap" } },
+          h(KPICard, { icon: h(Icon, { name: "clock", size: 32, color: "#d97706" }), label: "En attente", value: String(pending.length), color: "#d97706" }),
+          h(KPICard, { icon: h(Icon, { name: "check-circle", size: 32, color: "#059669" }), label: "Approuvees ce mois", value: String(approvedThisMonth), color: "#059669" }),
+          h(KPICard, { icon: h(Icon, { name: "x-circle", size: 32, color: "#dc2626" }), label: "Refusees ce mois", value: String(rejectedThisMonth), color: "#dc2626" })
+        ),
+        h("div", { style: { display: "flex", gap: 8, marginBottom: 20 } },
+          h("button", { onClick: function() { setTab("pending"); }, style: tabStyle(tab === "pending") }, h(Icon, { name: "clock", size: 16 }), "En attente (" + pending.length + ")"),
+          h("button", { onClick: function() { setTab("history"); }, style: tabStyle(tab === "history") }, h(Icon, { name: "history", size: 16 }), "Historique")
+        ),
+        tab === "pending" ? h("div", null,
+          pending.length === 0 ? h(Card, null, h("p", { style: { textAlign: "center", color: "#9ca3af", padding: 30 } }, "Aucune modification en attente de validation")) :
+          pending.map(function(item) { return renderPendingItem(item); })
+        ) :
+        h(Card, null,
+          h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, h(IconText, { icon: "history", size: 16 }, "Decisions recentes")),
+          log.length === 0 ? h("p", { style: { textAlign: "center", color: "#9ca3af", padding: 20 } }, "Aucune decision") :
+          log.slice(0, 20).map(function(l) {
+            return h("div", { key: l.id, style: { display: "flex", gap: 12, padding: "12px 0", borderBottom: "1px solid #f1f5f9", alignItems: "flex-start" } },
+              h("span", { style: { width: 10, height: 10, borderRadius: "50%", background: l.decision === "approved" ? "#059669" : "#dc2626", marginTop: 5, flexShrink: 0 } }),
+              h("div", { style: { flex: 1 } },
+                h("div", { style: { fontWeight: 600, fontSize: 14 } }, entityLabel(l.entity) + " \"" + l.summary + "\" " + (l.decision === "approved" ? "approuvee" : "refusee")),
+                h("div", { style: { fontSize: 13, color: "#64748b" } }, "Soumis par " + l.submittedBy + (l.reason ? " \u2014 Raison: " + l.reason : "")),
+                h("div", { style: { fontSize: 11, color: "#94a3b8" } }, formatDate(l.decidedAt))
+              ),
+              h("span", { style: { display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 10px", borderRadius: 20, fontSize: 12, fontWeight: 600, background: l.decision === "approved" ? "#ecfdf5" : "#fef2f2", color: l.decision === "approved" ? "#059669" : "#dc2626" } }, h(Icon, { name: l.decision === "approved" ? "check-circle" : "x-circle", size: 12 }), l.decision === "approved" ? "Approuvee" : "Refusee")
+            );
+          })
+        )
+      );
+    }
+
     var PERSONNEL_STORAGE_KEY = "personnel_data";
 
     function loadPersonnelFromParametres(parametres) {
@@ -1491,7 +1637,7 @@
     }
 
     // ─── Sidebar ────────────────────────────────────────────────────────
-    function Sidebar({ currentPage, onNavigate, userEmail, onLogout }) {
+    function Sidebar({ currentPage, onNavigate, userEmail, onLogout, isAdmin, pendingCount }) {
       const sections = [
         { name: "Principal", pages: [
           { key: "accueil", label: "Accueil", lucide: "home" },
@@ -1507,6 +1653,7 @@
         { name: "Rapports", pages: [
           { key: "historique", label: "Historique", lucide: "scroll-text" },
           { key: "parametres", label: "Parametres", lucide: "sliders-horizontal" },
+          { key: "validations", label: "Validations", lucide: "shield-check", adminOnly: true },
         ]},
       ];
       return h("div", { style: { width: 260, background: "var(--sidebar-bg)", color: "white", minHeight: "100vh", display: "flex", flexDirection: "column", flexShrink: 0 } },
@@ -1516,9 +1663,10 @@
         h("nav", { style: { flex: 1, padding: "16px 8px", overflowY: "auto" } },
           sections.map((section) => h("div", { key: section.name },
             h("div", { style: { fontSize: 11, fontWeight: 700, color: "var(--sidebar-text)", textTransform: "uppercase", letterSpacing: 0.5, padding: "12px 14px 8px", marginTop: section.name !== "Principal" ? 8 : 0 } }, section.name),
-            section.pages.map((p) => h("button", { key: p.key, onClick: () => onNavigate(p.key),
+            section.pages.filter(function(p) { return !p.adminOnly || isAdmin; }).map((p) => h("button", { key: p.key, onClick: () => onNavigate(p.key),
               style: { display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "10px 14px", border: "none", borderRadius: 6, marginBottom: 4, cursor: "pointer", fontSize: 14, fontWeight: currentPage === p.key ? 600 : 500, transition: "all 0.2s", background: currentPage === p.key ? "var(--sidebar-active)" : "transparent", color: currentPage === p.key ? "var(--sidebar-text-active)" : "var(--sidebar-text)" } },
-              h(Icon, { name: p.lucide, size: 16, color: currentPage === p.key ? "#ffffff" : "#94a3b8" }), p.label))))),
+              h(Icon, { name: p.lucide, size: 16, color: currentPage === p.key ? "#ffffff" : "#94a3b8" }), p.label,
+              p.key === "validations" && pendingCount > 0 ? h("span", { style: { marginLeft: "auto", background: "#dc2626", color: "#fff", fontSize: 11, fontWeight: 700, padding: "2px 7px", borderRadius: 10, minWidth: 20, textAlign: "center" } }, pendingCount) : null))))),
         h("div", { style: { padding: "12px 16px", borderTop: "1px solid rgba(255,255,255,0.1)" } },
           h("div", { style: { fontSize: 11, color: "#94a3b8", marginBottom: 8, wordBreak: "break-all" } }, userEmail || ""),
           h("button", { onClick: onLogout, style: { width: "100%", padding: "8px 12px", background: "transparent", color: "#94a3b8", border: "1px solid #1e293b", borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 600, transition: "all 0.2s" } }, h(IconText, { icon: "log-out", size: 14, color: "#94a3b8" }, "Deconnexion"))));
@@ -1870,17 +2018,124 @@
       const logout = async () => { await supabase.auth.signOut(); setSession(null); };
 
       const isAdmin = !!(session && session.user && (session.user.email || "").toLowerCase() === ADMIN_EMAIL);
+      const userEmail = session && session.user ? session.user.email : "";
+
+      // ─── Systeme de validation ──────────────────────────────────────
+      const PENDING_KEY = "pending_validations";
+      const VALIDATION_LOG_KEY = "validation_log";
+
+      function loadPending() {
+        var row = parametres.find(function(p) { return p.categorie === PENDING_KEY; });
+        if (row && row.valeur) { try { return JSON.parse(row.valeur); } catch(e) {} }
+        return [];
+      }
+      function loadValidationLog() {
+        var row = parametres.find(function(p) { return p.categorie === VALIDATION_LOG_KEY; });
+        if (row && row.valeur) { try { return JSON.parse(row.valeur); } catch(e) {} }
+        return [];
+      }
+
+      const [pendingValidations, setPendingValidationsRaw] = useState(function() { return loadPending(); });
+      const [validationLog, setValidationLogRaw] = useState(function() { return loadValidationLog(); });
+
+      // Sync pending from parametres
+      useEffect(function() { setPendingValidationsRaw(loadPending()); setValidationLogRaw(loadValidationLog()); }, [parametres]);
+
+      function savePendingToDb(newList) {
+        var row = parametres.find(function(p) { return p.categorie === PENDING_KEY; });
+        var jsonVal = JSON.stringify(newList);
+        if (row) {
+          supabase.from("parametres").update({ valeur: jsonVal }).eq("id", row.id).then(function(res) { if (!res.error) row.valeur = jsonVal; });
+        } else {
+          supabase.from("parametres").insert({ categorie: PENDING_KEY, valeur: jsonVal, ordre: 0 }).select().single().then(function(res) { if (!res.error) parametres.push(res.data); });
+        }
+      }
+      function saveLogToDb(newLog) {
+        var row = parametres.find(function(p) { return p.categorie === VALIDATION_LOG_KEY; });
+        var jsonVal = JSON.stringify(newLog.slice(0, 50));
+        if (row) {
+          supabase.from("parametres").update({ valeur: jsonVal }).eq("id", row.id).then(function(res) { if (!res.error) row.valeur = jsonVal; });
+        } else {
+          supabase.from("parametres").insert({ categorie: VALIDATION_LOG_KEY, valeur: jsonVal, ordre: 0 }).select().single().then(function(res) { if (!res.error) parametres.push(res.data); });
+        }
+      }
+
+      function addPendingItem(action, entity, data, originalData) {
+        var item = { id: Date.now(), action: action, entity: entity, data: data, originalData: originalData || null, submittedBy: userEmail, submittedAt: new Date().toISOString(), status: "pending" };
+        var newList = pendingValidations.concat(item);
+        setPendingValidationsRaw(newList);
+        savePendingToDb(newList);
+        showToast("Soumission envoyee pour validation", "info");
+      }
+
+      function approvePending(pid) {
+        var item = pendingValidations.find(function(x) { return x.id === pid; });
+        if (!item) return;
+        var promise;
+        if (item.entity === "equipement") {
+          if (item.action === "add") promise = addEquipement(item.data);
+          else if (item.action === "update") promise = updateEquipement(item.data);
+        } else if (item.entity === "intervention") {
+          if (item.action === "add") promise = addIntervention(item.data);
+          else if (item.action === "update") promise = updateIntervention(item.data);
+        } else if (item.entity === "plan") {
+          if (item.action === "add") promise = addPlan(item.data);
+          else if (item.action === "update") promise = updatePlan(item.data);
+        } else if (item.entity === "piece") {
+          if (item.action === "add") promise = addPiece(item.data);
+          else if (item.action === "update") promise = updatePiece(item.data);
+        }
+        if (promise) promise.then(function() {
+          var newList = pendingValidations.filter(function(x) { return x.id !== pid; });
+          setPendingValidationsRaw(newList);
+          savePendingToDb(newList);
+          var newLog = [{ id: Date.now(), action: item.action, entity: item.entity, summary: item.data.Title || item.data.Reference || "", submittedBy: item.submittedBy, decidedAt: new Date().toISOString(), decision: "approved" }].concat(validationLog);
+          setValidationLogRaw(newLog);
+          saveLogToDb(newLog);
+          showToast("Modification approuvee");
+        }).catch(function() {});
+      }
+
+      function rejectPending(pid, reason) {
+        var item = pendingValidations.find(function(x) { return x.id === pid; });
+        if (!item) return;
+        var newList = pendingValidations.filter(function(x) { return x.id !== pid; });
+        setPendingValidationsRaw(newList);
+        savePendingToDb(newList);
+        var newLog = [{ id: Date.now(), action: item.action, entity: item.entity, summary: item.data.Title || item.data.Reference || "", submittedBy: item.submittedBy, decidedAt: new Date().toISOString(), decision: "rejected", reason: reason || "" }].concat(validationLog);
+        setValidationLogRaw(newLog);
+        saveLogToDb(newLog);
+        showToast("Modification refusee");
+      }
+
+      function updatePendingItem(pid, newData) {
+        var newList = pendingValidations.map(function(x) { return x.id === pid ? Object.assign({}, x, { data: newData }) : x; });
+        setPendingValidationsRaw(newList);
+        savePendingToDb(newList);
+        showToast("Soumission mise a jour");
+      }
+
+      // Wrapped CRUD: non-admin goes to pending queue
+      const wrappedAddEquipement = isAdmin ? addEquipement : async (item) => { addPendingItem("add", "equipement", item); };
+      const wrappedUpdateEquipement = isAdmin ? updateEquipement : async (item) => { addPendingItem("update", "equipement", item, equipements.find((e) => e.Id === item.Id)); };
+      const wrappedAddIntervention = isAdmin ? addIntervention : async (item) => { addPendingItem("add", "intervention", item); };
+      const wrappedUpdateIntervention = isAdmin ? updateIntervention : async (item) => { addPendingItem("update", "intervention", item, interventions.find((i) => i.Id === item.Id)); };
+      const wrappedAddPlan = isAdmin ? addPlan : async (item) => { addPendingItem("add", "plan", item); };
+      const wrappedUpdatePlan = isAdmin ? updatePlan : async (item) => { addPendingItem("update", "plan", item, plans.find((p) => p.Id === item.Id)); };
+      const wrappedAddPiece = isAdmin ? addPiece : async (item) => { addPendingItem("add", "piece", item); };
+      const wrappedUpdatePiece = isAdmin ? updatePiece : async (item) => { addPendingItem("update", "piece", item, pieces.find((p) => p.Id === item.Id)); };
 
       const contextValue = {
         interventions, equipements, plans, pieces, releves, piecesEquipements, parametres,
-        isAdmin,
-        addIntervention, updateIntervention, deleteIntervention,
-        addEquipement, updateEquipement, deleteEquipement,
-        addPlan, updatePlan, deletePlan,
-        addPiece, updatePiece, deletePiece,
+        isAdmin, userEmail, pendingValidations, validationLog,
+        addIntervention: wrappedAddIntervention, updateIntervention: wrappedUpdateIntervention, deleteIntervention,
+        addEquipement: wrappedAddEquipement, updateEquipement: wrappedUpdateEquipement, deleteEquipement,
+        addPlan: wrappedAddPlan, updatePlan: wrappedUpdatePlan, deletePlan,
+        addPiece: wrappedAddPiece, updatePiece: wrappedUpdatePiece, deletePiece,
         addReleve, deleteReleve,
         linkPieceEquipement, unlinkPieceEquipement,
         addParametre, updateParametre, deleteParametre,
+        approvePending, rejectPending, updatePendingItem,
       };
 
       if (authLoading) return h("div", { style: { display: "flex", justifyContent: "center", alignItems: "center", minHeight: "100vh" } }, h("div", { className: "loader" }));
@@ -1895,6 +2150,7 @@
           case "fiche-equipement": return h(EcranFicheEquipement, { onNavigate: navigate, equipement: pageData });
           case "personnel": return h(EcranPersonnel, { onNavigate: navigate });
           case "organisation": return h(EcranOrganisation, { onNavigate: navigate });
+          case "validations": return isAdmin ? h(EcranValidations, { onNavigate: navigate }) : h(EcranAccueil, { onNavigate: navigate });
           case "historique": return h(EcranHistorique, { onNavigate: navigate });
           case "pieces": return h(EcranPieces, null);
           case "parametres": return h(EcranParametres, null);
@@ -1904,9 +2160,17 @@
 
       return h(AppContext.Provider, { value: contextValue },
         h("div", { style: { display: "flex", minHeight: "100vh", background: "var(--bg)", fontFamily: "'Inter', system-ui, -apple-system, sans-serif" } },
-          h(Sidebar, { currentPage, onNavigate: navigate, userEmail: session.user && session.user.email, onLogout: logout }),
+          h(Sidebar, { currentPage, onNavigate: navigate, userEmail: session.user && session.user.email, onLogout: logout, isAdmin, pendingCount: pendingValidations.length }),
           h("div", { style: { flex: 1, padding: "24px 32px", overflowY: "auto", maxHeight: "100vh", position: "relative" } },
             dataLoading && h("div", { style: { position: "absolute", top: 20, right: 20, display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#6b7280" } }, h("div", { className: "loader", style: { width: 20, height: 20, borderWidth: 2 } }), "Chargement..."),
+            !isAdmin && pendingValidations.filter(function(p) { return p.submittedBy === userEmail; }).length > 0 && h("div", { style: { background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: 8, padding: "10px 16px", marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between" } },
+              h("div", { style: { display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#92400e", fontWeight: 600 } },
+                h(Icon, { name: "clock", size: 16, color: "#92400e" }),
+                pendingValidations.filter(function(p) { return p.submittedBy === userEmail; }).length + " modification(s) en attente de validation par l'administrateur"),
+              h("div", { style: { display: "flex", gap: 6 } },
+                pendingValidations.filter(function(p) { return p.submittedBy === userEmail; }).slice(0, 3).map(function(p) {
+                  return h("span", { key: p.id, style: { background: "white", border: "1px solid #e2e8f0", borderRadius: 6, padding: "4px 10px", fontSize: 12, fontWeight: 600 } }, (p.data.Title || p.data.Reference || "..."));
+                }))),
             renderPage()),
           h(Toast, { message: toast.message, type: toast.type })));
     }
