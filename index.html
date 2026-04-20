@@ -1461,7 +1461,7 @@
               )),
               h("tbody", null, filtered.length === 0 ?
                 h("tr", null, h("td", { colSpan: 8, style: { padding: 40, textAlign: "center", color: "#9ca3af" } }, "Aucun employe enregistre")) :
-                filtered.map(function(emp) {
+                sortByField(filtered, "nom").map(function(emp) {
                   var avatarColor = GROUP_COLORS[(emp.id % GROUP_COLORS.length)];
                   return h("tr", { key: emp.id, style: { borderBottom: "1px solid #f3f4f6", cursor: "pointer" }, onClick: function() { setViewFiche(emp); } },
                     h("td", { style: { padding: "10px 12px" } },
