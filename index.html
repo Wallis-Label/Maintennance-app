@@ -370,7 +370,7 @@
           h(Card, null,
             h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, h(IconText, { icon: "alert-triangle", size: 16, color: "#dc2626" }, "Alertes urgentes")),
             urgents.length === 0 ? h("p", { style: { color: "#9ca3af", textAlign: "center", padding: 20 } }, "Aucune alerte") :
-              h("div", { style: { display: "flex", flexDirection: "column", gap: 8 } },
+              h("div", { style: { display: "flex", flexDirection: "column", gap: 8, maxHeight: 280, overflowY: "auto" } },
                 urgents.map((u) => h("div", { key: u.Id, onClick: function() { onNavigate("interventions", u); }, style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "#fef2f2", borderRadius: 8, borderLeft: "4px solid #dc2626", cursor: "pointer", transition: "all 0.15s" } },
                   h("div", null,
                     h("div", { style: { fontWeight: 600, fontSize: 14 } }, u.Title),
@@ -381,8 +381,8 @@
             (function() {
               var nonTermines = interventions.filter(function(i) { return i.Statut_Intervention === "Planifiee" || i.Statut_Intervention === "En cours" || i.Statut_Intervention === "Pas fait"; });
               return nonTermines.length === 0 ? h("p", { style: { color: "#9ca3af", textAlign: "center", padding: 20 } }, "Tous les travaux sont termines") :
-                h("div", { style: { display: "flex", flexDirection: "column", gap: 8 } },
-                  nonTermines.slice(0, 8).map(function(i) {
+                h("div", { style: { display: "flex", flexDirection: "column", gap: 8, maxHeight: 280, overflowY: "auto" } },
+                  nonTermines.map(function(i) {
                     var borderColor = i.Statut_Intervention === "Pas fait" ? "#dc2626" : i.Statut_Intervention === "En cours" ? "#d97706" : "#2563eb";
                     return h("div", { key: i.Id, onClick: function() { onNavigate("interventions", i); }, style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "#f9fafb", borderRadius: 8, borderLeft: "4px solid " + borderColor, cursor: "pointer", transition: "all 0.15s" } },
                       h("div", null,
@@ -394,7 +394,7 @@
         h(Card, null,
           h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, h(IconText, { icon: "clock", size: 16, color: "#6d28d9" }, "Derniers equipements modifies")),
           derniersEquips.length === 0 ? h("p", { style: { color: "#9ca3af", textAlign: "center", padding: 20 } }, "Aucun equipement") :
-            h("div", { style: { display: "flex", flexDirection: "column", gap: 8 } },
+            h("div", { style: { display: "flex", flexDirection: "column", gap: 8, maxHeight: 280, overflowY: "auto" } },
               derniersEquips.map(function(eq) { return h("div", { key: eq.Id, style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px", background: "#f9fafb", borderRadius: 8, cursor: "pointer" }, onClick: function() { onNavigate("fiche-equipement", eq); } },
                 h("div", null,
                   h("div", { style: { fontWeight: 600, fontSize: 14, color: "#6d28d9" } }, eq.Title),
@@ -1005,7 +1005,7 @@
     // ─── Ecran Organisation ─────────────────────────────────────────────
     // ─── Ecran Personnel ──────────────────────────────────────────────
     // ─── Bandeau soumissions en attente (non-admin) ─────────────────
-    function PendingBannerUser({ pendingValidations, userEmail, updatePendingItem }) {
+    function PendingBannerUser({ pendingValidations, userEmail, updatePendingItem, deletePendingItem }) {
       var myPending = pendingValidations.filter(function(p) { return p.submittedBy === userEmail; });
       var _expanded = useState(false);
       var expanded = _expanded[0], setExpanded = _expanded[1];
@@ -1089,7 +1089,10 @@
                 isEditing ? [
                   h(Button, { key: "save", onClick: function() { saveEdit(item.id); }, style: { padding: "6px 14px", fontSize: 12 } }, h(IconText, { icon: "check", size: 12 }, "Enregistrer")),
                   h(Button, { key: "cancel", variant: "secondary", onClick: cancelEdit, style: { padding: "6px 14px", fontSize: 12 } }, "Annuler")
-                ] : h(Button, { variant: "secondary", onClick: function() { startEdit(item); }, style: { padding: "6px 14px", fontSize: 12 } }, h(IconText, { icon: "pencil", size: 12 }, "Modifier ma soumission"))
+                ] : [
+                  h(Button, { key: "edit", variant: "secondary", onClick: function() { startEdit(item); }, style: { padding: "6px 14px", fontSize: 12 } }, h(IconText, { icon: "pencil", size: 12 }, "Modifier")),
+                  h(Button, { key: "delete", variant: "secondary", onClick: function() { if (confirm("Supprimer cette soumission ?")) deletePendingItem(item.id); }, style: { padding: "6px 14px", fontSize: 12, color: "#dc2626", borderColor: "#fca5a5" } }, h(IconText, { icon: "trash-2", size: 12 }, "Supprimer"))
+                ]
               )
             );
           })
@@ -2208,6 +2211,13 @@
         showToast("Soumission mise a jour");
       }
 
+      function deletePendingItem(pid) {
+        var newList = pendingValidations.filter(function(x) { return x.id !== pid; });
+        setPendingValidationsRaw(newList);
+        savePendingToDb(newList);
+        showToast("Soumission supprimee");
+      }
+
       // Wrapped CRUD: non-admin goes to pending queue
       const wrappedAddEquipement = isAdmin ? addEquipement : async (item) => { addPendingItem("add", "equipement", item); };
       const wrappedUpdateEquipement = isAdmin ? updateEquipement : async (item) => { addPendingItem("update", "equipement", item, equipements.find((e) => e.Id === item.Id)); };
@@ -2228,7 +2238,7 @@
         addReleve, deleteReleve,
         linkPieceEquipement, unlinkPieceEquipement,
         addParametre, updateParametre, deleteParametre,
-        approvePending, rejectPending, updatePendingItem,
+        approvePending, rejectPending, updatePendingItem, deletePendingItem,
       };
 
       if (authLoading) return h("div", { style: { display: "flex", justifyContent: "center", alignItems: "center", minHeight: "100vh" } }, h("div", { className: "loader" }));
@@ -2256,7 +2266,7 @@
           h(Sidebar, { currentPage, onNavigate: navigate, userEmail: session.user && session.user.email, onLogout: logout, isAdmin, pendingCount: pendingValidations.length }),
           h("div", { style: { flex: 1, padding: "24px 32px", overflowY: "auto", maxHeight: "100vh", position: "relative" } },
             dataLoading && h("div", { style: { position: "absolute", top: 20, right: 20, display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#6b7280" } }, h("div", { className: "loader", style: { width: 20, height: 20, borderWidth: 2 } }), "Chargement..."),
-            !isAdmin && pendingValidations.filter(function(p) { return p.submittedBy === userEmail; }).length > 0 && h(PendingBannerUser, { pendingValidations: pendingValidations, userEmail: userEmail, updatePendingItem: contextValue.updatePendingItem }),
+            !isAdmin && pendingValidations.filter(function(p) { return p.submittedBy === userEmail; }).length > 0 && h(PendingBannerUser, { pendingValidations: pendingValidations, userEmail: userEmail, updatePendingItem: contextValue.updatePendingItem, deletePendingItem: contextValue.deletePendingItem }),
             renderPage()),
           h(Toast, { message: toast.message, type: toast.type })));
     }
