@@ -2059,14 +2059,34 @@
         showToast("Piece supprimee");
       };
 
+      // Met a jour le "Dernier entretien H/KM" de l'equipement quand une intervention preventive est terminee
+      const maybeUpdateDernierEntretien = async (intervention) => {
+        if (intervention.Type !== "Preventive" || intervention.Statut_Intervention !== "Termine" || !intervention.Plan) return;
+        const eq = equipements.find(function(e) { return e.Title === intervention.Equipement || e.Id === intervention.EquipementId; });
+        if (!eq) return;
+        var changed = false;
+        var updated = Object.assign({}, eq);
+        var intH = parseFloat(intervention.Horametre || 0);
+        var intKM = parseFloat(intervention.KM || 0);
+        if (intH > 0 && intH > parseFloat(eq.DernierEntretienH || 0)) { updated.DernierEntretienH = String(intH); changed = true; }
+        if (intKM > 0 && intKM > parseFloat(eq.DernierEntretienKM || 0)) { updated.DernierEntretienKM = String(intKM); changed = true; }
+        if (changed) {
+          var dbPayload = equipementToDb(updated);
+          var res = await supabase.from("equipements").update(dbPayload).eq("id", eq.Id).select().single();
+          if (!res.error && res.data) { setEquipements(function(p) { return p.map(function(x) { return x.Id === eq.Id ? equipementFromDb(res.data) : x; }); }); }
+        }
+      };
+
       // CRUD : Interventions
       const addIntervention = async (item) => {
         const payload = interventionToDb(item, eqIdByCode);
         const { data, error } = await supabase.from("interventions").insert(payload).select().single();
         if (error) { showToast(error.message, "error"); throw error; }
         const eqCodeById = {}; equipements.forEach((e) => { eqCodeById[e.Id] = e.Title; });
-        setInterventions((p) => [interventionFromDb({ ...data, _equipement_code: eqCodeById[data.equipement_id] }), ...p]);
+        const newInt = interventionFromDb({ ...data, _equipement_code: eqCodeById[data.equipement_id] });
+        setInterventions((p) => [newInt, ...p]);
         showToast("Intervention ajoutee");
+        maybeUpdateDernierEntretien(item);
       };
       const updateIntervention = async (item) => {
         const payload = interventionToDb(item, eqIdByCode);
@@ -2075,6 +2095,7 @@
         const eqCodeById = {}; equipements.forEach((e) => { eqCodeById[e.Id] = e.Title; });
         setInterventions((p) => p.map((x) => (x.Id === item.Id ? interventionFromDb({ ...data, _equipement_code: eqCodeById[data.equipement_id] }) : x)));
         showToast("Intervention mise a jour");
+        maybeUpdateDernierEntretien(item);
       };
       const deleteIntervention = async (id) => {
         const { error } = await supabase.from("interventions").delete().eq("id", id);
