@@ -86,6 +86,30 @@
     // Email admin : seul ce compte peut modifier l'horametre et supprimer des releves
     const ADMIN_EMAIL = "tom.wallislabel@gmail.com";
 
+    // ─── Formateurs texte ─────────────────────────────────────────────
+    // Immatriculation NC : "123456NC" → "123 456 NC"
+    function formatImmatNC(val) {
+      if (!val) return val;
+      var raw = val.replace(/\s+/g, "").toUpperCase();
+      if (/^\d{6}NC$/.test(raw)) return raw.slice(0, 3) + " " + raw.slice(3, 6) + " NC";
+      if (/^\d{3,6}NC?$/i.test(raw)) return raw;
+      return val;
+    }
+    // Premiere lettre majuscule, reste minuscule
+    function capitalizeFirst(val) {
+      if (!val || typeof val !== "string") return val;
+      return val.charAt(0).toUpperCase() + val.slice(1).toLowerCase();
+    }
+    // Tri naturel A-Z puis 1-100 (chiffres extraits)
+    function naturalSort(a, b) {
+      var sa = String(a || "").toLowerCase();
+      var sb = String(b || "").toLowerCase();
+      return sa.localeCompare(sb, "fr", { numeric: true, sensitivity: "base" });
+    }
+    function sortByField(arr, field) {
+      return arr.slice().sort(function(a, b) { return naturalSort(a[field], b[field]); });
+    }
+
     // ─── Formateurs (nombres + devise) ──────────────────────────────────
     const fmtNum = (n) => {
       const v = Number(n);
@@ -356,7 +380,7 @@
       const piecesFaibles = pieces.filter((p) => parseInt(p.Stock) <= parseInt(p.StockMin)).length;
       const visitesADeclencher = equipements.reduce((a, eq) => a + computeVisitesADeclencher(eq, plans, interventions), 0);
 
-      const derniersEquips = [...equipements].sort((a, b) => (b.Id || "").localeCompare(a.Id || "")).slice(0, 5);
+      const derniersEquips = sortByField(equipements, "Title").slice(0, 10);
       return h("div", null,
         h(PageHeader, { title: h(IconText, { icon: "home", size: 20 }, "Tableau de bord"), subtitle: "Vue d'ensemble de la maintenance" }),
         h("div", { style: { display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 24 } },
@@ -371,7 +395,7 @@
             h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, h(IconText, { icon: "alert-triangle", size: 16, color: "#dc2626" }, "Alertes urgentes")),
             urgents.length === 0 ? h("p", { style: { color: "#9ca3af", textAlign: "center", padding: 20 } }, "Aucune alerte") :
               h("div", { style: { display: "flex", flexDirection: "column", gap: 8, maxHeight: 280, overflowY: "auto" } },
-                urgents.map((u) => h("div", { key: u.Id, onClick: function() { onNavigate("interventions", u); }, style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "#fef2f2", borderRadius: 8, borderLeft: "4px solid #dc2626", cursor: "pointer", transition: "all 0.15s" } },
+                sortByField(urgents, "Title").map((u) => h("div", { key: u.Id, onClick: function() { onNavigate("interventions", u); }, style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "#fef2f2", borderRadius: 8, borderLeft: "4px solid #dc2626", cursor: "pointer", transition: "all 0.15s" } },
                   h("div", null,
                     h("div", { style: { fontWeight: 600, fontSize: 14 } }, u.Title),
                     h("div", { style: { fontSize: 12, color: "#6b7280" } }, u.Equipement + " \u2014 " + u.Technicien)),
@@ -382,7 +406,7 @@
               var nonTermines = interventions.filter(function(i) { return i.Statut_Intervention === "Planifiee" || i.Statut_Intervention === "En cours" || i.Statut_Intervention === "Pas fait"; });
               return nonTermines.length === 0 ? h("p", { style: { color: "#9ca3af", textAlign: "center", padding: 20 } }, "Tous les travaux sont termines") :
                 h("div", { style: { display: "flex", flexDirection: "column", gap: 8, maxHeight: 280, overflowY: "auto" } },
-                  nonTermines.map(function(i) {
+                  sortByField(nonTermines, "Title").map(function(i) {
                     var borderColor = i.Statut_Intervention === "Pas fait" ? "#dc2626" : i.Statut_Intervention === "En cours" ? "#d97706" : "#2563eb";
                     return h("div", { key: i.Id, onClick: function() { onNavigate("interventions", i); }, style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "#f9fafb", borderRadius: 8, borderLeft: "4px solid " + borderColor, cursor: "pointer", transition: "all 0.15s" } },
                       h("div", null,
@@ -423,7 +447,7 @@
         try { await onSave(f); } finally { setSaving(false); }
       };
       return h("div", null,
-        h(FormField, { label: "Titre du plan" }, h("input", { style: inputStyle, value: f.Title, onChange: (e) => upd("Title", e.target.value), placeholder: "Ex: Plan mensuel" })),
+        h(FormField, { label: "Titre du plan" }, h("input", { style: inputStyle, value: f.Title, onChange: (e) => upd("Title", e.target.value), onBlur: () => upd("Title", capitalizeFirst(f.Title)), placeholder: "Ex: Plan mensuel" })),
         h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
           h(FormField, { label: "Frequence" }, h("select", { style: selectStyle, value: f.Frequence, onChange: (e) => upd("Frequence", e.target.value) },
             freqs.length === 0 ? h("option", { value: "" }, "(aucun, ajoutez dans Parametres)") : freqs.map((x) => h("option", { key: x, value: x }, x)))),
@@ -457,7 +481,7 @@
         h("div", { style: { marginBottom: 16 } }, h(SearchInput, { placeholder: "Rechercher un plan...", value: search, onChange: setSearch })),
         h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: 12 } },
           filtered.length === 0 ? h(Card, null, h("p", { style: { textAlign: "center", color: "#9ca3af", padding: 20 } }, "Aucun plan trouve")) :
-            filtered.map((p) => h(Card, { key: p.Id },
+            sortByField(filtered, "Title").map((p) => h(Card, { key: p.Id },
               h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 } },
                 h("div", null,
                   h("div", { style: { fontWeight: 700, fontSize: 16, color: "#6d28d9" } }, p.Title),
@@ -501,10 +525,10 @@
         saved && h("div", { style: { background: "#dcfce7", border: "1px solid #86efac", borderRadius: 8, padding: "12px 16px", marginBottom: 16, color: "#166534", fontWeight: 600 } }, h(IconText, { icon: "check-circle", size: 16, color: "#166534" }, "Intervention enregistree !")),
         h(Card, null,
           h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 } },
-            h(FormField, { label: "Titre / Description" }, h("input", { style: inputStyle, value: f.Title, onChange: (e) => upd("Title", e.target.value), placeholder: "Ex: Vidange D36" })),
+            h(FormField, { label: "Titre / Description" }, h("input", { style: inputStyle, value: f.Title, onChange: (e) => upd("Title", e.target.value), onBlur: () => upd("Title", capitalizeFirst(f.Title)), placeholder: "Ex: Vidange D36" })),
             h(FormField, { label: "Equipement" }, h("select", { style: selectStyle, value: f.Equipement, onChange: (e) => upd("Equipement", e.target.value) },
               h("option", { value: "" }, "-- Selectionner --"),
-              equipements.map((eq) => h("option", { key: eq.Id, value: eq.Title }, eq.Title + " \u2014 " + eq.Nom)))),
+              sortByField(equipements, "Title").map((eq) => h("option", { key: eq.Id, value: eq.Title }, eq.Title + " \u2014 " + eq.Nom)))),
             h(FormField, { label: "Date d'intervention" }, h("input", { type: "date", style: inputStyle, value: f.Date_Intervention, onChange: (e) => upd("Date_Intervention", e.target.value) })),
             h(FormField, { label: "Technicien" }, h("select", { style: selectStyle, value: f.Technicien, onChange: (e) => upd("Technicien", e.target.value) },
               h("option", { value: "" }, "-- Selectionner --"),
@@ -519,7 +543,7 @@
             h(FormField, { label: "Kilometrage (km)" }, h("input", { type: "number", style: inputStyle, value: f.KM, onChange: (e) => upd("KM", e.target.value), placeholder: "0" })),
             h(FormField, { label: "Plan de maintenance" }, h("input", { style: inputStyle, value: f.Plan, onChange: (e) => upd("Plan", e.target.value), placeholder: "Ex: Plan mensuel" })),
             h("div", { style: { gridColumn: "1 / -1" } },
-              h(FormField, { label: "Travaux effectues" }, h("textarea", { style: { ...inputStyle, minHeight: 80, resize: "vertical" }, value: f.Travaux_Effectues, onChange: (e) => upd("Travaux_Effectues", e.target.value), placeholder: "Decrivez les travaux..." })))),
+              h(FormField, { label: "Travaux effectues" }, h("textarea", { style: { ...inputStyle, minHeight: 80, resize: "vertical" }, value: f.Travaux_Effectues, onChange: (e) => upd("Travaux_Effectues", e.target.value), onBlur: () => upd("Travaux_Effectues", capitalizeFirst(f.Travaux_Effectues)), placeholder: "Decrivez les travaux..." })))),
           h("div", { style: { display: "flex", gap: 12, marginTop: 20, justifyContent: "flex-end" } },
             h(Button, { variant: "secondary", onClick: () => onNavigate("accueil"), disabled: saving }, "Annuler"),
             h(Button, { onClick: submit, disabled: saving }, saving ? "Enregistrement..." : (editItem ? h(IconText, { icon: "save", size: 14 }, "Modifier") : h(IconText, { icon: "save", size: 14 }, "Enregistrer"))))));
@@ -549,7 +573,7 @@
         h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
           h(FormField, { label: "Categorie" }, h("select", { style: selectStyle, value: f.Categorie, onChange: (e) => { const c = e.target.value; upd("Categorie", c); const newList = c === "Vehicule" ? typesVL : typesEngin; upd("Type", newList[0] || ""); } },
             ["Engin", "Vehicule"].map((x) => h("option", { key: x, value: x }, x)))),
-          h(FormField, { label: "Code / Immatriculation" }, h("input", { style: inputStyle, value: f.Title, onChange: (e) => upd("Title", e.target.value), placeholder: "Ex: 427 686 NC" })),
+          h(FormField, { label: "Code / Immatriculation" }, h("input", { style: inputStyle, value: f.Title, onChange: (e) => upd("Title", e.target.value), onBlur: () => upd("Title", formatImmatNC(f.Title)), placeholder: "Ex: 427 686 NC" })),
           h(FormField, { label: "Type" }, h("select", { style: selectStyle, value: f.Type, onChange: (e) => upd("Type", e.target.value) },
             typesDispos.length === 0 ? h("option", { value: "" }, "(aucun, ajoutez dans Parametres)") : typesDispos.map((x) => h("option", { key: x, value: x }, x)))),
           h(FormField, { label: "Localisation" }, h("select", { style: selectStyle, value: f.Localisation, onChange: (e) => upd("Localisation", e.target.value) },
@@ -597,7 +621,8 @@
           if (filtered.length === 0) return h(Card, null, h("p", { style: { textAlign: "center", color: "#9ca3af", padding: 20 } }, "Aucun " + (onglet === "Engin" ? "engin" : "vehicule")));
           var typeGroups = {};
           filtered.forEach(function(eq) { var t = eq.Type || "Autre"; if (!typeGroups[t]) typeGroups[t] = []; typeGroups[t].push(eq); });
-          var typeNames = Object.keys(typeGroups).sort();
+          Object.keys(typeGroups).forEach(function(t) { typeGroups[t] = sortByField(typeGroups[t], "Title"); });
+          var typeNames = Object.keys(typeGroups).sort(function(a, b) { return naturalSort(a, b); });
           return h("div", { style: { display: "flex", flexDirection: "column", gap: 24 } },
             typeNames.map(function(typeName) {
               var eqs = typeGroups[typeName];
@@ -815,7 +840,7 @@
             h(SearchInput, { placeholder: "Statut...", value: sS, onChange: setSS }))),
         h("div", { style: { display: "flex", flexDirection: "column", gap: 8 } },
           filtered.length === 0 ? h(Card, null, h("p", { style: { textAlign: "center", color: "#9ca3af", padding: 20 } }, "Aucune intervention trouvee")) :
-            filtered.map((item) => h(Card, { key: item.Id, style: { padding: 14 } },
+            sortByField(filtered, "Title").map((item) => h(Card, { key: item.Id, style: { padding: 14 } },
               h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 } },
                 h("div", { style: { flex: 1, cursor: "pointer" }, onClick: () => onNavigate("interventions", item) },
                   h("div", { style: { fontWeight: 700, fontSize: 14, marginBottom: 4 } }, item.Title || item.Travaux_Effectues),
@@ -845,8 +870,8 @@
       };
       return h("div", null,
         h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
-          h(FormField, { label: "Reference" }, h("input", { style: inputStyle, value: f.Reference, onChange: (e) => upd("Reference", e.target.value), placeholder: "Ex: FIL-003" })),
-          h(FormField, { label: "Designation" }, h("input", { style: inputStyle, value: f.Designation, onChange: (e) => upd("Designation", e.target.value), placeholder: "Ex: Filtre hydraulique" })),
+          h(FormField, { label: "Reference" }, h("input", { style: inputStyle, value: f.Reference, onChange: (e) => upd("Reference", e.target.value), onBlur: () => upd("Reference", f.Reference ? f.Reference.toUpperCase() : ""), placeholder: "Ex: FIL-003" })),
+          h(FormField, { label: "Designation" }, h("input", { style: inputStyle, value: f.Designation, onChange: (e) => upd("Designation", e.target.value), onBlur: () => upd("Designation", capitalizeFirst(f.Designation)), placeholder: "Ex: Filtre hydraulique" })),
           h(FormField, { label: "Categorie" }, h("select", { style: selectStyle, value: f.Categorie, onChange: (e) => upd("Categorie", e.target.value) },
             cats.length === 0 ? h("option", { value: "" }, "(aucun, ajoutez dans Parametres)") : cats.map((x) => h("option", { key: x, value: x }, x)))),
           h(FormField, { label: "Fournisseur" }, h("input", { style: inputStyle, value: f.Fournisseur, onChange: (e) => upd("Fournisseur", e.target.value) })),
@@ -907,7 +932,7 @@
                   h("th", { key: i, style: { padding: "12px", fontWeight: 600, color: "#6b7280", borderBottom: "1px solid #e5e7eb" } }, x)))),
               h("tbody", null, filtered.length === 0 ?
                 h("tr", null, h("td", { colSpan: 9, style: { padding: 40, textAlign: "center", color: "#9ca3af" } }, "Aucune piece trouvee")) :
-                filtered.map((p) => h("tr", { key: p.Id, style: { borderBottom: "1px solid #f3f4f6" } },
+                sortByField(filtered, "Reference").map((p) => h("tr", { key: p.Id, style: { borderBottom: "1px solid #f3f4f6" } },
                   h("td", { style: { padding: "10px 12px", fontWeight: 700, color: "#6d28d9" } }, p.Reference),
                   h("td", { style: { padding: "10px 12px", fontWeight: 600 } }, p.Designation),
                   h("td", { style: { padding: "10px 12px" } }, p.Categorie),
