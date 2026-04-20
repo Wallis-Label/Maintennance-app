@@ -127,10 +127,17 @@
     const STATUT_PLAN_TO_DB = { "Actif": "actif", "En retard": "en_retard", "Suspendu": "suspendu" };
 
     function equipementFromDb(r) {
-      return { Id: r.id, Title: r.immatriculation || "", Nom: r.nom || "", Type: r.type || "", Categorie: r.categorie === "vl" ? "Vehicule" : "Engin", Localisation: r.localisation || "", Horametre: String(r.horametre_actuel ?? 0), KM: String(r.km_actuel ?? 0), Statut: STATUT_EQ_TO_UI[r.statut] || "En service", DateMiseEnService: r.date_mise_en_service || "", Marque: r.marque || "", Modele: r.modele || "", Annee: r.annee || null, Notes: r.notes || "" };
+      var extra = {};
+      try { if (r.notes) extra = JSON.parse(r.notes); } catch(e) { extra = { _text: r.notes }; }
+      return { Id: r.id, Title: r.immatriculation || "", Nom: r.nom || "", Type: r.type || "", Categorie: r.categorie === "vl" ? "Vehicule" : "Engin", Localisation: r.localisation || "", Horametre: String(r.horametre_actuel ?? 0), KM: String(r.km_actuel ?? 0), Statut: STATUT_EQ_TO_UI[r.statut] || "En service", DateMiseEnService: r.date_mise_en_service || "", Marque: r.marque || "", Modele: r.modele || "", Annee: r.annee || null, DernierEntretienH: String(extra.dernierEntretienH ?? ""), DernierEntretienKM: String(extra.dernierEntretienKM ?? ""), Notes: extra._text || "" };
     }
     function equipementToDb(e) {
-      return { immatriculation: e.Title, nom: e.Nom, type: e.Type, categorie: e.Categorie === "Vehicule" ? "vl" : "engin", localisation: e.Localisation, horametre_actuel: parseFloat(e.Horametre) || 0, km_actuel: parseFloat(e.KM) || 0, statut: STATUT_EQ_TO_DB[e.Statut] || "actif", date_mise_en_service: e.DateMiseEnService || null, marque: e.Marque || null, modele: e.Modele || null, annee: e.Annee ? parseInt(e.Annee) : null, notes: e.Notes || null };
+      var notesObj = {};
+      if (e.DernierEntretienH) notesObj.dernierEntretienH = parseFloat(e.DernierEntretienH) || 0;
+      if (e.DernierEntretienKM) notesObj.dernierEntretienKM = parseFloat(e.DernierEntretienKM) || 0;
+      if (e.Notes) notesObj._text = e.Notes;
+      var notesStr = Object.keys(notesObj).length > 0 ? JSON.stringify(notesObj) : null;
+      return { immatriculation: e.Title, nom: e.Nom, type: e.Type, categorie: e.Categorie === "Vehicule" ? "vl" : "engin", localisation: e.Localisation, horametre_actuel: parseFloat(e.Horametre) || 0, km_actuel: parseFloat(e.KM) || 0, statut: STATUT_EQ_TO_DB[e.Statut] || "actif", date_mise_en_service: e.DateMiseEnService || null, marque: e.Marque || null, modele: e.Modele || null, annee: e.Annee ? parseInt(e.Annee) : null, notes: notesStr };
     }
     function interventionFromDb(r) {
       return { Id: r.id, Title: r.titre || "", Equipement: r._equipement_code || "", EquipementId: r.equipement_id, Date_Intervention: r.date_intervention || "", Technicien: r.technicien || "", Statut_Intervention: STATUT_INT_TO_UI[r.statut] || "Planifiee", Travaux_Effectues: r.travaux_effectues || r.description || "", Temps_Arret: r.temps_arret || "", Cout: String(r.cout_total ?? ""), Plan: r.plan_nom || "", Horametre: r.horametre != null ? String(r.horametre) : "", KM: r.km != null ? String(r.km) : "", Type: r.type === "preventive" ? "Preventive" : "Curative", CycleNumber: r.cycle_number != null ? r.cycle_number : null };
@@ -181,6 +188,9 @@
       const eqCode = (eq.Title || "").toLowerCase();
       const horam = parseFloat(eq.Horametre || 0);
       const km = parseFloat(eq.KM || 0);
+      // Baseline : dernier entretien connu avant l'app (pour ne pas declencher les visites passees)
+      const baseH = parseFloat(eq.DernierEntretienH || 0);
+      const baseKM = parseFloat(eq.DernierEntretienKM || 0);
       let overdue = 0;
       plans.forEach((p) => {
         if (p.Statut === "Suspendu") return;
@@ -190,21 +200,21 @@
         const matchH = freq.match(/horametre\s*(\d+)/i) || freq.match(/^(\d+)\s*h/i);
         const matchK = freq.match(/km\s*(\d+)/i) || freq.match(/(\d+)\s*km/i);
         let cyclesAtteints = 0;
+        let cyclesBase = 0;
         if (matchH) {
           const f = parseInt(matchH[1]);
-          if (f > 0) cyclesAtteints = Math.floor(horam / f);
+          if (f > 0) { cyclesAtteints = Math.floor(horam / f); cyclesBase = Math.floor(baseH / f); }
         } else if (matchK) {
           const f = parseInt(matchK[1]);
-          if (f > 0) cyclesAtteints = Math.floor(km / f);
+          if (f > 0) { cyclesAtteints = Math.floor(km / f); cyclesBase = Math.floor(baseKM / f); }
         } else return; // Frequence calendaire : non compte ici
-        // On ne compte qu'une seule visite par plan : celle du dernier cycle atteint.
-        // Si le dernier cycle terminé est >= au cycle actuel, aucune visite due.
+        // Le cycle de reference = max(baseline avant app, interventions terminees dans l'app)
         const maxCompleted = interventions.filter((i) =>
           i.Type === "Preventive" &&
           (i.EquipementId === eq.Id || i.Equipement === eq.Title) &&
           (i.Plan || "").toLowerCase() === p.Title.toLowerCase() &&
           i.Statut_Intervention === "Termine"
-        ).reduce((a, i) => Math.max(a, parseInt(i.CycleNumber || 0)), 0);
+        ).reduce((a, i) => Math.max(a, parseInt(i.CycleNumber || 0)), cyclesBase);
         if (cyclesAtteints > maxCompleted) overdue += 1;
       });
       return overdue;
@@ -552,7 +562,7 @@
     // ─── Formulaire Equipement ──────────────────────────────────────────
     function EquipementForm({ onSave, onCancel, editItem }) {
       const { isAdmin } = useAppData();
-      const [f, setF] = useState(editItem || { Title: "", Nom: "", Categorie: "Engin", Type: "Engin de chantier", Localisation: "Zone A", Horametre: "0", KM: "0", Statut: "En service", DateMiseEnService: new Date().toISOString().split("T")[0] });
+      const [f, setF] = useState(editItem || { Title: "", Nom: "", Categorie: "Engin", Type: "Engin de chantier", Localisation: "Zone A", Horametre: "0", KM: "0", DernierEntretienH: "", DernierEntretienKM: "", Statut: "En service", DateMiseEnService: new Date().toISOString().split("T")[0] });
       const [saving, setSaving] = useState(false);
       const upd = (k, v) => setF((p) => ({ ...p, [k]: v }));
       // On ne peut modifier l'horametre/KM manuellement que si admin et en mode edition.
@@ -580,6 +590,8 @@
             h("option", { value: "" }, "--"), localisations.map((x) => h("option", { key: x, value: x }, x)))),
           h(FormField, { label: "Horametre (h)" + (horametreEditable ? "" : " (admin)") }, h("input", { type: "number", style: horametreEditable ? inputStyle : lockedInput, value: f.Horametre, onChange: (e) => upd("Horametre", e.target.value), readOnly: !horametreEditable, title: horametreEditable ? "" : "Reserve a l'admin. Utilisez un releve pour mettre a jour." })),
           h(FormField, { label: "Kilometrage (km)" + (horametreEditable ? "" : " (admin)") }, h("input", { type: "number", style: horametreEditable ? inputStyle : lockedInput, value: f.KM, onChange: (e) => upd("KM", e.target.value), readOnly: !horametreEditable, title: horametreEditable ? "" : "Reserve a l'admin. Utilisez un releve pour mettre a jour." })),
+          h(FormField, { label: "Dernier entretien H (h)" }, h("input", { type: "number", style: inputStyle, value: f.DernierEntretienH, onChange: (e) => upd("DernierEntretienH", e.target.value), placeholder: "Ex: 4800", title: "Horametre du dernier entretien connu avant l'application" })),
+          h(FormField, { label: "Dernier entretien KM" }, h("input", { type: "number", style: inputStyle, value: f.DernierEntretienKM, onChange: (e) => upd("DernierEntretienKM", e.target.value), placeholder: "Ex: 45000", title: "Kilometrage du dernier entretien connu avant l'application" })),
           h(FormField, { label: "Statut" }, h("select", { style: selectStyle, value: f.Statut, onChange: (e) => upd("Statut", e.target.value) },
             ["En service", "En panne", "En maintenance", "Reforme"].map((x) => h("option", { key: x, value: x }, x)))),
           h(FormField, { label: "Mise en service" }, h("input", { type: "date", style: inputStyle, value: f.DateMiseEnService, onChange: (e) => upd("DateMiseEnService", e.target.value) }))),
@@ -653,7 +665,7 @@
             }));
         }()),
         showModal && h(Modal, { title: editing ? "Modifier l'equipement" : "Nouvel equipement", onClose: () => { setShowModal(false); setEditing(null); } },
-          h(EquipementForm, { onSave: handleSave, onCancel: () => { setShowModal(false); setEditing(null); }, editItem: editing || { Title: "", Nom: "", Categorie: onglet, Type: onglet === "Vehicule" ? "Vehicule leger" : "Engin de chantier", Localisation: "Zone A", Horametre: "0", KM: "0", Statut: "En service", DateMiseEnService: new Date().toISOString().split("T")[0] } })),
+          h(EquipementForm, { onSave: handleSave, onCancel: () => { setShowModal(false); setEditing(null); }, editItem: editing || { Title: "", Nom: "", Categorie: onglet, Type: onglet === "Vehicule" ? "Vehicule leger" : "Engin de chantier", Localisation: "Zone A", Horametre: "0", KM: "0", DernierEntretienH: "", DernierEntretienKM: "", Statut: "En service", DateMiseEnService: new Date().toISOString().split("T")[0] } })),
         toDelete && h(ConfirmDialog, { title: "Supprimer l'equipement ?", message: "Confirmer la suppression de \"" + toDelete.Title + " - " + toDelete.Nom + "\" ? (Les interventions et releves associes seront supprimes.)", onConfirm: handleConfirmDelete, onCancel: () => setToDelete(null) }));
     }
 
@@ -708,7 +720,7 @@
           h(Card, null,
             h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, "Informations generales"),
             h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
-              [["Code", eq.Title], ["Categorie", eq.Categorie || "Engin"], ["Type", eq.Type], ["Localisation", eq.Localisation || "\u2014"], ["Horametre", fmtNum(eq.Horametre) + " h"], ["KM", fmtNum(eq.KM || 0) + " km"], ["Mise en service", eq.DateMiseEnService || "\u2014"]].map(([label, val]) =>
+              [["Code", eq.Title], ["Categorie", eq.Categorie || "Engin"], ["Type", eq.Type], ["Localisation", eq.Localisation || "\u2014"], ["Horametre", fmtNum(eq.Horametre) + " h"], ["KM", fmtNum(eq.KM || 0) + " km"], ["Dernier entretien H", eq.DernierEntretienH ? fmtNum(eq.DernierEntretienH) + " h" : "\u2014"], ["Dernier entretien KM", eq.DernierEntretienKM ? fmtNum(eq.DernierEntretienKM) + " km" : "\u2014"], ["Mise en service", eq.DateMiseEnService || "\u2014"]].map(([label, val]) =>
                 h("div", { key: label },
                   h("div", { style: { fontSize: 12, color: "#9ca3af", fontWeight: 600, textTransform: "uppercase" } }, label),
                   h("div", { style: { fontSize: 15, fontWeight: 600, color: "#1f2937" } }, val)))),
