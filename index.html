@@ -1004,6 +1004,99 @@
 
     // ─── Ecran Organisation ─────────────────────────────────────────────
     // ─── Ecran Personnel ──────────────────────────────────────────────
+    // ─── Bandeau soumissions en attente (non-admin) ─────────────────
+    function PendingBannerUser({ pendingValidations, userEmail, updatePendingItem }) {
+      var myPending = pendingValidations.filter(function(p) { return p.submittedBy === userEmail; });
+      var _expanded = useState(false);
+      var expanded = _expanded[0], setExpanded = _expanded[1];
+      var _editingId = useState(null);
+      var editingId = _editingId[0], setEditingId = _editingId[1];
+      var _editData = useState(null);
+      var editData = _editData[0], setEditData = _editData[1];
+      var techniciens = useParams("technicien");
+      var typesEngin = useParams("type_engin");
+      var typesVL = useParams("type_vl");
+      var localisations = useParams("localisation");
+      var freqsPlan = useParams("frequence_plan");
+      var catsPiece = useParams("cat_piece");
+      var ctx = useAppData();
+      var equipements = ctx.equipements;
+
+      if (myPending.length === 0) return null;
+
+      function startEdit(item) { setEditingId(item.id); setEditData(Object.assign({}, item.data)); }
+      function cancelEdit() { setEditingId(null); setEditData(null); }
+      function saveEdit(pid) { updatePendingItem(pid, editData); setEditingId(null); setEditData(null); }
+      function updField(key, val) { setEditData(function(p) { return Object.assign({}, p, (function() { var o = {}; o[key] = val; return o; })()); }); }
+
+      function renderField(key, val, item) {
+        var entity = item.entity;
+        if (key === "Statut" && entity === "equipement") return h("select", { style: selectStyle, value: val, onChange: function(e) { updField(key, e.target.value); } }, ["En service", "En panne", "En maintenance", "Reforme"].map(function(s) { return h("option", { key: s, value: s }, s); }));
+        if (key === "Categorie" && entity === "equipement") return h("select", { style: selectStyle, value: val, onChange: function(e) { updField(key, e.target.value); } }, ["Engin", "Vehicule"].map(function(s) { return h("option", { key: s, value: s }, s); }));
+        if (key === "Type" && entity === "equipement") { var types = (editData && editData.Categorie === "Vehicule") ? typesVL : typesEngin; return h("select", { style: selectStyle, value: val, onChange: function(e) { updField(key, e.target.value); } }, types.map(function(s) { return h("option", { key: s, value: s }, s); })); }
+        if (key === "Localisation" && entity === "equipement") return h("select", { style: selectStyle, value: val, onChange: function(e) { updField(key, e.target.value); } }, h("option", { value: "" }, "--"), localisations.map(function(s) { return h("option", { key: s, value: s }, s); }));
+        if (key === "Equipement" && entity === "intervention") return h("select", { style: selectStyle, value: val, onChange: function(e) { updField(key, e.target.value); } }, h("option", { value: "" }, "--"), equipements.map(function(eq) { return h("option", { key: eq.Id, value: eq.Title }, eq.Title); }));
+        if (key === "Technicien") return h("select", { style: selectStyle, value: val, onChange: function(e) { updField(key, e.target.value); } }, h("option", { value: "" }, "--"), techniciens.map(function(t) { return h("option", { key: t, value: t }, t); }));
+        if (key === "Statut_Intervention") return h("select", { style: selectStyle, value: val, onChange: function(e) { updField(key, e.target.value); } }, ["Planifiee", "En cours", "Termine", "Pas fait"].map(function(s) { return h("option", { key: s, value: s }, s); }));
+        if (key === "Type" && entity === "intervention") return h("select", { style: selectStyle, value: val, onChange: function(e) { updField(key, e.target.value); } }, ["Preventive", "Curative"].map(function(s) { return h("option", { key: s, value: s }, s); }));
+        if (key === "Statut" && entity === "plan") return h("select", { style: selectStyle, value: val, onChange: function(e) { updField(key, e.target.value); } }, ["Actif", "En retard", "Suspendu"].map(function(s) { return h("option", { key: s, value: s }, s); }));
+        if (key === "Frequence" && entity === "plan") return h("select", { style: selectStyle, value: val, onChange: function(e) { updField(key, e.target.value); } }, freqsPlan.map(function(s) { return h("option", { key: s, value: s }, s); }));
+        if (key === "Categorie" && entity === "piece") return h("select", { style: selectStyle, value: val, onChange: function(e) { updField(key, e.target.value); } }, catsPiece.map(function(s) { return h("option", { key: s, value: s }, s); }));
+        if (key === "Cout" || key === "PrixUnitaire" || key === "Horametre" || key === "KM" || key === "Stock" || key === "StockMin") return h("input", { type: "number", style: inputStyle, value: val || "", onChange: function(e) { updField(key, e.target.value); } });
+        if (key === "Date_Intervention" || key === "ProchainIntervention" || key === "DateMiseEnService") return h("input", { type: "date", style: inputStyle, value: val || "", onChange: function(e) { updField(key, e.target.value); } });
+        return h("input", { style: inputStyle, value: val || "", onChange: function(e) { updField(key, e.target.value); } });
+      }
+
+      var displayKeys = {
+        equipement: ["Title", "Categorie", "Type", "Localisation", "Horametre", "KM", "Statut"],
+        intervention: ["Title", "Equipement", "Date_Intervention", "Technicien", "Statut_Intervention", "Type", "Cout"],
+        plan: ["Title", "Frequence", "Statut"],
+        piece: ["Reference", "Designation", "Categorie", "PrixUnitaire", "Stock"]
+      };
+      var keyLabels = { Title: "Titre", Categorie: "Categorie", Type: "Type", Localisation: "Localisation", Horametre: "Horametre", KM: "KM", Statut: "Statut", Equipement: "Equipement", Date_Intervention: "Date", Technicien: "Technicien", Statut_Intervention: "Statut", Cout: "Cout", Frequence: "Frequence", Reference: "Reference", Designation: "Designation", PrixUnitaire: "Prix u.", Stock: "Stock" };
+
+      return h("div", { style: { background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: 10, padding: "12px 16px", marginBottom: 16 } },
+        h("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }, onClick: function() { setExpanded(!expanded); } },
+          h("div", { style: { display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#92400e", fontWeight: 600 } },
+            h(Icon, { name: "clock", size: 16, color: "#92400e" }),
+            myPending.length + " soumission(s) en attente de validation"),
+          h(Icon, { name: expanded ? "chevron-up" : "chevron-down", size: 16, color: "#92400e" })
+        ),
+        expanded && h("div", { style: { marginTop: 12, display: "flex", flexDirection: "column", gap: 10 } },
+          myPending.map(function(item) {
+            var isEditing = editingId === item.id;
+            var keys = displayKeys[item.entity] || Object.keys(item.data);
+            var entityLabel = item.entity === "equipement" ? "Equipement" : item.entity === "intervention" ? "Intervention" : item.entity === "plan" ? "Plan" : "Piece";
+            return h("div", { key: item.id, style: { background: "white", borderRadius: 8, padding: 14, border: "1px solid #e2e8f0" } },
+              h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 } },
+                h("div", { style: { fontWeight: 700, fontSize: 14 } }, entityLabel + " : " + (item.data.Title || item.data.Reference || "")),
+                h("span", { style: { fontSize: 11, color: "#94a3b8" } }, new Date(item.submittedAt).toLocaleDateString("fr-FR"))
+              ),
+              isEditing ? h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 } },
+                keys.map(function(key) {
+                  return h("div", { key: key },
+                    h("label", { style: { fontSize: 11, fontWeight: 600, color: "#6b7280", display: "block", marginBottom: 4 } }, keyLabels[key] || key),
+                    renderField(key, editData[key] || "", item)
+                  );
+                })
+              ) : h("div", { style: { display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10, fontSize: 12, color: "#6b7280" } },
+                keys.map(function(key) {
+                  var val = item.data[key];
+                  return val ? h("span", { key: key, style: { background: "#f9fafb", padding: "3px 8px", borderRadius: 4 } }, (keyLabels[key] || key) + ": " + val) : null;
+                })
+              ),
+              h("div", { style: { display: "flex", gap: 8 } },
+                isEditing ? [
+                  h(Button, { key: "save", onClick: function() { saveEdit(item.id); }, style: { padding: "6px 14px", fontSize: 12 } }, h(IconText, { icon: "check", size: 12 }, "Enregistrer")),
+                  h(Button, { key: "cancel", variant: "secondary", onClick: cancelEdit, style: { padding: "6px 14px", fontSize: 12 } }, "Annuler")
+                ] : h(Button, { variant: "secondary", onClick: function() { startEdit(item); }, style: { padding: "6px 14px", fontSize: 12 } }, h(IconText, { icon: "pencil", size: 12 }, "Modifier ma soumission"))
+              )
+            );
+          })
+        )
+      );
+    }
+
     // ─── Ecran Validations (admin) ──────────────────────────────────
     function EcranValidations({ onNavigate }) {
       var ctx = useAppData();
@@ -2163,14 +2256,7 @@
           h(Sidebar, { currentPage, onNavigate: navigate, userEmail: session.user && session.user.email, onLogout: logout, isAdmin, pendingCount: pendingValidations.length }),
           h("div", { style: { flex: 1, padding: "24px 32px", overflowY: "auto", maxHeight: "100vh", position: "relative" } },
             dataLoading && h("div", { style: { position: "absolute", top: 20, right: 20, display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#6b7280" } }, h("div", { className: "loader", style: { width: 20, height: 20, borderWidth: 2 } }), "Chargement..."),
-            !isAdmin && pendingValidations.filter(function(p) { return p.submittedBy === userEmail; }).length > 0 && h("div", { style: { background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: 8, padding: "10px 16px", marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between" } },
-              h("div", { style: { display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#92400e", fontWeight: 600 } },
-                h(Icon, { name: "clock", size: 16, color: "#92400e" }),
-                pendingValidations.filter(function(p) { return p.submittedBy === userEmail; }).length + " modification(s) en attente de validation par l'administrateur"),
-              h("div", { style: { display: "flex", gap: 6 } },
-                pendingValidations.filter(function(p) { return p.submittedBy === userEmail; }).slice(0, 3).map(function(p) {
-                  return h("span", { key: p.id, style: { background: "white", border: "1px solid #e2e8f0", borderRadius: 6, padding: "4px 10px", fontSize: 12, fontWeight: 600 } }, (p.data.Title || p.data.Reference || "..."));
-                }))),
+            !isAdmin && pendingValidations.filter(function(p) { return p.submittedBy === userEmail; }).length > 0 && h(PendingBannerUser, { pendingValidations: pendingValidations, userEmail: userEmail, updatePendingItem: contextValue.updatePendingItem }),
             renderPage()),
           h(Toast, { message: toast.message, type: toast.type })));
     }
