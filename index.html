@@ -191,7 +191,7 @@
       const baseH = parseFloat(eq.DernierEntretienH || 0);
       const baseKM = parseFloat(eq.DernierEntretienKM || 0);
 
-      // 1ere passe : collecter les plans dus avec leur frequence et point de declenchement
+      // 1ere passe : collecter les plans en retard avec leur frequence
       var duePlans = [];
       plans.forEach((p) => {
         if (p.Statut === "Suspendu") return;
@@ -219,21 +219,19 @@
           i.Statut_Intervention === "Termine"
         ).reduce((a, i) => Math.max(a, parseInt(i.CycleNumber || 0)), cyclesBase);
         if (cyclesAtteints > maxCompleted) {
-          // Le point de declenchement = le cycle du * la frequence (ex: cycle 4 * 250 = 1000h)
-          var triggerPoint = cyclesAtteints * freqVal;
-          duePlans.push({ freqVal: freqVal, freqType: freqType, triggerPoint: triggerPoint });
+          duePlans.push({ freqVal: freqVal, freqType: freqType });
         }
       });
 
-      // 2eme passe : hierarchie — si un plan plus gros est aussi du au meme point, le petit est absorbe
-      // Ex: a 1000h, les plans 250h (point=1000), 500h (point=1000), 1000h (point=1000) sont tous dus
-      // → seul le 1000h compte car 1000 est multiple de 500 et 250
+      // 2eme passe : hierarchie — si un plan plus gros est aussi en retard, les petits sont absorbes
+      // Ex: 250h, 500h et 1000h tous en retard → seul 1000h compte (car 1000 est multiple de 500 et 250)
+      // Ex: 250h et 500h en retard → seul 500h compte (car 500 est multiple de 250)
       var count = 0;
       duePlans.forEach(function(dp) {
-        var dominated = duePlans.some(function(other) {
-          return other.freqType === dp.freqType && other.freqVal > dp.freqVal && dp.triggerPoint % other.freqVal === 0;
+        var absorbed = duePlans.some(function(other) {
+          return other.freqType === dp.freqType && other.freqVal > dp.freqVal && other.freqVal % dp.freqVal === 0;
         });
-        if (!dominated) count++;
+        if (!absorbed) count++;
       });
       return count;
     }
