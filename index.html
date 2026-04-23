@@ -193,6 +193,10 @@
 
       // 1ere passe : collecter les plans en retard avec leur frequence
       var duePlans = [];
+      if (eqCode.indexOf("d36") !== -1 || eqCode.indexOf("D36") !== -1 || eq.Title.indexOf("D36") !== -1 || eq.Title.indexOf("d36") !== -1) {
+        console.log("[DEBUG ALL PLANS] Equipement:", eq.Title, "| eqCode:", eqCode, "| Nb plans:", plans.length);
+        plans.forEach(function(pp) { console.log("[DEBUG ALL PLANS]  -> Plan:", pp.Title, "| Statut:", pp.Statut, "| Equipements:", pp.Equipements, "| Frequence:", pp.Frequence, "| concerne?", (!pp.Equipements || pp.Equipements.toLowerCase().includes(eqCode) || pp.Equipements.toLowerCase().includes("tous"))); });
+      }
       plans.forEach((p) => {
         if (p.Statut === "Suspendu") return;
         const concerne = !p.Equipements || p.Equipements.toLowerCase().includes(eqCode) || p.Equipements.toLowerCase().includes("tous");
