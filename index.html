@@ -193,10 +193,6 @@
 
       // 1ere passe : collecter les plans en retard avec leur frequence
       var duePlans = [];
-      if (eqCode.indexOf("d36") !== -1 || eqCode.indexOf("D36") !== -1 || eq.Title.indexOf("D36") !== -1 || eq.Title.indexOf("d36") !== -1) {
-        console.log("[DEBUG ALL PLANS] Equipement:", eq.Title, "| eqCode:", eqCode, "| Nb plans:", plans.length);
-        plans.forEach(function(pp) { console.log("[DEBUG ALL PLANS]  -> Plan:", pp.Title, "| Statut:", pp.Statut, "| Equipements:", pp.Equipements, "| Frequence:", pp.Frequence, "| concerne?", (!pp.Equipements || pp.Equipements.toLowerCase().includes(eqCode) || pp.Equipements.toLowerCase().includes("tous"))); });
-      }
       plans.forEach((p) => {
         if (p.Statut === "Suspendu") return;
         const concerne = !p.Equipements || p.Equipements.toLowerCase().includes(eqCode) || p.Equipements.toLowerCase().includes("tous");
@@ -223,9 +219,7 @@
           i.Statut_Intervention === "Termine"
         ).reduce((a, i) => Math.max(a, parseInt(i.CycleNumber || 0)), cyclesBase);
         if (cyclesAtteints > maxCompleted) {
-          // Debug : afficher dans la console les plans qui matchent
-          console.log("[DEBUG PLANS] Equipement:", eq.Title, "| Plan:", p.Title, "| Freq:", freqVal + freqType, "| Equipements du plan:", p.Equipements, "| cycles:", cyclesAtteints, "/ base:", cyclesBase, "/ maxCompleted:", maxCompleted);
-          duePlans.push({ freqVal: freqVal, freqType: freqType, planTitle: p.Title });
+          duePlans.push({ freqVal: freqVal, freqType: freqType });
         }
       });
 
@@ -245,7 +239,6 @@
         });
         if (!absorbed) count++;
       });
-      if (duePlans.length > 0) console.log("[DEBUG PLANS]", eq.Title, "-> duePlans:", duePlans.map(function(d) { return d.planTitle + " (" + d.freqVal + d.freqType + ")"; }).join(", "), "| unique:", uniqueDuePlans.length, "| final:", count);
       return count;
     }
 
@@ -2033,7 +2026,7 @@
           }
         };
         run();
-      }, [session, dataLoading, autoGenDone, equipements, plans, interventions]);
+      }, [session, dataLoading, autoGenDone]);
 
       const navigate = useCallback((page, data = null) => { setCurrentPage(page); setPageData(data); }, []);
 
