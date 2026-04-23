@@ -146,7 +146,10 @@
       return { equipement_id: i.EquipementId || equipementIdByCode[i.Equipement] || null, titre: i.Title, technicien: i.Technicien, date_intervention: i.Date_Intervention, statut: STATUT_INT_TO_DB[i.Statut_Intervention] || "planifie", travaux_effectues: i.Travaux_Effectues, temps_arret: i.Temps_Arret, cout_total: parseFloat(i.Cout) || 0, plan_nom: i.Plan, horametre: i.Horametre !== "" ? parseFloat(i.Horametre) : null, km: i.KM !== "" ? parseFloat(i.KM) : null, type: i.Type === "Preventive" ? "preventive" : "curative", description: i.Travaux_Effectues || i.Title, cycle_number: i.CycleNumber != null ? parseInt(i.CycleNumber) : null };
     }
     function planFromDb(r) {
-      return { Id: r.id, Title: r.nom || "", Frequence: r.frequence_label || ((r.type_recurrence === "horametre" ? "Horametre " : r.type_recurrence === "km" ? "KM " : "") + r.frequence), Description: r.description || "", Equipements: r.equipements_codes || "", ProchainIntervention: r.prochaine_execution_date || "", Statut: STATUT_PLAN_TO_UI[r.statut] || "Actif" };
+      var desc = r.description || "";
+      var extra = {};
+      try { extra = JSON.parse(desc); } catch(e) { extra = { _text: desc }; }
+      return { Id: r.id, Title: r.nom || "", Frequence: r.frequence_label || ((r.type_recurrence === "horametre" ? "Horametre " : r.type_recurrence === "km" ? "KM " : "") + r.frequence), Description: extra._text || "", SeuilAlerte: String(extra.seuilAlerte ?? 50), Equipements: r.equipements_codes || "", ProchainIntervention: r.prochaine_execution_date || "", Statut: STATUT_PLAN_TO_UI[r.statut] || "Actif" };
     }
     function planToDb(p) {
       const freq = p.Frequence || "";
@@ -155,7 +158,11 @@
       if (m) freq_num = parseInt(m[1]);
       if (/km/i.test(freq)) type_rec = "km";
       else if (/jour|semain|mois|trimest|annu/i.test(freq)) type_rec = "date";
-      return { nom: p.Title, description: p.Description, frequence_label: p.Frequence, equipements_codes: p.Equipements, prochaine_execution_date: p.ProchainIntervention || null, statut: STATUT_PLAN_TO_DB[p.Statut] || "actif", type_recurrence: type_rec, frequence: freq_num || 1 };
+      var descObj = {};
+      if (p.Description) descObj._text = p.Description;
+      descObj.seuilAlerte = parseInt(p.SeuilAlerte) || 50;
+      var descStr = JSON.stringify(descObj);
+      return { nom: p.Title, description: descStr, frequence_label: p.Frequence, equipements_codes: p.Equipements, prochaine_execution_date: p.ProchainIntervention || null, statut: STATUT_PLAN_TO_DB[p.Statut] || "actif", type_recurrence: type_rec, frequence: freq_num || 1 };
     }
     function pieceFromDb(r) {
       return { Id: r.id, Reference: r.reference || "", Designation: r.designation || "", Categorie: r.categorie || "", Fournisseur: r.fournisseur || "", PrixUnitaire: String(r.prix_unitaire ?? 0), Stock: String(r.stock_actuel ?? 0), StockMin: String(r.stock_minimum ?? 0), Emplacement: r.emplacement || "", Compatible: r.compatible || "" };
@@ -240,6 +247,53 @@
         if (!absorbed) count++;
       });
       return count;
+    }
+
+    // Alertes anticipees : plans qui ne sont pas encore dus mais proches du seuil
+    function computeAlertesAnticipees(eq, plans, interventions) {
+      if (!eq) return [];
+      const eqCode = (eq.Title || "").toLowerCase();
+      const horam = parseFloat(eq.Horametre || 0);
+      const km = parseFloat(eq.KM || 0);
+      const baseH = parseFloat(eq.DernierEntretienH || 0);
+      const baseKM = parseFloat(eq.DernierEntretienKM || 0);
+      var alertes = [];
+      plans.forEach(function(p) {
+        if (p.Statut === "Suspendu") return;
+        var concerne = !p.Equipements || p.Equipements.toLowerCase().includes(eqCode) || p.Equipements.toLowerCase().includes("tous");
+        if (!concerne) return;
+        var freq = p.Frequence || "";
+        var matchH = freq.match(/horametre\s*(\d+)/i) || freq.match(/^(\d+)\s*h/i);
+        var matchK = freq.match(/km\s*(\d+)/i) || freq.match(/(\d+)\s*km/i);
+        var freqVal = 0, freqType = "", currentVal = 0, cyclesBase = 0;
+        if (matchH) { freqVal = parseInt(matchH[1]); freqType = "h"; currentVal = horam; cyclesBase = Math.floor(baseH / freqVal); }
+        else if (matchK) { freqVal = parseInt(matchK[1]); freqType = "km"; currentVal = km; cyclesBase = Math.floor(baseKM / freqVal); }
+        else return;
+        if (freqVal === 0) return;
+        var cyclesAtteints = Math.floor(currentVal / freqVal);
+        var maxCompleted = interventions.filter(function(i) {
+          return i.Type === "Preventive" && (i.EquipementId === eq.Id || i.Equipement === eq.Title) && (i.Plan || "").toLowerCase() === p.Title.toLowerCase() && i.Statut_Intervention === "Termine";
+        }).reduce(function(a, i) { return Math.max(a, parseInt(i.CycleNumber || 0)); }, cyclesBase);
+        // Si deja du, pas d'alerte anticipee (c'est gere par computeVisitesADeclencher)
+        if (cyclesAtteints > maxCompleted) return;
+        // Prochain seuil
+        var prochainCycle = maxCompleted + 1;
+        var prochainSeuil = prochainCycle * freqVal;
+        var seuil = parseInt(p.SeuilAlerte || 50);
+        var reste = prochainSeuil - currentVal;
+        if (reste > 0 && reste <= seuil) {
+          alertes.push({ plan: p.Title, freqVal: freqVal, freqType: freqType, prochainSeuil: prochainSeuil, reste: Math.round(reste), unite: freqType === "h" ? "h" : "km" });
+        }
+      });
+      // Hierarchie : si un plan plus gros a aussi une alerte au meme seuil, absorber le petit
+      var result = [];
+      alertes.forEach(function(a) {
+        var absorbed = alertes.some(function(other) {
+          return other.freqType === a.freqType && other.freqVal > a.freqVal && other.freqVal % a.freqVal === 0 && other.prochainSeuil === a.prochainSeuil;
+        });
+        if (!absorbed) result.push(a);
+      });
+      return result;
     }
 
     // ─── Composants UI ──────────────────────────────────────────────────
@@ -412,6 +466,14 @@
       const piecesFaibles = pieces.filter((p) => parseInt(p.Stock) <= parseInt(p.StockMin)).length;
       const visitesADeclencher = equipements.reduce((a, eq) => a + computeVisitesADeclencher(eq, plans, interventions), 0);
 
+      // Alertes anticipees : equipements proches du seuil de maintenance
+      const toutesAlertesAnticipees = [];
+      equipements.forEach(function(eq) {
+        var alertes = computeAlertesAnticipees(eq, plans, interventions);
+        alertes.forEach(function(a) { toutesAlertesAnticipees.push(Object.assign({}, a, { equipement: eq.Title, equipementId: eq.Id, eqObj: eq })); });
+      });
+      const nbAlertesAnticipees = toutesAlertesAnticipees.length;
+
       const derniersEquips = sortByField(equipements, "Title").slice(0, 10);
       return h("div", null,
         h(PageHeader, { title: h(IconText, { icon: "home", size: 20 }, "Tableau de bord"), subtitle: "Vue d'ensemble de la maintenance" }),
@@ -420,6 +482,7 @@
           h(KPICard, { icon: h(Icon, { name: "calendar", size: 32, color: "#2563eb" }), label: "Planifiees", value: fmtNum(planifiees), color: "#2563eb", onClick: () => onNavigate("interventions") }),
           h(KPICard, { icon: h(Icon, { name: "clock", size: 32, color: "#d97706" }), label: "En cours", value: fmtNum(enCours), color: "#d97706" }),
           h(KPICard, { icon: h(Icon, { name: "bell-ring", size: 32, color: visitesADeclencher > 0 ? "#dc2626" : "#16a34a" }), label: "Visites a declencher", value: fmtNum(visitesADeclencher), color: visitesADeclencher > 0 ? "#dc2626" : "#16a34a", onClick: () => onNavigate("equipements") }),
+          h(KPICard, { icon: h(Icon, { name: "clock", size: 32, color: nbAlertesAnticipees > 0 ? "#d97706" : "#16a34a" }), label: "Maintenances proches", value: fmtNum(nbAlertesAnticipees), color: nbAlertesAnticipees > 0 ? "#d97706" : "#16a34a" }),
           h(KPICard, { icon: h(Icon, { name: "alert-triangle", size: 32, color: "#dc2626" }), label: "Pieces faibles", value: fmtNum(piecesFaibles), color: "#dc2626", onClick: () => onNavigate("pieces") }),
           h(KPICard, { icon: h(Icon, { name: "bar-chart-2", size: 32, color: tauxConf >= 80 ? "#16a34a" : "#dc2626" }), label: "Conformite", value: tauxConf + "%", color: tauxConf >= 80 ? "#16a34a" : "#dc2626" })),
         h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 20 } },
@@ -447,6 +510,16 @@
                       h(StatusBadge, { status: i.Statut_Intervention }));
                   }));
             }()))),
+        nbAlertesAnticipees > 0 && h(Card, { style: { marginBottom: 20 } },
+          h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, h(IconText, { icon: "clock", size: 16, color: "#d97706" }, "Maintenances a venir")),
+          h("div", { style: { display: "flex", flexDirection: "column", gap: 8, maxHeight: 280, overflowY: "auto" } },
+            toutesAlertesAnticipees.sort(function(a, b) { return a.reste - b.reste; }).map(function(a, idx) {
+              return h("div", { key: idx, onClick: function() { onNavigate("fiche-equipement", a.eqObj); }, style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "#fffbeb", borderRadius: 8, borderLeft: "4px solid #d97706", cursor: "pointer", transition: "all 0.15s" } },
+                h("div", null,
+                  h("div", { style: { fontWeight: 600, fontSize: 14 } }, a.equipement),
+                  h("div", { style: { fontSize: 12, color: "#6b7280" } }, a.plan + " \u2014 prochain a " + fmtNum(a.prochainSeuil) + a.unite)),
+                h("span", { style: { background: "#fef3c7", color: "#92400e", padding: "4px 10px", borderRadius: 20, fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" } }, a.reste + a.unite + " restantes"));
+            }))),
         h(Card, null,
           h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, h(IconText, { icon: "clock", size: 16, color: "#6d28d9" }, "Derniers equipements modifies")),
           derniersEquips.length === 0 ? h("p", { style: { color: "#9ca3af", textAlign: "center", padding: 20 } }, "Aucun equipement") :
@@ -470,7 +543,7 @@
     // ─── Formulaire Plan ────────────────────────────────────────────────
     function PlanForm({ onSave, onCancel, editItem }) {
       const freqs = useParams("frequence_plan");
-      const [f, setF] = useState(editItem || { Title: "", Frequence: freqs[0] || "Mensuel", Description: "", Equipements: "", ProchainIntervention: new Date().toISOString().split("T")[0], Statut: "Actif" });
+      const [f, setF] = useState(editItem || { Title: "", Frequence: freqs[0] || "Mensuel", Description: "", SeuilAlerte: "50", Equipements: "", ProchainIntervention: new Date().toISOString().split("T")[0], Statut: "Actif" });
       const [saving, setSaving] = useState(false);
       const upd = (k, v) => setF((p) => ({ ...p, [k]: v }));
       const submit = async () => {
@@ -484,7 +557,8 @@
           h(FormField, { label: "Frequence" }, h("select", { style: selectStyle, value: f.Frequence, onChange: (e) => upd("Frequence", e.target.value) },
             freqs.length === 0 ? h("option", { value: "" }, "(aucun, ajoutez dans Parametres)") : freqs.map((x) => h("option", { key: x, value: x }, x)))),
           h(FormField, { label: "Statut" }, h("select", { style: selectStyle, value: f.Statut, onChange: (e) => upd("Statut", e.target.value) },
-            ["Actif", "En retard", "Suspendu"].map((x) => h("option", { key: x, value: x }, x))))),
+            ["Actif", "En retard", "Suspendu"].map((x) => h("option", { key: x, value: x }, x)))),
+          h(FormField, { label: "Seuil d'alerte (h/km avant)" }, h("input", { type: "number", style: inputStyle, value: f.SeuilAlerte, onChange: (e) => upd("SeuilAlerte", e.target.value), placeholder: "Ex: 50" }))),
         h(FormField, { label: "Description" }, h("textarea", { style: { ...inputStyle, minHeight: 70, resize: "vertical" }, value: f.Description, onChange: (e) => upd("Description", e.target.value), placeholder: "Description des operations..." })),
         h(FormField, { label: "Equipements concernes" }, h("input", { style: inputStyle, value: f.Equipements, onChange: (e) => upd("Equipements", e.target.value), placeholder: "Ex: 427 686 NC, AB-123-CD" })),
         h(FormField, { label: "Prochaine intervention" }, h("input", { type: "date", style: inputStyle, value: f.ProchainIntervention, onChange: (e) => upd("ProchainIntervention", e.target.value) })),
@@ -668,6 +742,7 @@
                 h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 12 } },
                   eqs.map(function(eq) {
                     var visitesDues = computeVisitesADeclencher(eq, plans, interventions);
+                    var alertesAnticipees = computeAlertesAnticipees(eq, plans, interventions);
                     return h(Card, { key: eq.Id, onClick: function() { onNavigate("fiche-equipement", eq); } },
                       h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 } },
                         h("div", null,
@@ -677,7 +752,8 @@
                             h(StatusBadge, { status: eq.Statut }),
                             h("button", { onClick: function(e) { openEdit(eq, e); }, style: { background: "transparent", border: "none", cursor: "pointer", fontSize: 15, padding: 4 }, title: "Modifier" }, h(Icon, { name: "pencil", size: 15 })),
                             h("button", { onClick: function(e) { askDelete(eq, e); }, style: { background: "transparent", border: "none", cursor: "pointer", fontSize: 15, padding: 4, color: "#dc2626" }, title: "Supprimer" }, h(Icon, { name: "trash-2", size: 15, color: "#dc2626" }))),
-                          visitesDues > 0 && h("span", { style: { background: "#fee2e2", color: "#991b1b", padding: "4px 10px", borderRadius: 20, fontSize: 12, fontWeight: 700, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 } }, h(Icon, { name: "bell-ring", size: 12, color: "#991b1b" }), visitesDues + " visite" + (visitesDues > 1 ? "s" : "") + " due" + (visitesDues > 1 ? "s" : "")))),
+                          visitesDues > 0 && h("span", { style: { background: "#fee2e2", color: "#991b1b", padding: "4px 10px", borderRadius: 20, fontSize: 12, fontWeight: 700, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 } }, h(Icon, { name: "bell-ring", size: 12, color: "#991b1b" }), visitesDues + " visite" + (visitesDues > 1 ? "s" : "") + " due" + (visitesDues > 1 ? "s" : "")),
+                          alertesAnticipees.length > 0 && h("span", { style: { background: "#fef3c7", color: "#92400e", padding: "4px 10px", borderRadius: 20, fontSize: 12, fontWeight: 700, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 } }, h(Icon, { name: "clock", size: 12, color: "#92400e" }), alertesAnticipees.map(function(a) { return a.plan + " dans " + a.reste + a.unite; }).join(", ")))),
                       h("div", { style: { display: "flex", flexDirection: "column", gap: 4, fontSize: 13, color: "#6b7280" } },
                         eq.Localisation && h("span", null, h(IconText, { icon: "map-pin", size: 12, color: "#6b7280" }, "Localisation: " + eq.Localisation)),
                         (eq.Horametre && eq.Horametre !== "0") && h("span", null, h(IconText, { icon: "timer", size: 12, color: "#6b7280" }, "Horametre: " + fmtNum(eq.Horametre) + " h")),
@@ -703,6 +779,7 @@
       const curatives = eqInterventions.filter((i) => i.Type === "Curative");
       const coutTotal = eqInterventions.reduce((a, i) => a + (parseFloat(i.Cout) || 0), 0);
       const visitesDues = computeVisitesADeclencher(eq, plans, interventions);
+      const alertesAnticipees = computeAlertesAnticipees(eq, plans, interventions);
       const [showReleveModal, setShowReleveModal] = useState(false);
       const [showPieceModal, setShowPieceModal] = useState(false);
       const [pieceSearch, setPieceSearch] = useState("");
@@ -738,6 +815,14 @@
         visitesDues > 0 && h("div", { style: { background: "#fef2f2", border: "1px solid #fca5a5", color: "#991b1b", padding: "12px 16px", borderRadius: 8, marginBottom: 16, fontWeight: 600, display: "flex", alignItems: "center", gap: 10 } },
           h(Icon, { name: "bell-ring", size: 20, color: "#991b1b" }),
           visitesDues + " visite" + (visitesDues > 1 ? "s" : "") + " preventive" + (visitesDues > 1 ? "s" : "") + " a declencher sur cet equipement"),
+        alertesAnticipees.length > 0 && h("div", { style: { background: "#fffbeb", border: "1px solid #fcd34d", color: "#92400e", padding: "12px 16px", borderRadius: 8, marginBottom: 16, fontWeight: 600 } },
+          h("div", { style: { display: "flex", alignItems: "center", gap: 10, marginBottom: alertesAnticipees.length > 1 ? 8 : 0 } },
+            h(Icon, { name: "clock", size: 20, color: "#92400e" }),
+            "Maintenance" + (alertesAnticipees.length > 1 ? "s" : "") + " a venir :"),
+          h("div", { style: { display: "flex", flexDirection: "column", gap: 4, marginLeft: 30 } },
+            alertesAnticipees.map(function(a, idx) {
+              return h("div", { key: idx, style: { fontSize: 14 } }, a.plan + " : " + a.reste + a.unite + " restantes (prochain a " + fmtNum(a.prochainSeuil) + a.unite + ")");
+            }))),
         h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 24 } },
           h(Card, null,
             h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, "Informations generales"),
