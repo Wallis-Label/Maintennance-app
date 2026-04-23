@@ -188,10 +188,11 @@
       const eqCode = (eq.Title || "").toLowerCase();
       const horam = parseFloat(eq.Horametre || 0);
       const km = parseFloat(eq.KM || 0);
-      // Baseline : dernier entretien connu avant l'app (pour ne pas declencher les visites passees)
       const baseH = parseFloat(eq.DernierEntretienH || 0);
       const baseKM = parseFloat(eq.DernierEntretienKM || 0);
-      let overdue = 0;
+
+      // 1ere passe : collecter les plans dus avec leur frequence et point de declenchement
+      var duePlans = [];
       plans.forEach((p) => {
         if (p.Statut === "Suspendu") return;
         const concerne = !p.Equipements || p.Equipements.toLowerCase().includes(eqCode) || p.Equipements.toLowerCase().includes("tous");
@@ -199,25 +200,42 @@
         const freq = p.Frequence || "";
         const matchH = freq.match(/horametre\s*(\d+)/i) || freq.match(/^(\d+)\s*h/i);
         const matchK = freq.match(/km\s*(\d+)/i) || freq.match(/(\d+)\s*km/i);
+        let freqVal = 0;
         let cyclesAtteints = 0;
         let cyclesBase = 0;
+        let freqType = "";
         if (matchH) {
-          const f = parseInt(matchH[1]);
-          if (f > 0) { cyclesAtteints = Math.floor(horam / f); cyclesBase = Math.floor(baseH / f); }
+          freqVal = parseInt(matchH[1]);
+          if (freqVal > 0) { cyclesAtteints = Math.floor(horam / freqVal); cyclesBase = Math.floor(baseH / freqVal); freqType = "h"; }
         } else if (matchK) {
-          const f = parseInt(matchK[1]);
-          if (f > 0) { cyclesAtteints = Math.floor(km / f); cyclesBase = Math.floor(baseKM / f); }
-        } else return; // Frequence calendaire : non compte ici
-        // Le cycle de reference = max(baseline avant app, interventions terminees dans l'app)
+          freqVal = parseInt(matchK[1]);
+          if (freqVal > 0) { cyclesAtteints = Math.floor(km / freqVal); cyclesBase = Math.floor(baseKM / freqVal); freqType = "km"; }
+        } else return;
+        if (freqVal === 0) return;
         const maxCompleted = interventions.filter((i) =>
           i.Type === "Preventive" &&
           (i.EquipementId === eq.Id || i.Equipement === eq.Title) &&
           (i.Plan || "").toLowerCase() === p.Title.toLowerCase() &&
           i.Statut_Intervention === "Termine"
         ).reduce((a, i) => Math.max(a, parseInt(i.CycleNumber || 0)), cyclesBase);
-        if (cyclesAtteints > maxCompleted) overdue += 1;
+        if (cyclesAtteints > maxCompleted) {
+          // Le point de declenchement = le cycle du * la frequence (ex: cycle 4 * 250 = 1000h)
+          var triggerPoint = cyclesAtteints * freqVal;
+          duePlans.push({ freqVal: freqVal, freqType: freqType, triggerPoint: triggerPoint });
+        }
       });
-      return overdue;
+
+      // 2eme passe : hierarchie — si un plan plus gros est aussi du au meme point, le petit est absorbe
+      // Ex: a 1000h, les plans 250h (point=1000), 500h (point=1000), 1000h (point=1000) sont tous dus
+      // → seul le 1000h compte car 1000 est multiple de 500 et 250
+      var count = 0;
+      duePlans.forEach(function(dp) {
+        var dominated = duePlans.some(function(other) {
+          return other.freqType === dp.freqType && other.freqVal > dp.freqVal && dp.triggerPoint % other.freqVal === 0;
+        });
+        if (!dominated) count++;
+      });
+      return count;
     }
 
     // ─── Composants UI ──────────────────────────────────────────────────
