@@ -546,6 +546,11 @@
       const [f, setF] = useState(editItem || { Title: "", Frequence: freqs[0] || "Mensuel", Description: "", SeuilAlerte: "50", Equipements: "", ProchainIntervention: new Date().toISOString().split("T")[0], Statut: "Actif" });
       const [saving, setSaving] = useState(false);
       const upd = (k, v) => setF((p) => ({ ...p, [k]: v }));
+      // Detecter l'unite du seuil depuis la frequence selectionnee
+      var seuilUnite = "h/km";
+      var freqStr = (f.Frequence || "").toLowerCase();
+      if (/km/i.test(freqStr)) seuilUnite = "km";
+      else if (/horametre|^\d+\s*h/i.test(freqStr)) seuilUnite = "h";
       const submit = async () => {
         if (!f.Title) return alert("Le titre est obligatoire");
         setSaving(true);
@@ -558,7 +563,7 @@
             freqs.length === 0 ? h("option", { value: "" }, "(aucun, ajoutez dans Parametres)") : freqs.map((x) => h("option", { key: x, value: x }, x)))),
           h(FormField, { label: "Statut" }, h("select", { style: selectStyle, value: f.Statut, onChange: (e) => upd("Statut", e.target.value) },
             ["Actif", "En retard", "Suspendu"].map((x) => h("option", { key: x, value: x }, x)))),
-          h(FormField, { label: "Seuil d'alerte (h/km avant)" }, h("input", { type: "number", style: inputStyle, value: f.SeuilAlerte, onChange: (e) => upd("SeuilAlerte", e.target.value), placeholder: "Ex: 50" }))),
+          h(FormField, { label: "Seuil d'alerte (" + seuilUnite + " avant)" }, h("input", { type: "number", style: inputStyle, value: f.SeuilAlerte, onChange: (e) => upd("SeuilAlerte", e.target.value), placeholder: "Ex: 50" }))),
         h(FormField, { label: "Description" }, h("textarea", { style: { ...inputStyle, minHeight: 70, resize: "vertical" }, value: f.Description, onChange: (e) => upd("Description", e.target.value), placeholder: "Description des operations..." })),
         h(FormField, { label: "Equipements concernes" }, h("input", { style: inputStyle, value: f.Equipements, onChange: (e) => upd("Equipements", e.target.value), placeholder: "Ex: 427 686 NC, AB-123-CD" })),
         h(FormField, { label: "Prochaine intervention" }, h("input", { type: "date", style: inputStyle, value: f.ProchainIntervention, onChange: (e) => upd("ProchainIntervention", e.target.value) })),
@@ -599,6 +604,7 @@
               h("div", { style: { fontSize: 13, color: "#4b5563", marginBottom: 10 } }, p.Description),
               h("div", { style: { fontSize: 12, color: "#6b7280", display: "flex", flexDirection: "column", gap: 4 } },
                 p.Equipements && h("div", { style: { display: "flex", alignItems: "center", gap: 4 } }, h(Icon, { name: "wrench", size: 12, color: "#6b7280" }), "Equipements: " + p.Equipements),
+                h("div", { style: { display: "flex", alignItems: "center", gap: 4 } }, h(Icon, { name: "clock", size: 12, color: "#6b7280" }), "Seuil d'alerte: " + (p.SeuilAlerte || "50") + (/km/i.test(p.Frequence || "") ? " km" : " h") + " avant"),
                 p.ProchainIntervention && h("div", { style: { display: "flex", alignItems: "center", gap: 4 } }, h(Icon, { name: "calendar", size: 12, color: "#6b7280" }), "Prochaine: " + p.ProchainIntervention))))),
         showModal && h(Modal, { title: editing ? "Modifier le plan" : "Nouveau plan de maintenance", onClose: () => { setShowModal(false); setEditing(null); } },
           h(PlanForm, { onSave: handleSave, onCancel: () => { setShowModal(false); setEditing(null); }, editItem: editing })),
