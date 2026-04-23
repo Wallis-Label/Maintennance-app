@@ -518,7 +518,7 @@
                 h("div", null,
                   h("div", { style: { fontWeight: 600, fontSize: 14 } }, a.equipement),
                   h("div", { style: { fontSize: 12, color: "#6b7280" } }, a.plan + " \u2014 prochain a " + fmtNum(a.prochainSeuil) + a.unite)),
-                h("span", { style: { background: "#fef3c7", color: "#92400e", padding: "4px 10px", borderRadius: 20, fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" } }, a.reste + a.unite + " restantes"));
+                h("span", { style: { background: "#fef3c7", color: "#92400e", padding: "4px 10px", borderRadius: 20, fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" } }, a.reste + a.unite + (a.unite === "km" ? " restant" : " restantes")));
             }))),
         h(Card, null,
           h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, h(IconText, { icon: "clock", size: 16, color: "#6d28d9" }, "Derniers equipements modifies")),
@@ -827,7 +827,7 @@
             "Maintenance" + (alertesAnticipees.length > 1 ? "s" : "") + " a venir :"),
           h("div", { style: { display: "flex", flexDirection: "column", gap: 4, marginLeft: 30 } },
             alertesAnticipees.map(function(a, idx) {
-              return h("div", { key: idx, style: { fontSize: 14 } }, a.plan + " : " + a.reste + a.unite + " restantes (prochain a " + fmtNum(a.prochainSeuil) + a.unite + ")");
+              return h("div", { key: idx, style: { fontSize: 14 } }, a.plan + " : " + a.reste + a.unite + (a.unite === "km" ? " restant" : " restantes") + " (prochain a " + fmtNum(a.prochainSeuil) + a.unite + ")");
             }))),
         h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 24 } },
           h(Card, null,
