@@ -1917,6 +1917,11 @@
             const eqCode = (eq.Title || "").toLowerCase();
             const horam = parseFloat(eq.Horametre || 0);
             const km = parseFloat(eq.KM || 0);
+            const baseH = parseFloat(eq.DernierEntretienH || 0);
+            const baseKM = parseFloat(eq.DernierEntretienKM || 0);
+
+            // 1) Collecter tous les plans dus pour cet equipement (avec baseline)
+            var duePlansList = [];
             plans.forEach((p) => {
               if (p.Statut === "Suspendu") return;
               const concerne = !p.Equipements || p.Equipements.toLowerCase().includes(eqCode) || p.Equipements.toLowerCase().includes("tous");
@@ -1924,12 +1929,11 @@
               const freq = p.Frequence || "";
               const matchH = freq.match(/horametre\s*(\d+)/i) || freq.match(/^(\d+)\s*h/i);
               const matchK = freq.match(/km\s*(\d+)/i) || freq.match(/(\d+)\s*km/i);
-              let cyclesAtteints = 0, typeCycle = null, freqNum = 0;
-              if (matchH) { freqNum = parseInt(matchH[1]); if (freqNum > 0) { cyclesAtteints = Math.floor(horam / freqNum); typeCycle = "h"; } }
-              else if (matchK) { freqNum = parseInt(matchK[1]); if (freqNum > 0) { cyclesAtteints = Math.floor(km / freqNum); typeCycle = "km"; } }
+              let cyclesAtteints = 0, typeCycle = null, freqNum = 0, cyclesBase = 0;
+              if (matchH) { freqNum = parseInt(matchH[1]); if (freqNum > 0) { cyclesAtteints = Math.floor(horam / freqNum); cyclesBase = Math.floor(baseH / freqNum); typeCycle = "h"; } }
+              else if (matchK) { freqNum = parseInt(matchK[1]); if (freqNum > 0) { cyclesAtteints = Math.floor(km / freqNum); cyclesBase = Math.floor(baseKM / freqNum); typeCycle = "km"; } }
               else return;
 
-              // Toutes les interventions preventives pour ce (eq, plan)
               const myInts = interventions.filter((i) =>
                 i.Type === "Preventive" &&
                 (i.EquipementId === eq.Id || i.Equipement === eq.Title) &&
@@ -1937,45 +1941,55 @@
               );
               const maxCompleted = myInts
                 .filter((i) => i.Statut_Intervention === "Termine")
-                .reduce((a, i) => Math.max(a, parseInt(i.CycleNumber || 0)), 0);
-              // Pending = non terminees + auto-generees ([Auto] ...)
+                .reduce((a, i) => Math.max(a, parseInt(i.CycleNumber || 0)), cyclesBase);
               const pending = myInts.filter((i) =>
                 i.Statut_Intervention !== "Termine" && (i.Title || "").startsWith("[Auto]")
               );
 
-              if (cyclesAtteints > maxCompleted) {
-                // Il faut une visite au cycle courant
-                const existingAtMax = pending.find((i) => parseInt(i.CycleNumber || 0) === cyclesAtteints);
+              duePlansList.push({ plan: p, freqNum, typeCycle, cyclesAtteints, maxCompleted, pending, isDue: cyclesAtteints > maxCompleted });
+            });
+
+            // 2) Hierarchie : si un plan plus gros est aussi du, les petits sont absorbes
+            duePlansList.forEach(function(dp) {
+              if (!dp.isDue) return;
+              dp.absorbed = duePlansList.some(function(other) {
+                return other.isDue && other.typeCycle === dp.typeCycle && other.freqNum > dp.freqNum && other.freqNum % dp.freqNum === 0;
+              });
+            });
+
+            // 3) Appliquer : creer/mettre a jour/supprimer les interventions auto
+            duePlansList.forEach(function(dp) {
+              var p = dp.plan;
+              if (dp.isDue && !dp.absorbed) {
+                // Ce plan est du et non absorbe : il faut une intervention auto
+                const existingAtMax = dp.pending.find((i) => parseInt(i.CycleNumber || 0) === dp.cyclesAtteints);
                 if (existingAtMax) {
-                  // Deja bonne : on nettoie les autres [Auto] Pas fait inferieurs
-                  pending.filter((i) => i !== existingAtMax).forEach((i) => toDelete.push(i.Id));
-                } else if (pending.length > 0) {
-                  // On recycle la premiere (update) et on supprime le reste
-                  const first = pending[0];
-                  toUpdate.push({ id: first.Id, cycle: cyclesAtteints, freqNum, typeCycle, planTitle: p.Title });
-                  pending.slice(1).forEach((i) => toDelete.push(i.Id));
+                  dp.pending.filter((i) => i !== existingAtMax).forEach((i) => toDelete.push(i.Id));
+                } else if (dp.pending.length > 0) {
+                  const first = dp.pending[0];
+                  toUpdate.push({ id: first.Id, cycle: dp.cyclesAtteints, freqNum: dp.freqNum, typeCycle: dp.typeCycle, planTitle: p.Title });
+                  dp.pending.slice(1).forEach((i) => toDelete.push(i.Id));
                 } else {
-                  // Aucune pending : on cree
                   toCreate.push({
                     equipement_id: eq.Id,
-                    titre: "[Auto] " + p.Title + " - " + (freqNum * cyclesAtteints) + " " + typeCycle,
+                    titre: "[Auto] " + p.Title + " - " + (dp.freqNum * dp.cyclesAtteints) + " " + dp.typeCycle,
                     technicien: null,
                     date_intervention: new Date().toISOString().split("T")[0],
                     statut: "pas_fait",
-                    travaux_effectues: "Visite preventive auto-generee (seuil " + (freqNum * cyclesAtteints) + " " + typeCycle + " atteint)",
+                    travaux_effectues: "Visite preventive auto-generee (seuil " + (dp.freqNum * dp.cyclesAtteints) + " " + dp.typeCycle + " atteint)",
                     temps_arret: null,
                     cout_total: 0,
                     plan_nom: p.Title,
-                    horametre: typeCycle === "h" ? freqNum * cyclesAtteints : null,
-                    km: typeCycle === "km" ? freqNum * cyclesAtteints : null,
+                    horametre: dp.typeCycle === "h" ? dp.freqNum * dp.cyclesAtteints : null,
+                    km: dp.typeCycle === "km" ? dp.freqNum * dp.cyclesAtteints : null,
                     type: "preventive",
                     description: "Auto-generee par depassement de seuil",
-                    cycle_number: cyclesAtteints,
+                    cycle_number: dp.cyclesAtteints,
                   });
                 }
               } else {
-                // Aucun cycle due : on nettoie toutes les [Auto] Pas fait obsoletes
-                pending.forEach((i) => toDelete.push(i.Id));
+                // Pas du ou absorbe : nettoyer les [Auto] Pas fait obsoletes
+                dp.pending.forEach((i) => toDelete.push(i.Id));
               }
             });
           });
