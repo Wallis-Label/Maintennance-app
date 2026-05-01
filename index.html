@@ -3049,15 +3049,28 @@
         { key: "admin-utilisateurs", label: "Admin Utilisateurs", icon: "user-cog" }
       ];
 
+      var allPageKeys = ALL_PAGES.map(function(p) { return p.key; });
       var defaultUsers = [
-        { id: 1, nom: "Tom Picot", email: "tom.wallislabel@gmail.com", role: "Administrateur", statut: "Actif", dateCreation: "2025-01-15", derniereConnexion: "2026-05-30", pagesAutorisees: ALL_PAGES.map(function(p) { return p.key; }) },
-        { id: 2, nom: "Tomy Picot", email: "tomy.picot@gmail.com", role: "Administrateur", statut: "Actif", dateCreation: "2025-01-15", derniereConnexion: "2026-05-30", pagesAutorisees: ALL_PAGES.map(function(p) { return p.key; }) }
+        { id: 1, nom: "Tom Picot", email: "tom.wallislabel@gmail.com", role: "Administrateur", statut: "Actif", dateCreation: "2025-01-15", derniereConnexion: "2026-05-30", pagesAutorisees: allPageKeys },
+        { id: 2, nom: "Tomy Picot", email: "tomy.picot@gmail.com", role: "Administrateur", statut: "Actif", dateCreation: "2025-01-15", derniereConnexion: "2026-05-30", pagesAutorisees: allPageKeys },
+        { id: 3, nom: "L. Moulin", email: "l.moulin@wallislabel.nc", role: "Utilisateur", statut: "Actif", dateCreation: "2025-03-10", derniereConnexion: null, pagesAutorisees: allPageKeys },
+        { id: 4, nom: "Dispatch", email: "dispatch@wallislabel.nc", role: "Utilisateur", statut: "Actif", dateCreation: "2025-03-10", derniereConnexion: null, pagesAutorisees: allPageKeys }
       ];
 
       var _users = useState(function() {
         var saved = null;
         try { saved = JSON.parse(localStorage.getItem("app_users")); } catch(e) {}
-        return saved || defaultUsers;
+        if (!saved) return defaultUsers;
+        // Merge: ajouter les comptes par defaut manquants
+        var existingEmails = {};
+        for (var i = 0; i < saved.length; i++) { existingEmails[(saved[i].email || "").toLowerCase()] = true; }
+        var merged = saved.slice();
+        for (var j = 0; j < defaultUsers.length; j++) {
+          if (!existingEmails[(defaultUsers[j].email || "").toLowerCase()]) {
+            merged.push(defaultUsers[j]);
+          }
+        }
+        return merged;
       });
       var users = _users[0]; var setUsers = _users[1];
       var _showM = useState(false);
