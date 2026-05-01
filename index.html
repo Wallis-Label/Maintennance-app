@@ -3126,7 +3126,11 @@
 
       var selectAllPages = function() {
         if (!editing) return;
-        setEditing(Object.assign({}, editing, { pagesAutorisees: ALL_PAGES.map(function(p) { return p.key; }) }));
+        var pages = ALL_PAGES.filter(function(p) {
+          if (editing.role !== "Administrateur" && (p.key === "validations" || p.key === "admin-utilisateurs")) return false;
+          return true;
+        }).map(function(p) { return p.key; });
+        setEditing(Object.assign({}, editing, { pagesAutorisees: pages }));
       };
 
       var deselectAllPages = function() {
@@ -3162,7 +3166,17 @@
               h(FormField, { label: "Email" }, h("input", { type: "email", style: inputStyle, value: f.email, onChange: function(e) { upd("email", e.target.value); } }))
             ),
             h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
-              h(FormField, { label: "Role" }, h("input", { style: inputStyle, value: f.role, onChange: function(e) { upd("role", e.target.value); }, placeholder: "Ex: Chef de chantier" })),
+              h(FormField, { label: "Role" }, h("select", { style: selectStyle, value: f.role, onChange: function(e) {
+                upd("role", e.target.value);
+                // Si on passe en Utilisateur, retirer les pages admin
+                if (e.target.value !== "Administrateur") {
+                  var cleaned = (f.pagesAutorisees || []).filter(function(k) { return k !== "validations" && k !== "admin-utilisateurs"; });
+                  setEditing(Object.assign({}, f, { role: e.target.value, pagesAutorisees: cleaned }));
+                }
+              } },
+                h("option", { value: "Administrateur" }, "Administrateur"),
+                h("option", { value: "Utilisateur" }, "Utilisateur")
+              )),
               h(FormField, { label: "Statut" }, h("select", { style: selectStyle, value: f.statut, onChange: function(e) { upd("statut", e.target.value); } },
                 statuts.map(function(s) { return h("option", { key: s, value: s }, s); })
               ))
@@ -3176,7 +3190,11 @@
                 )
               ),
               h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 } },
-                ALL_PAGES.map(function(page) {
+                ALL_PAGES.filter(function(page) {
+                  // Hide admin-only pages for non-admin roles
+                  if (f.role !== "Administrateur" && (page.key === "validations" || page.key === "admin-utilisateurs")) return false;
+                  return true;
+                }).map(function(page) {
                   var checked = (f.pagesAutorisees || []).indexOf(page.key) >= 0;
                   return h("label", { key: page.key, style: { display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 6, border: "1px solid " + (checked ? "#7c3aed" : "#e5e7eb"), background: checked ? "#f5f3ff" : "white", cursor: "pointer", fontSize: 12, fontWeight: checked ? 600 : 400, transition: "all 0.15s" } },
                     h("input", { type: "checkbox", checked: checked, onChange: function() { togglePage(page.key); }, style: { accentColor: "#7c3aed" } }),
@@ -3285,7 +3303,7 @@
     }
 
     // ─── Sidebar ────────────────────────────────────────────────────────
-    function Sidebar({ currentPage, onNavigate, userEmail, onLogout, isAdmin, pendingCount }) {
+    function Sidebar({ currentPage, onNavigate, userEmail, onLogout, isAdmin, pendingCount, allowedPages }) {
       const sections = [
         { name: "Principal", pages: [
           { key: "accueil", label: "Accueil", lucide: "home" },
@@ -3316,7 +3334,7 @@
         h("nav", { style: { flex: 1, padding: "16px 8px", overflowY: "auto" } },
           sections.map((section) => h("div", { key: section.name },
             h("div", { style: { fontSize: 11, fontWeight: 700, color: "var(--sidebar-text)", textTransform: "uppercase", letterSpacing: 0.5, padding: "12px 14px 8px", marginTop: section.name !== "Principal" ? 8 : 0 } }, section.name),
-            section.pages.filter(function(p) { return !p.adminOnly || isAdmin; }).map((p) => h("button", { key: p.key, onClick: () => onNavigate(p.key),
+            section.pages.filter(function(p) { if (p.adminOnly && !isAdmin) return false; if (!isAdmin && allowedPages && allowedPages.indexOf(p.key) < 0) return false; return true; }).map((p) => h("button", { key: p.key, onClick: () => onNavigate(p.key),
               style: { display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "10px 14px", border: "none", borderRadius: 6, marginBottom: 4, cursor: "pointer", fontSize: 14, fontWeight: currentPage === p.key ? 600 : 500, transition: "all 0.2s", background: currentPage === p.key ? "var(--sidebar-active)" : "transparent", color: currentPage === p.key ? "var(--sidebar-text-active)" : "var(--sidebar-text)" } },
               h(Icon, { name: p.lucide, size: 16, color: currentPage === p.key ? "#ffffff" : "#94a3b8" }), p.label,
               p.key === "validations" && pendingCount > 0 ? h("span", { style: { marginLeft: "auto", background: "#dc2626", color: "#fff", fontSize: 11, fontWeight: 700, padding: "2px 7px", borderRadius: 10, minWidth: 20, textAlign: "center" } }, pendingCount) : null))))),
@@ -3705,8 +3723,26 @@
 
       const logout = async () => { await supabase.auth.signOut(); setSession(null); };
 
-      const isAdmin = !!(session && session.user && (session.user.email || "").toLowerCase() === ADMIN_EMAIL);
       const userEmail = session && session.user ? session.user.email : "";
+
+      // Load users from localStorage to determine role & page permissions
+      var appUsers = [];
+      try { appUsers = JSON.parse(localStorage.getItem("app_users")) || []; } catch(e) {}
+      var currentAppUser = null;
+      for (var ui = 0; ui < appUsers.length; ui++) {
+        if ((appUsers[ui].email || "").toLowerCase() === (userEmail || "").toLowerCase()) {
+          currentAppUser = appUsers[ui]; break;
+        }
+      }
+      // isAdmin: true if role is "Administrateur" OR if email matches ADMIN_EMAIL (fallback)
+      const isAdmin = !!(currentAppUser && currentAppUser.role === "Administrateur") || !!((userEmail || "").toLowerCase() === ADMIN_EMAIL);
+      // Allowed pages: admin gets everything, others get only assigned pages
+      var allowedPages = null; // null = all pages (admin)
+      if (!isAdmin && currentAppUser) {
+        allowedPages = currentAppUser.pagesAutorisees || [];
+      } else if (!isAdmin && !currentAppUser) {
+        allowedPages = ["accueil"]; // unknown user = accueil only
+      }
 
       // ─── Systeme de validation ──────────────────────────────────────
       const PENDING_KEY = "pending_validations";
@@ -3837,6 +3873,10 @@
       if (!session) return h(LoginScreen, { onLoggedIn: () => {} });
 
       const renderPage = () => {
+        // Check page access for non-admins
+        if (!isAdmin && allowedPages && currentPage !== "accueil" && currentPage !== "fiche-equipement" && allowedPages.indexOf(currentPage) < 0) {
+          return h(EcranAccueil, { onNavigate: navigate });
+        }
         if (currentPage === "accueil") return h(EcranAccueil, { onNavigate: navigate });
         if (currentPage === "plans") return h(EcranPlans, null);
         if (currentPage === "interventions") return h(EcranInterventions, { onNavigate: navigate, editItem: pageData });
@@ -3856,7 +3896,7 @@
 
       return h(AppContext.Provider, { value: contextValue },
         h("div", { style: { display: "flex", minHeight: "100vh", background: "var(--bg)", fontFamily: "'Inter', system-ui, -apple-system, sans-serif" } },
-          h(Sidebar, { currentPage, onNavigate: navigate, userEmail: session.user && session.user.email, onLogout: logout, isAdmin, pendingCount: pendingValidations.length }),
+          h(Sidebar, { currentPage, onNavigate: navigate, userEmail: session.user && session.user.email, onLogout: logout, isAdmin, pendingCount: pendingValidations.length, allowedPages: allowedPages }),
           h("div", { style: { flex: 1, padding: "24px 32px", overflowY: "auto", maxHeight: "100vh", position: "relative" } },
             dataLoading && h("div", { style: { position: "absolute", top: 20, right: 20, display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#6b7280" } }, h("div", { className: "loader", style: { width: 20, height: 20, borderWidth: 2 } }), "Chargement..."),
             !isAdmin && pendingValidations.filter(function(p) { return p.submittedBy === userEmail; }).length > 0 && h(PendingBannerUser, { pendingValidations: pendingValidations, userEmail: userEmail, updatePendingItem: contextValue.updatePendingItem, deletePendingItem: contextValue.deletePendingItem }),
