@@ -1993,6 +1993,59 @@
       var _chants = useState(mockChantiers);
       var chantiers = _chants[0]; var setChantiers = _chants[1];
 
+      // ── Modal / CRUD state ──
+      var _showModal = useState(false);
+      var showModal = _showModal[0]; var setShowModal = _showModal[1];
+      var _editing = useState(null);
+      var editing = _editing[0]; var setEditing = _editing[1];
+      var _toDelete = useState(null);
+      var toDelete = _toDelete[0]; var setToDelete = _toDelete[1];
+
+      var nextId = function() { return Date.now() + Math.floor(Math.random() * 1000); };
+
+      // ── CRUD Declarations ──
+      var openNewDecl = function() { setEditing({ _type: "decl", id: null, titre: "", montant: 0, recurrence: "Mensuel", status: "A venir", dateFait: null, dateEcheance: formatDateISO(new Date()) }); setShowModal(true); };
+      var openEditDecl = function(d) { setEditing(Object.assign({}, d, { _type: "decl" })); setShowModal(true); };
+      var saveDecl = function(f) {
+        if (f.id) {
+          setDeclarations(declarations.map(function(d) { return d.id === f.id ? Object.assign({}, f) : d; }));
+        } else {
+          setDeclarations(declarations.concat(Object.assign({}, f, { id: nextId() })));
+        }
+        setShowModal(false); setEditing(null);
+      };
+      var deleteDecl = function(id) { setDeclarations(declarations.filter(function(d) { return d.id !== id; })); setToDelete(null); };
+
+      // ── CRUD Renouvellements ──
+      var openNewRen = function() { setEditing({ _type: "ren", id: null, titre: "", dateExpiration: formatDateISO(new Date()), delaiAlerte: 30, status: "Valide" }); setShowModal(true); };
+      var openEditRen = function(r) { setEditing(Object.assign({}, r, { _type: "ren" })); setShowModal(true); };
+      var saveRen = function(f) {
+        if (f.id) {
+          setRenouvellements(renouvellements.map(function(r) { return r.id === f.id ? Object.assign({}, f) : r; }));
+        } else {
+          setRenouvellements(renouvellements.concat(Object.assign({}, f, { id: nextId() })));
+        }
+        setShowModal(false); setEditing(null);
+      };
+      var deleteRen = function(id) { setRenouvellements(renouvellements.filter(function(r) { return r.id !== id; })); setToDelete(null); };
+
+      // ── CRUD Chantiers ──
+      var openNewChant = function() { setEditing({ _type: "chant", id: null, titre: "", dateDebut: formatDateISO(new Date()), dateFin: formatDateISO(addMonthsFnLocal(new Date(), 3)), metrage: 0, prixMetre: 0, depensesPrevues: 0, statut: "A venir" }); setShowModal(true); };
+      var openEditChant = function(c) { setEditing(Object.assign({}, c, { _type: "chant" })); setShowModal(true); };
+      var saveChant = function(f) {
+        if (f.id) {
+          setChantiers(chantiers.map(function(c) { return c.id === f.id ? Object.assign({}, f) : c; }));
+        } else {
+          setChantiers(chantiers.concat(Object.assign({}, f, { id: nextId() })));
+        }
+        setShowModal(false); setEditing(null);
+      };
+      var deleteChant = function(id) { setChantiers(chantiers.filter(function(c) { return c.id !== id; })); setToDelete(null); };
+
+      var closeModal = function() { setShowModal(false); setEditing(null); };
+
+      function addMonthsFnLocal(d, n) { var c = new Date(d); c.setMonth(c.getMonth() + n); return c; }
+
       function parseDate(dateStr) {
         var parts = dateStr.split("-");
         return new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
@@ -2336,8 +2389,84 @@
         );
       }
 
+      // ── Form rendering inside modal ──
+      function renderModalForm() {
+        if (!editing) return null;
+        var f = editing;
+        var upd = function(k, v) { setEditing(Object.assign({}, f, (function() { var o = {}; o[k] = v; return o; }()))); };
+
+        if (f._type === "decl") {
+          return h(Modal, { title: f.id ? "Modifier la declaration" : "Nouvelle declaration", onClose: closeModal },
+            h(FormField, { label: "Titre" }, h("input", { style: inputStyle, value: f.titre, onChange: function(e) { upd("titre", e.target.value); } })),
+            h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
+              h(FormField, { label: "Montant (XPF)" }, h("input", { type: "number", style: inputStyle, value: f.montant, onChange: function(e) { upd("montant", parseInt(e.target.value) || 0); } })),
+              h(FormField, { label: "Recurrence" }, h("select", { style: selectStyle, value: f.recurrence, onChange: function(e) { upd("recurrence", e.target.value); } },
+                ["Mensuel", "Trimestriel", "Semestriel", "Annuel"].map(function(x) { return h("option", { key: x, value: x }, x); })
+              ))
+            ),
+            h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
+              h(FormField, { label: "Date echeance" }, h("input", { type: "date", style: inputStyle, value: f.dateEcheance || "", onChange: function(e) { upd("dateEcheance", e.target.value); } })),
+              h(FormField, { label: "Statut" }, h("select", { style: selectStyle, value: f.status, onChange: function(e) { upd("status", e.target.value); } },
+                ["A venir", "Fait"].map(function(x) { return h("option", { key: x, value: x }, x); })
+              ))
+            ),
+            h("div", { style: { display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 20 } },
+              h(Button, { variant: "secondary", onClick: closeModal }, "Annuler"),
+              h(Button, { onClick: function() { if (!f.titre) return alert("Le titre est obligatoire"); saveDecl(f); } }, h(IconText, { icon: "save", size: 14 }, "Enregistrer"))
+            )
+          );
+        }
+
+        if (f._type === "ren") {
+          return h(Modal, { title: f.id ? "Modifier le renouvellement" : "Nouveau renouvellement", onClose: closeModal },
+            h(FormField, { label: "Titre" }, h("input", { style: inputStyle, value: f.titre, onChange: function(e) { upd("titre", e.target.value); } })),
+            h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
+              h(FormField, { label: "Date expiration" }, h("input", { type: "date", style: inputStyle, value: f.dateExpiration || "", onChange: function(e) { upd("dateExpiration", e.target.value); } })),
+              h(FormField, { label: "Delai alerte (jours)" }, h("input", { type: "number", style: inputStyle, value: f.delaiAlerte, onChange: function(e) { upd("delaiAlerte", parseInt(e.target.value) || 0); } }))
+            ),
+            h("div", { style: { display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 20 } },
+              h(Button, { variant: "secondary", onClick: closeModal }, "Annuler"),
+              h(Button, { onClick: function() { if (!f.titre) return alert("Le titre est obligatoire"); saveRen(f); } }, h(IconText, { icon: "save", size: 14 }, "Enregistrer"))
+            )
+          );
+        }
+
+        if (f._type === "chant") {
+          var caPreview = (f.metrage || 0) * (f.prixMetre || 0);
+          return h(Modal, { title: f.id ? "Modifier le chantier" : "Nouveau chantier", onClose: closeModal, size: 650 },
+            h(FormField, { label: "Titre" }, h("input", { style: inputStyle, value: f.titre, onChange: function(e) { upd("titre", e.target.value); } })),
+            h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
+              h(FormField, { label: "Date debut" }, h("input", { type: "date", style: inputStyle, value: f.dateDebut || "", onChange: function(e) { upd("dateDebut", e.target.value); } })),
+              h(FormField, { label: "Date fin" }, h("input", { type: "date", style: inputStyle, value: f.dateFin || "", onChange: function(e) { upd("dateFin", e.target.value); } }))
+            ),
+            h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
+              h(FormField, { label: "Metrage (m2)" }, h("input", { type: "number", style: inputStyle, value: f.metrage, onChange: function(e) { upd("metrage", parseInt(e.target.value) || 0); } })),
+              h(FormField, { label: "Prix au metre (XPF)" }, h("input", { type: "number", style: inputStyle, value: f.prixMetre, onChange: function(e) { upd("prixMetre", parseInt(e.target.value) || 0); } }))
+            ),
+            h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
+              h(FormField, { label: "Depenses prevues (XPF)" }, h("input", { type: "number", style: inputStyle, value: f.depensesPrevues, onChange: function(e) { upd("depensesPrevues", parseInt(e.target.value) || 0); } })),
+              h(FormField, { label: "Statut" }, h("select", { style: selectStyle, value: f.statut, onChange: function(e) { upd("statut", e.target.value); } },
+                ["A venir", "En cours", "Termine"].map(function(x) { return h("option", { key: x, value: x }, x); })
+              ))
+            ),
+            h("div", { style: { background: "#f0fdf4", padding: 12, borderRadius: 8, marginTop: 8, fontSize: 14, fontWeight: 600, color: "#059669" } }, "CA prevu : " + fmtMoney(caPreview)),
+            h("div", { style: { display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 20 } },
+              h(Button, { variant: "secondary", onClick: closeModal }, "Annuler"),
+              h(Button, { onClick: function() { if (!f.titre) return alert("Le titre est obligatoire"); saveChant(f); } }, h(IconText, { icon: "save", size: 14 }, "Enregistrer"))
+            )
+          );
+        }
+        return null;
+      }
+
+      // ── Action buttons style ──
+      var actionBtnStyle = { background: "transparent", border: "none", cursor: "pointer", padding: 4, borderRadius: 4, display: "inline-flex", alignItems: "center" };
+
+      // ── Determine "+ Nouveau" handler ──
+      var openNew = activeTab === "declarations" ? openNewDecl : activeTab === "renouvellements" ? openNewRen : openNewChant;
+
       return h("div", null,
-        h(PageHeader, { title: h(IconText, { icon: "calendar", size: 20 }, "Planning"), subtitle: "Declarations, Renouvellements et Chantiers" }),
+        h(PageHeader, { title: h(IconText, { icon: "calendar", size: 20 }, "Planning"), subtitle: "Declarations, Renouvellements et Chantiers", action: h(Button, { onClick: openNew }, h(IconText, { icon: "plus", size: 14 }, "Nouveau")) }),
         h("div", { style: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 24 } },
           h(KPICard, { icon: h(Icon, { name: "wallet", size: 32, color: "#7c3aed" }), label: "A provisionner", value: fmtNum(totalAprovisionner), color: "#7c3aed" }),
           h(KPICard, { icon: h(Icon, { name: "file-check", size: 32, color: "#059669" }), label: "Docs a renouveler", value: String(docsARenouveler), color: "#059669" }),
@@ -2366,11 +2495,15 @@
             declarations.map(function(decl) {
               return h(Card, { key: decl.id, style: { borderLeft: "4px solid " + (decl.status === "Fait" ? "#059669" : "#d97706") } },
                 h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "start", marginBottom: 12 } },
-                  h("div", null,
+                  h("div", { style: { flex: 1 } },
                     h("h3", { style: { fontSize: 16, fontWeight: 700, margin: 0, marginBottom: 4 } }, decl.titre),
                     h("div", { style: { fontSize: 13, color: "#6b7280" } }, decl.recurrence + " - " + formatDateFr(decl.dateEcheance))
                   ),
-                  h(StatusBadge, { status: decl.status })
+                  h("div", { style: { display: "flex", gap: 4, alignItems: "center" } },
+                    h("button", { onClick: function() { openEditDecl(decl); }, style: actionBtnStyle, title: "Modifier" }, h(Icon, { name: "pencil", size: 14, color: "#6b7280" })),
+                    h("button", { onClick: function() { setToDelete({ type: "decl", id: decl.id, titre: decl.titre }); }, style: actionBtnStyle, title: "Supprimer" }, h(Icon, { name: "trash-2", size: 14, color: "#dc2626" })),
+                    h(StatusBadge, { status: decl.status })
+                  )
                 ),
                 h("div", { style: { fontSize: 24, fontWeight: 700, color: "#059669", marginBottom: 12 } }, fmtMoney(decl.montant)),
                 decl.status === "A venir" ? h("button", { onClick: function() { handleMarquerFait(decl); }, style: { width: "100%", background: "#059669", color: "white", border: "none", padding: "8px 12px", borderRadius: 6, cursor: "pointer", fontSize: 13, fontWeight: 600 } }, "Marquer fait") : h("div", { style: { fontSize: 12, color: "#6b7280" } }, "Fait le " + decl.dateFait)
@@ -2385,10 +2518,15 @@
               var statusColor = status === "Valide" ? "#059669" : status === "Expire bientot" ? "#d97706" : "#dc2626";
               return h(Card, { key: renewal.id, style: { borderTop: "4px solid " + statusColor } },
                 h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "start", marginBottom: 12 } },
-                  h("h3", { style: { fontSize: 15, fontWeight: 700, margin: 0 } }, renewal.titre),
-                  h("span", { style: { fontSize: 12, fontWeight: 700, color: statusColor, background: statusColor === "#059669" ? "#ecfdf5" : statusColor === "#d97706" ? "#fffbeb" : "#fef2f2", padding: "4px 8px", borderRadius: 4 } }, status)
+                  h("h3", { style: { fontSize: 15, fontWeight: 700, margin: 0, flex: 1 } }, renewal.titre),
+                  h("div", { style: { display: "flex", gap: 4, alignItems: "center" } },
+                    h("button", { onClick: function() { openEditRen(renewal); }, style: actionBtnStyle, title: "Modifier" }, h(Icon, { name: "pencil", size: 14, color: "#6b7280" })),
+                    h("button", { onClick: function() { setToDelete({ type: "ren", id: renewal.id, titre: renewal.titre }); }, style: actionBtnStyle, title: "Supprimer" }, h(Icon, { name: "trash-2", size: 14, color: "#dc2626" })),
+                    h("span", { style: { fontSize: 12, fontWeight: 700, color: statusColor, background: statusColor === "#059669" ? "#ecfdf5" : statusColor === "#d97706" ? "#fffbeb" : "#fef2f2", padding: "4px 8px", borderRadius: 4 } }, status)
+                  )
                 ),
-                h("div", { style: { fontSize: 13, color: "#6b7280", marginBottom: 8 } }, "Expiration : " + formatDateFr(renewal.dateExpiration))
+                h("div", { style: { fontSize: 13, color: "#6b7280", marginBottom: 4 } }, "Expiration : " + formatDateFr(renewal.dateExpiration)),
+                h("div", { style: { fontSize: 12, color: "#94a3b8" } }, "Alerte : " + renewal.delaiAlerte + " jours avant")
               );
             })
           )
@@ -2401,7 +2539,13 @@
               var margePercent = ca > 0 ? Math.round((marge / ca) * 100) : 0;
               var statusColor = chantier.statut === "Termine" ? "#059669" : chantier.statut === "En cours" ? "#d97706" : "#6b7280";
               return h(Card, { key: chantier.id, style: { borderLeft: "4px solid " + statusColor } },
-                h("h3", { style: { fontSize: 15, fontWeight: 700, margin: "0 0 12px" } }, chantier.titre),
+                h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 } },
+                  h("h3", { style: { fontSize: 15, fontWeight: 700, margin: 0, flex: 1 } }, chantier.titre),
+                  h("div", { style: { display: "flex", gap: 4, alignItems: "center" } },
+                    h("button", { onClick: function() { openEditChant(chantier); }, style: actionBtnStyle, title: "Modifier" }, h(Icon, { name: "pencil", size: 14, color: "#6b7280" })),
+                    h("button", { onClick: function() { setToDelete({ type: "chant", id: chantier.id, titre: chantier.titre }); }, style: actionBtnStyle, title: "Supprimer" }, h(Icon, { name: "trash-2", size: 14, color: "#dc2626" }))
+                  )
+                ),
                 h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12, fontSize: 13 } },
                   h("div", { style: { background: "#f9fafb", padding: 10, borderRadius: 6 } },
                     h("div", { style: { color: "#6b7280", marginBottom: 4 } }, "Metrage"),
@@ -2420,14 +2564,25 @@
                     h("div", { style: { fontWeight: 700, fontSize: 14, color: margePercent >= 0 ? "#059669" : "#dc2626" } }, margePercent + "%")
                   )
                 ),
-                h("div", { style: { fontSize: 12, color: "#6b7280", marginBottom: 8 } }, formatDateFr(chantier.dateDebut) + " - " + formatDateFr(chantier.dateFin)),
-                h("div", { style: { display: "flex", gap: 8 } },
+                h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
+                  h("div", { style: { fontSize: 12, color: "#6b7280" } }, formatDateFr(chantier.dateDebut) + " - " + formatDateFr(chantier.dateFin)),
                   h("span", { style: { fontSize: 12, fontWeight: 600, color: statusColor, background: statusColor === "#059669" ? "#ecfdf5" : statusColor === "#d97706" ? "#fffbeb" : "#f3f4f6", padding: "4px 10px", borderRadius: 4 } }, chantier.statut)
                 )
               );
             })
           )
-        )
+        ),
+        showModal && renderModalForm(),
+        toDelete && h(ConfirmDialog, {
+          title: "Supprimer ?",
+          message: "Confirmer la suppression de \"" + toDelete.titre + "\" ?",
+          onConfirm: function() {
+            if (toDelete.type === "decl") deleteDecl(toDelete.id);
+            else if (toDelete.type === "ren") deleteRen(toDelete.id);
+            else if (toDelete.type === "chant") deleteChant(toDelete.id);
+          },
+          onCancel: function() { setToDelete(null); }
+        })
       );
     }
 
