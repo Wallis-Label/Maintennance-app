@@ -32,6 +32,36 @@
     body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); }
     .loader { border: 3px solid #e5e7eb; border-top: 3px solid #6d28d9; border-radius: 50%; width: 32px; height: 32px; animation: spin 1s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
+    .gantt-container { background: white; border-radius: 8px; border: 1px solid var(--border); overflow-x: auto; margin-bottom: 20px; }
+    .gantt-header { display: flex; border-bottom: 1px solid var(--border); background: #f8fafc; position: sticky; top: 0; z-index: 2; }
+    .gantt-label-col { min-width: 220px; max-width: 220px; padding: 10px 12px; font-weight: 600; font-size: 12px; color: var(--text-secondary); border-right: 1px solid var(--border); flex-shrink: 0; }
+    .gantt-days-header { display: flex; flex: 1; }
+    .gantt-day-col { min-width: 28px; text-align: center; padding: 8px 0; font-size: 10px; color: var(--text-muted); border-left: 1px solid var(--border-light); }
+    .gantt-day-col.weekend { background: #fafafa; }
+    .gantt-day-col.today { background: var(--primary-light); color: var(--primary); font-weight: 700; }
+    .gantt-row { display: flex; border-bottom: 1px solid var(--border-light); min-height: 40px; align-items: center; }
+    .gantt-row:hover { background: #fafafa; }
+    .gantt-row-label { min-width: 220px; max-width: 220px; padding: 8px 12px; font-size: 13px; font-weight: 500; border-right: 1px solid var(--border); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; }
+    .gantt-row-bars { display: flex; flex: 1; position: relative; height: 40px; align-items: center; }
+    .gantt-bar { position: absolute; height: 22px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; color: white; min-width: 6px; cursor: default; z-index: 1; }
+    .gantt-bar.declaration { background: var(--primary); }
+    .gantt-bar.declaration.fait { background: #a78bfa; opacity: 0.7; }
+    .gantt-bar.renouvellement { background: var(--success); }
+    .gantt-bar.renouvellement.expire { background: var(--danger); }
+    .gantt-bar.renouvellement.expireBientot { background: var(--warning); }
+    .gantt-bar.chantier { background: var(--info); }
+    .gantt-bar.chantier.termine { background: #93c5fd; opacity: 0.7; }
+    .gantt-bar.chantier.enCours { background: var(--info); }
+    .gantt-today-line { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--primary); z-index: 1; }
+    .gantt-tooltip { position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); background: #1e293b; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; white-space: nowrap; pointer-events: none; display: none; z-index: 10; }
+    .gantt-bar:hover .gantt-tooltip { display: block; }
+    .gantt-bar.draggable { cursor: grab; }
+    .gantt-bar.draggable:active { cursor: grabbing; }
+    .gantt-bar.dragging { opacity: 0.8; box-shadow: 0 2px 8px rgba(0,0,0,0.2); z-index: 5; }
+    .gantt-resize-handle { position: absolute; top: 0; bottom: 0; width: 8px; cursor: ew-resize; z-index: 3; }
+    .gantt-resize-handle:hover { background: rgba(255,255,255,0.3); }
+    .gantt-resize-handle.left { left: 0; border-radius: 4px 0 0 4px; }
+    .gantt-resize-handle.right { right: 0; border-radius: 0 4px 4px 0; }
   </style>
 </head>
 <body>
@@ -1884,25 +1914,25 @@
 
     // ─── Mock data pour Planning et Avancement ─────────────────────────────
     const mockDeclarations = [
-      { id: 1, titre: "CAFAT", montant: 150000, recurrence: "Mensuel", status: "Fait", dateFait: "2026-05-01" },
-      { id: 2, titre: "CPS", montant: 200000, recurrence: "Mensuel", status: "A venir", dateFait: null },
-      { id: 3, titre: "TGC", montant: 50000, recurrence: "Mensuel", status: "Fait", dateFait: "2026-05-01" },
-      { id: 4, titre: "Impot Societe", montant: 500000, recurrence: "Annuel", status: "A venir", dateFait: null },
-      { id: 5, titre: "TVA", montant: 100000, recurrence: "Trimestriel", status: "Fait", dateFait: "2026-04-30" },
-      { id: 6, titre: "Declaration Douane", montant: 0, recurrence: "Trimestriel", status: "A venir", dateFait: null },
-      { id: 7, titre: "Cotisations RCOSC", montant: 75000, recurrence: "Mensuel", status: "Fait", dateFait: "2026-05-01" },
-      { id: 8, titre: "Taxe Commerce", montant: 100000, recurrence: "Annuel", status: "A venir", dateFait: null },
-      { id: 9, titre: "Eau Electricite", montant: 45000, recurrence: "Mensuel", status: "Fait", dateFait: "2026-04-28" },
-      { id: 10, titre: "Telephone Internet", montant: 35000, recurrence: "Mensuel", status: "A venir", dateFait: null },
-      { id: 11, titre: "Assurance Responsabilite", montant: 250000, recurrence: "Annuel", status: "Fait", dateFait: "2026-01-15" },
-      { id: 12, titre: "Salaires", montant: 800000, recurrence: "Mensuel", status: "A venir", dateFait: null },
-      { id: 13, titre: "Loyer Locaux", montant: 300000, recurrence: "Mensuel", status: "Fait", dateFait: "2026-05-01" },
-      { id: 14, titre: "Maintenance Logiciels", montant: 120000, recurrence: "Annuel", status: "A venir", dateFait: null },
-      { id: 15, titre: "Inspection Travail", montant: 0, recurrence: "Semestriel", status: "A venir", dateFait: null },
-      { id: 16, titre: "Bilan Comptable", montant: 0, recurrence: "Annuel", status: "A venir", dateFait: null },
-      { id: 17, titre: "Conseil Syndical", montant: 50000, recurrence: "Semestriel", status: "A venir", dateFait: null },
-      { id: 18, titre: "Visite Medicale", montant: 0, recurrence: "Annuel", status: "Fait", dateFait: "2026-03-20" },
-      { id: 19, titre: "Cotisations Patronales", montant: 320000, recurrence: "Mensuel", status: "A venir", dateFait: null },
+      { id: 1, titre: "CAFAT", montant: 150000, recurrence: "Mensuel", status: "Fait", dateFait: "2026-05-01", dateEcheance: "2026-05-15" },
+      { id: 2, titre: "CPS", montant: 200000, recurrence: "Mensuel", status: "A venir", dateFait: null, dateEcheance: "2026-05-30" },
+      { id: 3, titre: "TGC", montant: 50000, recurrence: "Mensuel", status: "Fait", dateFait: "2026-05-01", dateEcheance: "2026-05-10" },
+      { id: 4, titre: "Impot Societe", montant: 500000, recurrence: "Annuel", status: "A venir", dateFait: null, dateEcheance: "2026-07-31" },
+      { id: 5, titre: "TVA", montant: 100000, recurrence: "Trimestriel", status: "Fait", dateFait: "2026-04-30", dateEcheance: "2026-04-30" },
+      { id: 6, titre: "Declaration Douane", montant: 0, recurrence: "Trimestriel", status: "A venir", dateFait: null, dateEcheance: "2026-06-30" },
+      { id: 7, titre: "Cotisations RCOSC", montant: 75000, recurrence: "Mensuel", status: "Fait", dateFait: "2026-05-01", dateEcheance: "2026-05-05" },
+      { id: 8, titre: "Taxe Commerce", montant: 100000, recurrence: "Annuel", status: "A venir", dateFait: null, dateEcheance: "2026-09-15" },
+      { id: 9, titre: "Eau Electricite", montant: 45000, recurrence: "Mensuel", status: "Fait", dateFait: "2026-04-28", dateEcheance: "2026-05-28" },
+      { id: 10, titre: "Telephone Internet", montant: 35000, recurrence: "Mensuel", status: "A venir", dateFait: null, dateEcheance: "2026-05-20" },
+      { id: 11, titre: "Assurance Responsabilite", montant: 250000, recurrence: "Annuel", status: "Fait", dateFait: "2026-01-15", dateEcheance: "2026-01-15" },
+      { id: 12, titre: "Salaires", montant: 800000, recurrence: "Mensuel", status: "A venir", dateFait: null, dateEcheance: "2026-05-25" },
+      { id: 13, titre: "Loyer Locaux", montant: 300000, recurrence: "Mensuel", status: "Fait", dateFait: "2026-05-01", dateEcheance: "2026-05-01" },
+      { id: 14, titre: "Maintenance Logiciels", montant: 120000, recurrence: "Annuel", status: "A venir", dateFait: null, dateEcheance: "2026-08-15" },
+      { id: 15, titre: "Inspection Travail", montant: 0, recurrence: "Semestriel", status: "A venir", dateFait: null, dateEcheance: "2026-06-15" },
+      { id: 16, titre: "Bilan Comptable", montant: 0, recurrence: "Annuel", status: "A venir", dateFait: null, dateEcheance: "2026-12-31" },
+      { id: 17, titre: "Conseil Syndical", montant: 50000, recurrence: "Semestriel", status: "A venir", dateFait: null, dateEcheance: "2026-06-20" },
+      { id: 18, titre: "Visite Medicale", montant: 0, recurrence: "Annuel", status: "Fait", dateFait: "2026-03-20", dateEcheance: "2026-03-20" },
+      { id: 19, titre: "Cotisations Patronales", montant: 320000, recurrence: "Mensuel", status: "A venir", dateFait: null, dateEcheance: "2026-05-18" },
     ];
 
     const mockRenouvellements = [
@@ -1949,23 +1979,35 @@
 
     // ─── EcranPlanning ──────────────────────────────────────────────────
     function EcranPlanning() {
-      const [currentMonth, setCurrentMonth] = useState(new Date());
-      const [activeTab, setActiveTab] = useState("declarations");
-      const [viewMode, setViewMode] = useState("timeline");
-      const [declarations, setDeclarations] = useState(mockDeclarations);
+      var COL_W = 28;
+      var _cm = useState(new Date());
+      var currentMonth = _cm[0]; var setCurrentMonth = _cm[1];
+      var _at = useState("declarations");
+      var activeTab = _at[0]; var setActiveTab = _at[1];
+      var _vm = useState("timeline");
+      var viewMode = _vm[0]; var setViewMode = _vm[1];
+      var _decls = useState(mockDeclarations);
+      var declarations = _decls[0]; var setDeclarations = _decls[1];
+      var _rens = useState(mockRenouvellements);
+      var renouvellements = _rens[0]; var setRenouvellements = _rens[1];
+      var _chants = useState(mockChantiers);
+      var chantiers = _chants[0]; var setChantiers = _chants[1];
 
-      function getMonthStart() {
-        var d = new Date(currentMonth);
-        d.setDate(1);
-        return d;
+      function parseDate(dateStr) {
+        var parts = dateStr.split("-");
+        return new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
       }
-
-      function addMonths(d, n) {
+      function formatDateISO(d) {
+        var dd = new Date(d);
+        var mm = dd.getMonth() + 1;
+        var day = dd.getDate();
+        return dd.getFullYear() + "-" + (mm < 10 ? "0" : "") + mm + "-" + (day < 10 ? "0" : "") + day;
+      }
+      function addMonthsFn(d, n) {
         var copy = new Date(d);
         copy.setMonth(copy.getMonth() + n);
         return copy;
       }
-
       function formatDateFr(d) {
         if (!d) return "";
         var date = new Date(d);
@@ -1974,7 +2016,6 @@
         var year = date.getFullYear();
         return (day < 10 ? "0" : "") + day + "/" + (month < 10 ? "0" : "") + month + "/" + year;
       }
-
       function computeRenouvellementStatus(renewal) {
         if (!renewal.dateExpiration) return "Valide";
         var expDate = new Date(renewal.dateExpiration);
@@ -1982,44 +2023,317 @@
         var diffMs = expDate.getTime() - today.getTime();
         var diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
         if (diffDays < 0) return "Expire";
-        if (diffDays <= renewal.delaiAlerte) return "Expire bientot";
+        if (diffDays <= (renewal.delaiAlerte || 30)) return "Expire bientot";
         return "Valide";
       }
+      function dayToDateStr(day, month) {
+        var m = month.getMonth() + 1;
+        return month.getFullYear() + "-" + (m < 10 ? "0" : "") + m + "-" + (day < 10 ? "0" : "") + day;
+      }
 
+      // ── State ref for drag (avoid stale closures) ──
+      var planState = { declarations: declarations, renouvellements: renouvellements, chantiers: chantiers, currentMonth: currentMonth };
+      var stateRef = React.useRef(planState);
+      stateRef.current = planState;
+
+      var dragRef = React.useRef({ dragging: false, itemId: null, dragType: null, startX: 0, tab: null, daysInMonth: 31 });
+
+      var handleDragStart = function(e, itemId, dragType, tab) {
+        e.preventDefault();
+        e.stopPropagation();
+        var barsEl = e.target.closest(".gantt-row-bars");
+        if (!barsEl) return;
+        var st = stateRef.current;
+        var month = st.currentMonth;
+        var daysInMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
+
+        var info = dragRef.current;
+        info.dragging = true;
+        info.itemId = itemId;
+        info.dragType = dragType;
+        info.startX = e.clientX;
+        info.tab = tab;
+        info.daysInMonth = daysInMonth;
+
+        if (tab === "chantiers") {
+          var ch = st.chantiers.find(function(c) { return c.id === itemId; });
+          if (ch) { info.origDebut = ch.dateDebut; info.origFin = ch.dateFin; }
+        } else if (tab === "declarations") {
+          var decl = st.declarations.find(function(dd) { return dd.id === itemId; });
+          if (decl) { info.origDate = decl.dateEcheance; }
+        } else if (tab === "renouvellements") {
+          var ren = st.renouvellements.find(function(r) { return r.id === itemId; });
+          if (ren) { info.origDate = ren.dateExpiration; }
+        }
+        document.body.style.cursor = dragType === "move" ? "grabbing" : "ew-resize";
+        document.body.style.userSelect = "none";
+      };
+
+      React.useEffect(function() {
+        var handleMouseMove = function(e) {
+          var info = dragRef.current;
+          if (!info.dragging) return;
+          var deltaX = e.clientX - info.startX;
+          var deltaDays = Math.round(deltaX / COL_W);
+          if (deltaDays === 0) return;
+          var st = stateRef.current;
+          var month = st.currentMonth;
+          var daysInMonth = info.daysInMonth;
+
+          if (info.tab === "declarations") {
+            var origD = parseDate(info.origDate);
+            var newDay = origD.getDate() + deltaDays;
+            if (newDay < 1) newDay = 1;
+            if (newDay > daysInMonth) newDay = daysInMonth;
+            var newDateStr = dayToDateStr(newDay, month);
+            var updDecls = st.declarations.map(function(d) {
+              if (d.id === info.itemId) { return Object.assign({}, d, { dateEcheance: newDateStr }); }
+              return d;
+            });
+            setDeclarations(updDecls);
+          }
+
+          if (info.tab === "renouvellements") {
+            var origR = parseDate(info.origDate);
+            var newDayR = origR.getDate() + deltaDays;
+            if (newDayR < 1) newDayR = 1;
+            if (newDayR > daysInMonth) newDayR = daysInMonth;
+            var newDateStrR = dayToDateStr(newDayR, month);
+            var updRen = st.renouvellements.map(function(r) {
+              if (r.id === info.itemId) { return Object.assign({}, r, { dateExpiration: newDateStrR }); }
+              return r;
+            });
+            setRenouvellements(updRen);
+          }
+
+          if (info.tab === "chantiers") {
+            var origDebut = parseDate(info.origDebut);
+            var origFin = parseDate(info.origFin);
+            if (info.dragType === "move") {
+              var durationDays = Math.round((origFin - origDebut) / 86400000);
+              var newDebut = new Date(origDebut.getTime() + deltaDays * 86400000);
+              var newFin = new Date(newDebut.getTime() + durationDays * 86400000);
+              var updCh = st.chantiers.map(function(c) {
+                if (c.id === info.itemId) { return Object.assign({}, c, { dateDebut: formatDateISO(newDebut), dateFin: formatDateISO(newFin) }); }
+                return c;
+              });
+              setChantiers(updCh);
+            } else if (info.dragType === "resize-start") {
+              var newDebutR = new Date(origDebut.getTime() + deltaDays * 86400000);
+              if (newDebutR >= origFin) newDebutR = new Date(origFin.getTime() - 86400000);
+              var updChS = st.chantiers.map(function(c) {
+                if (c.id === info.itemId) { return Object.assign({}, c, { dateDebut: formatDateISO(newDebutR) }); }
+                return c;
+              });
+              setChantiers(updChS);
+            } else if (info.dragType === "resize-end") {
+              var newFinR = new Date(origFin.getTime() + deltaDays * 86400000);
+              if (newFinR <= origDebut) newFinR = new Date(origDebut.getTime() + 86400000);
+              var updChE = st.chantiers.map(function(c) {
+                if (c.id === info.itemId) { return Object.assign({}, c, { dateFin: formatDateISO(newFinR) }); }
+                return c;
+              });
+              setChantiers(updChE);
+            }
+          }
+        };
+        var handleMouseUp = function() {
+          var info = dragRef.current;
+          if (info.dragging) {
+            info.dragging = false;
+            info.itemId = null;
+            info.dragType = null;
+            document.body.style.cursor = "";
+            document.body.style.userSelect = "";
+          }
+        };
+        document.addEventListener("mousemove", handleMouseMove);
+        document.addEventListener("mouseup", handleMouseUp);
+        return function() {
+          document.removeEventListener("mousemove", handleMouseMove);
+          document.removeEventListener("mouseup", handleMouseUp);
+        };
+      });
+
+      // ── KPI calculations ──
       var decCumul = declarations.reduce(function(sum, d) {
         return d.recurrence === "Annuel" ? sum + (d.montant || 0) : sum;
       }, 0);
-
       var totalAprovisionner = declarations.reduce(function(sum, d) {
         return d.status === "A venir" ? sum + (d.montant || 0) : sum;
       }, 0);
-
-      var docsARenouveler = mockRenouvellements.filter(function(r) {
+      var docsARenouveler = renouvellements.filter(function(r) {
         return computeRenouvellementStatus(r) !== "Valide";
       }).length;
-
-      var caChantiers = mockChantiers.reduce(function(sum, c) {
-        return sum + (c.metrage * c.prixMetre);
-      }, 0);
-
-      var depensesChantiers = mockChantiers.reduce(function(sum, c) {
-        return sum + (c.depensesPrevues || 0);
-      }, 0);
-
+      var caChantiers = chantiers.reduce(function(sum, c) { return sum + (c.metrage * c.prixMetre); }, 0);
+      var depensesChantiers = chantiers.reduce(function(sum, c) { return sum + (c.depensesPrevues || 0); }, 0);
       var margeChantiers = caChantiers > 0 ? Math.round(((caChantiers - depensesChantiers) / caChantiers) * 100) : 0;
 
       function handleMarquerFait(decl) {
         var updated = declarations.map(function(d) {
-          if (d.id === decl.id) {
-            return { ...d, status: "Fait", dateFait: formatDateFr(new Date()) };
-          }
+          if (d.id === decl.id) { return Object.assign({}, d, { status: "Fait", dateFait: formatDateFr(new Date()) }); }
           return d;
         });
-        if (decl.recurrence !== "Annuel") {
-          var nextDecl = { id: Math.max.apply(null, declarations.map(function(d) { return d.id; })) + 1, titre: decl.titre, montant: decl.montant, recurrence: decl.recurrence, status: "A venir", dateFait: null };
+        if (decl.recurrence !== "Annuel" && decl.dateEcheance) {
+          var nextDate = parseDate(decl.dateEcheance);
+          if (decl.recurrence === "Mensuel") nextDate = addMonthsFn(nextDate, 1);
+          else if (decl.recurrence === "Trimestriel") nextDate = addMonthsFn(nextDate, 3);
+          else if (decl.recurrence === "Semestriel") nextDate = addMonthsFn(nextDate, 6);
+          var nextDecl = Object.assign({}, decl, { id: Math.max.apply(null, declarations.map(function(d) { return d.id; })) + 1, status: "A venir", dateFait: null, dateEcheance: formatDateISO(nextDate) });
           updated = updated.concat(nextDecl);
         }
         setDeclarations(updated);
+      }
+
+      // ── Gantt rendering ──
+      function renderGantt() {
+        var year = currentMonth.getFullYear();
+        var monthIdx = currentMonth.getMonth();
+        var daysInMonth = new Date(year, monthIdx + 1, 0).getDate();
+        var today = new Date(); today.setHours(0, 0, 0, 0);
+        var todayDay = (today.getFullYear() === year && today.getMonth() === monthIdx) ? today.getDate() : -1;
+        var monthStart = new Date(year, monthIdx, 1);
+        var monthEnd = new Date(year, monthIdx, daysInMonth);
+        var dayNames = ["D", "L", "M", "M", "J", "V", "S"];
+
+        var dayHeaders = [];
+        for (var d = 1; d <= daysInMonth; d++) {
+          var dt = new Date(year, monthIdx, d);
+          var dow = dt.getDay();
+          var cls = "gantt-day-col";
+          if (dow === 0 || dow === 6) cls = cls + " weekend";
+          if (d === todayDay) cls = cls + " today";
+          dayHeaders.push(h("div", { key: "dh" + d, className: cls, style: { minWidth: 28 } },
+            h("div", null, dayNames[dow]),
+            h("div", { style: { fontWeight: 600, fontSize: 11 } }, String(d))
+          ));
+        }
+
+        var rows = [];
+
+        if (activeTab === "declarations") {
+          var declsInMonth = declarations.filter(function(decl) {
+            if (!decl.dateEcheance) return false;
+            var dd = parseDate(decl.dateEcheance);
+            return dd.getFullYear() === year && dd.getMonth() === monthIdx;
+          });
+          declsInMonth.sort(function(a, b) { return parseDate(a.dateEcheance) - parseDate(b.dateEcheance); });
+          declsInMonth.forEach(function(decl) {
+            var dd = parseDate(decl.dateEcheance);
+            var dayNum = dd.getDate();
+            var leftPx = (dayNum - 1) * COL_W;
+            var barClass = "gantt-bar declaration draggable";
+            if (decl.status === "Fait") barClass = barClass + " fait";
+            var isDragging = dragRef.current.dragging && dragRef.current.itemId === decl.id;
+            if (isDragging) barClass = barClass + " dragging";
+            rows.push(h("div", { key: "gr" + decl.id, className: "gantt-row" },
+              h("div", { className: "gantt-row-label", title: decl.titre },
+                h("span", null, decl.titre),
+                h("span", { style: { fontSize: 11, color: "#94a3b8", marginLeft: 6 } }, fmtMoney(decl.montant))
+              ),
+              h("div", { className: "gantt-row-bars" },
+                todayDay > 0 ? h("div", { className: "gantt-today-line", style: { left: ((todayDay - 1) * COL_W + 13) + "px" } }) : null,
+                h("div", { className: barClass, style: { left: leftPx + "px", width: "22px" },
+                  onMouseDown: function(e) { handleDragStart(e, decl.id, "move", "declarations"); }
+                },
+                  h("span", { className: "gantt-tooltip" }, decl.titre + " - " + fmtMoney(decl.montant) + " - " + formatDateFr(decl.dateEcheance))
+                )
+              )
+            ));
+          });
+          if (declsInMonth.length === 0) {
+            rows.push(h("div", { key: "empty", style: { padding: 20, textAlign: "center", color: "#94a3b8" } }, "Aucune declaration ce mois"));
+          }
+        }
+
+        if (activeTab === "renouvellements") {
+          var renewsSorted = renouvellements.filter(function(r) {
+            var expDate = parseDate(r.dateExpiration);
+            return expDate.getFullYear() === year && expDate.getMonth() === monthIdx;
+          });
+          renewsSorted.sort(function(a, b) { return parseDate(a.dateExpiration) - parseDate(b.dateExpiration); });
+          renewsSorted.forEach(function(renew) {
+            var expDate = parseDate(renew.dateExpiration);
+            var status = computeRenouvellementStatus(renew);
+            var leftPx = (expDate.getDate() - 1) * COL_W;
+            var barClass = "gantt-bar renouvellement draggable";
+            if (status === "Expire") barClass = barClass + " expire";
+            else if (status === "Expire bientot") barClass = barClass + " expireBientot";
+            var isDragging = dragRef.current.dragging && dragRef.current.itemId === renew.id;
+            if (isDragging) barClass = barClass + " dragging";
+            rows.push(h("div", { key: "gr" + renew.id, className: "gantt-row" },
+              h("div", { className: "gantt-row-label", title: renew.titre },
+                h("span", null, renew.titre),
+                h("span", { style: { fontSize: 11, color: status === "Expire" ? "#dc2626" : status === "Expire bientot" ? "#d97706" : "#059669", marginLeft: 6 } }, status)
+              ),
+              h("div", { className: "gantt-row-bars" },
+                todayDay > 0 ? h("div", { className: "gantt-today-line", style: { left: ((todayDay - 1) * COL_W + 13) + "px" } }) : null,
+                h("div", { className: barClass, style: { left: leftPx + "px", width: "22px" },
+                  onMouseDown: function(e) { handleDragStart(e, renew.id, "move", "renouvellements"); }
+                },
+                  h("span", { className: "gantt-tooltip" }, renew.titre + " - Expire: " + formatDateFr(renew.dateExpiration) + " - " + status)
+                )
+              )
+            ));
+          });
+          if (renewsSorted.length === 0) {
+            rows.push(h("div", { key: "empty", style: { padding: 20, textAlign: "center", color: "#94a3b8" } }, "Aucun renouvellement ce mois"));
+          }
+        }
+
+        if (activeTab === "chantiers") {
+          var chantiersFiltered = chantiers.filter(function(ch) {
+            var debut = parseDate(ch.dateDebut);
+            var fin = parseDate(ch.dateFin);
+            return debut <= monthEnd && fin >= monthStart;
+          });
+          chantiersFiltered.sort(function(a, b) { return parseDate(a.dateDebut) - parseDate(b.dateDebut); });
+          chantiersFiltered.forEach(function(ch) {
+            var debut = parseDate(ch.dateDebut);
+            var fin = parseDate(ch.dateFin);
+            var startDay = debut < monthStart ? 1 : debut.getDate();
+            var endDay = fin > monthEnd ? daysInMonth : fin.getDate();
+            var leftPx = (startDay - 1) * COL_W;
+            var widthPx = Math.max((endDay - startDay + 1) * COL_W, 6);
+            var barClass = "gantt-bar chantier draggable";
+            if (ch.statut === "Termine") barClass = barClass + " termine";
+            else if (ch.statut === "En cours") barClass = barClass + " enCours";
+            var isDragging = dragRef.current.dragging && dragRef.current.itemId === ch.id;
+            if (isDragging) barClass = barClass + " dragging";
+            rows.push(h("div", { key: "gr" + ch.id, className: "gantt-row" },
+              h("div", { className: "gantt-row-label", title: ch.titre },
+                h("span", null, ch.titre),
+                h("span", { style: { fontSize: 11, color: "#94a3b8", marginLeft: 6 } }, ch.statut)
+              ),
+              h("div", { className: "gantt-row-bars" },
+                todayDay > 0 ? h("div", { className: "gantt-today-line", style: { left: ((todayDay - 1) * COL_W + 13) + "px" } }) : null,
+                h("div", { className: barClass, style: { left: leftPx + "px", width: widthPx + "px" },
+                  onMouseDown: function(e) { handleDragStart(e, ch.id, "move", "chantiers"); }
+                },
+                  h("div", { className: "gantt-resize-handle left",
+                    onMouseDown: function(e) { e.stopPropagation(); handleDragStart(e, ch.id, "resize-start", "chantiers"); }
+                  }),
+                  widthPx > 60 ? h("span", { style: { fontSize: 10, padding: "0 12px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", pointerEvents: "none" } }, ch.titre) : null,
+                  h("div", { className: "gantt-resize-handle right",
+                    onMouseDown: function(e) { e.stopPropagation(); handleDragStart(e, ch.id, "resize-end", "chantiers"); }
+                  }),
+                  h("span", { className: "gantt-tooltip" }, ch.titre + " - " + fmtNum(ch.metrage) + "m x " + fmtMoney(ch.prixMetre) + "/m = " + fmtMoney(ch.metrage * ch.prixMetre))
+                )
+              )
+            ));
+          });
+          if (chantiersFiltered.length === 0) {
+            rows.push(h("div", { key: "empty", style: { padding: 20, textAlign: "center", color: "#94a3b8" } }, "Aucun chantier ce mois"));
+          }
+        }
+
+        return h("div", { className: "gantt-container" },
+          h("div", { className: "gantt-header" },
+            h("div", { className: "gantt-label-col" }, "Element"),
+            h("div", { className: "gantt-days-header" }, dayHeaders)
+          ),
+          rows
+        );
       }
 
       return h("div", null,
@@ -2031,11 +2345,11 @@
           h(KPICard, { icon: h(Icon, { name: "trending-up", size: 32, color: "#2563eb" }), label: "Marge %", value: margeChantiers + "%", color: "#2563eb" })
         ),
         h("div", { style: { marginBottom: 16, display: "flex", gap: 12, alignItems: "center" } },
-          h("button", { onClick: function() { setCurrentMonth(addMonths(currentMonth, -1)); }, style: { background: "#7c3aed", color: "white", border: "none", padding: "8px 12px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 600 } }, h(Icon, { name: "chevron-left", size: 14, color: "white" })),
+          h("button", { onClick: function() { setCurrentMonth(addMonthsFn(currentMonth, -1)); }, style: { background: "#7c3aed", color: "white", border: "none", padding: "8px 12px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 600 } }, h(Icon, { name: "chevron-left", size: 14, color: "white" })),
           h("div", { style: { fontSize: 14, fontWeight: 600, minWidth: 120, textAlign: "center" } }, currentMonth.toLocaleDateString("fr-FR", { month: "long", year: "numeric" })),
-          h("button", { onClick: function() { setCurrentMonth(addMonths(currentMonth, 1)); }, style: { background: "#7c3aed", color: "white", border: "none", padding: "8px 12px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 600 } }, h(Icon, { name: "chevron-right", size: 14, color: "white" })),
+          h("button", { onClick: function() { setCurrentMonth(addMonthsFn(currentMonth, 1)); }, style: { background: "#7c3aed", color: "white", border: "none", padding: "8px 12px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 600 } }, h(Icon, { name: "chevron-right", size: 14, color: "white" })),
           h("div", { style: { marginLeft: "auto", display: "flex", gap: 8 } },
-            h("button", { onClick: function() { setViewMode("timeline"); }, style: { background: viewMode === "timeline" ? "#7c3aed" : "white", color: viewMode === "timeline" ? "white" : "#6b7280", border: "1px solid #d1d5db", padding: "8px 12px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 600 } }, h(Icon, { name: "layout-timeline", size: 14, color: viewMode === "timeline" ? "white" : "#6b7280" })),
+            h("button", { onClick: function() { setViewMode("timeline"); }, style: { background: viewMode === "timeline" ? "#7c3aed" : "white", color: viewMode === "timeline" ? "white" : "#6b7280", border: "1px solid #d1d5db", padding: "8px 12px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 600 } }, h(Icon, { name: "gantt-chart", size: 14, color: viewMode === "timeline" ? "white" : "#6b7280" })),
             h("button", { onClick: function() { setViewMode("liste"); }, style: { background: viewMode === "liste" ? "#7c3aed" : "white", color: viewMode === "liste" ? "white" : "#6b7280", border: "1px solid #d1d5db", padding: "8px 12px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 600 } }, h(Icon, { name: "list", size: 14, color: viewMode === "liste" ? "white" : "#6b7280" }))
           )
         ),
@@ -2048,34 +2362,13 @@
           h(Card, { style: { marginBottom: 16, background: "#fef9c3", borderLeft: "4px solid #d97706", padding: 16 } },
             h("div", { style: { fontSize: 13, fontWeight: 600, color: "#92400e" } }, "Cumul annuel declarations : " + fmtMoney(decCumul))
           ),
-          viewMode === "liste" ? h("div", null,
-            h(Card, { style: { padding: 0, overflow: "hidden" } },
-              h("div", { style: { overflowX: "auto" } },
-                h("table", { style: { width: "100%", borderCollapse: "collapse", fontSize: 13 } },
-                  h("thead", null, h("tr", { style: { background: "#f9fafb", textAlign: "left" } },
-                    ["Titre", "Montant", "Recurrence", "Statut", "Actions"].map(function(col, i) {
-                      return h("th", { key: i, style: { padding: "12px", fontWeight: 600, color: "#6b7280", borderBottom: "1px solid #e5e7eb" } }, col);
-                    })
-                  )),
-                  h("tbody", null, declarations.map(function(decl) {
-                    return h("tr", { key: decl.id, style: { borderBottom: "1px solid #f3f4f6" } },
-                      h("td", { style: { padding: "10px 12px", fontWeight: 600 } }, decl.titre),
-                      h("td", { style: { padding: "10px 12px", color: "#059669", fontWeight: 600 } }, fmtMoney(decl.montant)),
-                      h("td", { style: { padding: "10px 12px" } }, decl.recurrence),
-                      h("td", { style: { padding: "10px 12px" } }, h(StatusBadge, { status: decl.status })),
-                      h("td", { style: { padding: "10px 12px" } }, decl.status === "A venir" ? h("button", { onClick: function() { handleMarquerFait(decl); }, style: { background: "#059669", color: "white", border: "none", padding: "6px 10px", borderRadius: 4, cursor: "pointer", fontSize: 12, fontWeight: 600 } }, "Fait") : null)
-                    );
-                  }))
-                )
-              )
-            )
-          ) : h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 16 } },
+          viewMode === "timeline" ? renderGantt() : h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 16 } },
             declarations.map(function(decl) {
               return h(Card, { key: decl.id, style: { borderLeft: "4px solid " + (decl.status === "Fait" ? "#059669" : "#d97706") } },
                 h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "start", marginBottom: 12 } },
                   h("div", null,
                     h("h3", { style: { fontSize: 16, fontWeight: 700, margin: 0, marginBottom: 4 } }, decl.titre),
-                    h("div", { style: { fontSize: 13, color: "#6b7280" } }, decl.recurrence)
+                    h("div", { style: { fontSize: 13, color: "#6b7280" } }, decl.recurrence + " - " + formatDateFr(decl.dateEcheance))
                   ),
                   h(StatusBadge, { status: decl.status })
                 ),
@@ -2086,8 +2379,8 @@
           )
         ),
         activeTab === "renouvellements" && h("div", null,
-          h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 16 } },
-            mockRenouvellements.map(function(renewal) {
+          viewMode === "timeline" ? renderGantt() : h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 16 } },
+            renouvellements.map(function(renewal) {
               var status = computeRenouvellementStatus(renewal);
               var statusColor = status === "Valide" ? "#059669" : status === "Expire bientot" ? "#d97706" : "#dc2626";
               return h(Card, { key: renewal.id, style: { borderTop: "4px solid " + statusColor } },
@@ -2101,8 +2394,8 @@
           )
         ),
         activeTab === "chantiers" && h("div", null,
-          h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(350px, 1fr))", gap: 16 } },
-            mockChantiers.map(function(chantier) {
+          viewMode === "timeline" ? renderGantt() : h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(350px, 1fr))", gap: 16 } },
+            chantiers.map(function(chantier) {
               var ca = chantier.metrage * chantier.prixMetre;
               var marge = ca - (chantier.depensesPrevues || 0);
               var margePercent = ca > 0 ? Math.round((marge / ca) * 100) : 0;
@@ -2138,10 +2431,38 @@
       );
     }
 
+    // ─── generateMockSaisies ────────────────────────────────────────────
+    function generateMockSaisies() {
+      var saisies = {};
+      mockChantiers.forEach(function(chantier) {
+        saisies[chantier.id] = {};
+        var startDate = new Date(chantier.dateDebut);
+        var endDate = new Date();
+        if (endDate > new Date(2026, 4, 30)) endDate = new Date(2026, 4, 30);
+        var nbJours = 0;
+        for (var d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+          var dow = d.getDay();
+          if (dow !== 0) nbJours++;
+        }
+        var dailyAvg = chantier.metrage / Math.max(1, nbJours);
+        for (var d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+          var dow = d.getDay();
+          if (dow !== 0) {
+            var dateStr = d.getFullYear() + "-" + (d.getMonth() + 1 < 10 ? "0" : "") + (d.getMonth() + 1) + "-" + (d.getDate() < 10 ? "0" : "") + d.getDate();
+            var val = Math.round(dailyAvg * (0.6 + Math.random() * 0.8));
+            if (val > 0) saisies[chantier.id][dateStr] = val;
+          }
+        }
+      });
+      return saisies;
+    }
+
     // ─── EcranAvancement ────────────────────────────────────────────────
     function EcranAvancement() {
       const [currentMonth, setCurrentMonth] = useState(new Date());
       const [expandedChantier, setExpandedChantier] = useState(null);
+      const [saisies, setSaisies] = useState(generateMockSaisies);
+      const [collapsedAv, setCollapsedAv] = useState({});
 
       function addMonths(d, n) {
         var copy = new Date(d);
@@ -2153,10 +2474,6 @@
         return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
       }
 
-      function isWeekend(dayOfWeek) {
-        return dayOfWeek === 0 || dayOfWeek === 6;
-      }
-
       function formatDateFr(d) {
         if (!d) return "";
         var date = new Date(d);
@@ -2166,46 +2483,127 @@
         return (day < 10 ? "0" : "") + day + "/" + (month < 10 ? "0" : "") + month + "/" + year;
       }
 
-      var activeChantiers = mockChantiers.filter(function(c) { return c.statut !== "Termine"; });
-      var totalMetrage = activeChantiers.reduce(function(sum, c) { return sum + c.metrage; }, 0);
-      var totalCA = activeChantiers.reduce(function(sum, c) { return sum + (c.metrage * c.prixMetre); }, 0);
+      function getDateString(d) {
+        var date = new Date(d);
+        var year = date.getFullYear();
+        var month = date.getMonth() + 1;
+        var day = date.getDate();
+        return year + "-" + (month < 10 ? "0" : "") + month + "-" + (day < 10 ? "0" : "") + day;
+      }
 
+      var activeChantiers = mockChantiers.filter(function(c) { return c.statut === "En cours" || c.statut === "Termine"; });
       var daysInMonth = getDaysInMonth(currentMonth);
       var monthStart = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
+      var monthEnd = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0);
+
+      var totalMetrageAll = activeChantiers.reduce(function(sum, c) { return sum + c.metrage; }, 0);
+      var totalRealiseAll = Object.keys(saisies).reduce(function(sum, chId) {
+        var s = Object.keys(saisies[chId]).reduce(function(s2, d) { return s2 + (saisies[chId][d] || 0); }, 0);
+        return sum + s;
+      }, 0);
+      var totalCAAll = activeChantiers.reduce(function(sum, c) { return sum + (c.metrage * c.prixMetre); }, 0);
+      var totalCARealisedAll = Object.keys(saisies).reduce(function(sum, chId) {
+        var chant = mockChantiers.find(function(c) { return c.id === parseInt(chId); });
+        if (chant) {
+          var s = Object.keys(saisies[chId]).reduce(function(s2, d) { return s2 + (saisies[chId][d] || 0); }, 0);
+          return sum + (s * chant.prixMetre);
+        }
+        return sum;
+      }, 0);
+
+      var avancementGlobal = totalMetrageAll > 0 ? Math.round((totalRealiseAll / totalMetrageAll) * 100) : 0;
 
       function renderAvancements() {
         return activeChantiers.map(function(chantier) {
           var isExpanded = expandedChantier === chantier.id;
           var ca = chantier.metrage * chantier.prixMetre;
+          var realise = Object.keys(saisies[chantier.id] || {}).reduce(function(s, d) { return s + (saisies[chantier.id][d] || 0); }, 0);
+          var caRealise = realise * chantier.prixMetre;
+          var margeRealise = caRealise - ((chantier.depensesPrevues || 0) * (realise / Math.max(1, chantier.metrage)));
+          var avancement = chantier.metrage > 0 ? Math.round((realise / chantier.metrage) * 100) : 0;
+
+          var monthMetrage = 0;
+          for (var d = new Date(monthStart); d <= monthEnd; d.setDate(d.getDate() + 1)) {
+            var dateStr = getDateString(d);
+            if (saisies[chantier.id] && saisies[chantier.id][dateStr]) {
+              monthMetrage += saisies[chantier.id][dateStr];
+            }
+          }
+          var remaining = Math.max(0, chantier.metrage - realise);
+
           return h("div", { key: chantier.id, style: { marginBottom: 16 } },
             h(Card, { onClick: function() { setExpandedChantier(isExpanded ? null : chantier.id); }, style: { cursor: "pointer", background: isExpanded ? "#f5f3ff" : "white" } },
-              h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: isExpanded ? 12 : 0 } },
-                h("div", null,
-                  h("h3", { style: { fontSize: 16, fontWeight: 700, margin: "0 0 4px" } }, chantier.titre),
-                  h("div", { style: { fontSize: 13, color: "#6b7280" } }, formatDateFr(chantier.dateDebut) + " - " + formatDateFr(chantier.dateFin))
+              h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "start", marginBottom: isExpanded ? 12 : 0 } },
+                h("div", { style: { flex: 1 } },
+                  h("h3", { style: { fontSize: 16, fontWeight: 700, margin: "0 0 8px" } }, chantier.titre),
+                  h("div", { style: { display: "flex", gap: 16, alignItems: "center", marginBottom: 8 } },
+                    h("span", { style: { fontSize: 12, fontWeight: 600, color: "#6b7280" } }, formatDateFr(chantier.dateDebut) + " - " + formatDateFr(chantier.dateFin)),
+                    h("span", { style: { fontSize: 11, fontWeight: 600, color: chantier.statut === "Termine" ? "#059669" : "#d97706", background: chantier.statut === "Termine" ? "#ecfdf5" : "#fffbeb", padding: "2px 8px", borderRadius: 3 } }, chantier.statut)
+                  ),
+                  h("div", { style: { display: "flex", gap: 12, fontSize: 12, marginBottom: 8 } },
+                    h("div", null, "Mois : " + fmtNum(monthMetrage) + " m2"),
+                    h("div", null, "Reste : " + fmtNum(remaining) + " m2")
+                  ),
+                  h("div", { style: { width: "100%", height: 10, background: "#e5e7eb", borderRadius: 4, overflow: "hidden", marginBottom: 4 } },
+                    h("div", { style: { width: (avancement > 100 ? 100 : avancement) + "%", height: "100%", background: avancement > 100 ? "#059669" : avancement > 75 ? "#059669" : avancement > 50 ? "#d97706" : "#6b7280", transition: "width 0.3s" } })
+                  ),
+                  h("div", { style: { fontSize: 11, color: "#6b7280", fontWeight: 600 } }, avancement + "%")
                 ),
                 h(Icon, { name: isExpanded ? "chevron-up" : "chevron-down", size: 20, color: "#6b7280" })
               ),
               isExpanded && h("div", { style: { borderTop: "1px solid #e5e7eb", paddingTop: 12, marginTop: 12 } },
                 h("div", { style: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 16, fontSize: 13 } },
                   h("div", { style: { background: "#f9fafb", padding: 10, borderRadius: 6 } },
-                    h("div", { style: { color: "#6b7280", marginBottom: 4, fontSize: 11 } }, "Total"),
+                    h("div", { style: { color: "#6b7280", marginBottom: 4, fontSize: 11, fontWeight: 600 } }, "Prevu"),
                     h("div", { style: { fontWeight: 700, fontSize: 14 } }, fmtNum(chantier.metrage) + " m2")
                   ),
                   h("div", { style: { background: "#f9fafb", padding: 10, borderRadius: 6 } },
-                    h("div", { style: { color: "#6b7280", marginBottom: 4, fontSize: 11 } }, "Realise"),
-                    h("div", { style: { fontWeight: 700, fontSize: 14, color: "#059669" } }, fmtNum(Math.floor(chantier.metrage * 0.6)) + " m2")
+                    h("div", { style: { color: "#6b7280", marginBottom: 4, fontSize: 11, fontWeight: 600 } }, "Realise"),
+                    h("div", { style: { fontWeight: 700, fontSize: 14, color: "#059669" } }, fmtNum(realise) + " m2")
                   ),
                   h("div", { style: { background: "#f9fafb", padding: 10, borderRadius: 6 } },
-                    h("div", { style: { color: "#6b7280", marginBottom: 4, fontSize: 11 } }, "CA total"),
-                    h("div", { style: { fontWeight: 700, fontSize: 14, color: "#2563eb" } }, fmtNum(ca) + " XPF")
+                    h("div", { style: { color: "#6b7280", marginBottom: 4, fontSize: 11, fontWeight: 600 } }, "CA realise"),
+                    h("div", { style: { fontWeight: 700, fontSize: 14, color: "#2563eb" } }, fmtNum(caRealise) + " XPF")
                   ),
                   h("div", { style: { background: "#f9fafb", padding: 10, borderRadius: 6 } },
-                    h("div", { style: { color: "#6b7280", marginBottom: 4, fontSize: 11 } }, "Marge"),
-                    h("div", { style: { fontWeight: 700, fontSize: 14, color: "#059669" } }, "25%")
+                    h("div", { style: { color: "#6b7280", marginBottom: 4, fontSize: 11, fontWeight: 600 } }, "Marge"),
+                    h("div", { style: { fontWeight: 700, fontSize: 14, color: margeRealise >= 0 ? "#059669" : "#dc2626" } }, fmtMoney(Math.round(margeRealise)))
                   )
                 ),
-                h("div", { style: { fontSize: 13, color: "#6b7280", marginTop: 8 } }, "Saisie metrage journalier (en developpement)")
+                h("div", { style: { background: "white", borderRadius: "var(--radius)", border: "1px solid var(--border)", padding: 12, marginBottom: 12, overflowX: "auto" } },
+                  h("div", { style: { display: "flex", minWidth: "100%" } },
+                    h("div", { style: { width: 60, flexShrink: 0, borderRight: "1px solid var(--border)" } },
+                      h("div", { style: { height: 28, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 600, borderBottom: "1px solid var(--border)" } }, "Jour"),
+                      [Array(daysInMonth)].map(function() { return Array(daysInMonth); })[0].map(function(_, i) {
+                        return h("div", { key: i, style: { height: 36, display: "flex", alignItems: "center", justifyContent: "center", borderBottom: "1px solid var(--border)", fontSize: 11 } }, (i + 1));
+                      })
+                    ),
+                    [Array(daysInMonth)].map(function() { return Array(daysInMonth); })[0].map(function(_, dayIdx) {
+                      var dayOfMonth = dayIdx + 1;
+                      var cellDate = new Date(monthStart.getFullYear(), monthStart.getMonth(), dayOfMonth);
+                      var dayOfWeek = cellDate.getDay();
+                      var isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+                      var isToday = dayOfMonth === new Date().getDate() && monthStart.getMonth() === new Date().getMonth() && monthStart.getFullYear() === new Date().getFullYear();
+                      var dateStr = getDateString(cellDate);
+                      var val = (saisies[chantier.id] && saisies[chantier.id][dateStr]) || "";
+
+                      return h("div", { key: dayIdx, style: { width: 48, flexShrink: 0, borderRight: "1px solid var(--border)", background: isWeekend ? "#f9fafb" : isToday ? "#f5f3ff" : "white" } },
+                        h("div", { style: { height: 28, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 600, borderBottom: "1px solid var(--border)", color: isWeekend ? "#94a3b8" : isToday ? "#7c3aed" : "#6b7280" } }, ["L", "M", "M", "J", "V", "S", "D"][dayOfWeek]),
+                        h("input", { type: "number", value: val, onChange: function(e) {
+                          var newSaisies = { ...saisies, [chantier.id]: { ...saisies[chantier.id] } };
+                          var v = e.target.value;
+                          if (v === "") delete newSaisies[chantier.id][dateStr];
+                          else newSaisies[chantier.id][dateStr] = parseInt(v) || 0;
+                          setSaisies(newSaisies);
+                        }, style: { width: 44, height: 36, padding: 0, textAlign: "center", fontSize: 12, fontWeight: 600, border: isWeekend ? "none" : "1px solid var(--border)", background: val ? "#2563eb" : isWeekend ? "#f9fafb" : "white", color: val ? "white" : "var(--text)", borderRadius: 4, cursor: isWeekend ? "not-allowed" : "text" }, disabled: isWeekend })
+                      );
+                    }),
+                    h("div", { style: { width: 60, flexShrink: 0, borderLeft: "1px solid var(--border)", background: "#f9fafb" } },
+                      h("div", { style: { height: 28, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 600, borderBottom: "1px solid var(--border)" } }, "Total"),
+                      h("div", { style: { height: 36, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: "#059669" } }, fmtNum(monthMetrage))
+                    )
+                  )
+                )
               )
             )
           );
@@ -2216,9 +2614,9 @@
         h(PageHeader, { title: h(IconText, { icon: "hard-hat", size: 20 }, "Avancement"), subtitle: "Suivi des chantiers actifs" }),
         h("div", { style: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 24 } },
           h(KPICard, { icon: h(Icon, { name: "briefcase", size: 32, color: "#7c3aed" }), label: "Chantiers actifs", value: String(activeChantiers.length), color: "#7c3aed" }),
-          h(KPICard, { icon: h(Icon, { name: "trending-up", size: 32, color: "#059669" }), label: "Avancement global", value: "60%", color: "#059669" }),
-          h(KPICard, { icon: h(Icon, { name: "move", size: 32, color: "#d97706" }), label: "Metrage realise", value: fmtNum(Math.floor(totalMetrage * 0.6)), color: "#d97706" }),
-          h(KPICard, { icon: h(Icon, { name: "wallet", size: 32, color: "#2563eb" }), label: "CA realise", value: fmtNum(Math.floor(totalCA * 0.6)), color: "#2563eb" })
+          h(KPICard, { icon: h(Icon, { name: "trending-up", size: 32, color: "#059669" }), label: "Avancement global", value: avancementGlobal + "%", color: "#059669" }),
+          h(KPICard, { icon: h(Icon, { name: "move", size: 32, color: "#d97706" }), label: "Metrage realise", value: fmtNum(totalRealiseAll), color: "#d97706" }),
+          h(KPICard, { icon: h(Icon, { name: "wallet", size: 32, color: "#2563eb" }), label: "CA realise", value: fmtNum(totalCARealisedAll), color: "#2563eb" })
         ),
         h("div", { style: { marginBottom: 16, display: "flex", gap: 12, alignItems: "center" } },
           h("button", { onClick: function() { setCurrentMonth(addMonths(currentMonth, -1)); }, style: { background: "#7c3aed", color: "white", border: "none", padding: "8px 12px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 600 } }, h(Icon, { name: "chevron-left", size: 14, color: "white" })),
