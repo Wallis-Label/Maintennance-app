@@ -1915,69 +1915,11 @@
     }
 
     // ─── Mock data pour Planning et Avancement ─────────────────────────────
-    const mockDeclarations = [
-      { id: 1, titre: "CAFAT", montant: 150000, recurrence: "Mensuel", status: "Fait", dateFait: "2026-05-01", dateEcheance: "2026-05-15" },
-      { id: 2, titre: "CPS", montant: 200000, recurrence: "Mensuel", status: "A venir", dateFait: null, dateEcheance: "2026-05-30" },
-      { id: 3, titre: "TGC", montant: 50000, recurrence: "Mensuel", status: "Fait", dateFait: "2026-05-01", dateEcheance: "2026-05-10" },
-      { id: 4, titre: "Impot Societe", montant: 500000, recurrence: "Annuel", status: "A venir", dateFait: null, dateEcheance: "2026-07-31" },
-      { id: 5, titre: "TVA", montant: 100000, recurrence: "Trimestriel", status: "Fait", dateFait: "2026-04-30", dateEcheance: "2026-04-30" },
-      { id: 6, titre: "Declaration Douane", montant: 0, recurrence: "Trimestriel", status: "A venir", dateFait: null, dateEcheance: "2026-06-30" },
-      { id: 7, titre: "Cotisations RCOSC", montant: 75000, recurrence: "Mensuel", status: "Fait", dateFait: "2026-05-01", dateEcheance: "2026-05-05" },
-      { id: 8, titre: "Taxe Commerce", montant: 100000, recurrence: "Annuel", status: "A venir", dateFait: null, dateEcheance: "2026-09-15" },
-      { id: 9, titre: "Eau Electricite", montant: 45000, recurrence: "Mensuel", status: "Fait", dateFait: "2026-04-28", dateEcheance: "2026-05-28" },
-      { id: 10, titre: "Telephone Internet", montant: 35000, recurrence: "Mensuel", status: "A venir", dateFait: null, dateEcheance: "2026-05-20" },
-      { id: 11, titre: "Assurance Responsabilite", montant: 250000, recurrence: "Annuel", status: "Fait", dateFait: "2026-01-15", dateEcheance: "2026-01-15" },
-      { id: 12, titre: "Salaires", montant: 800000, recurrence: "Mensuel", status: "A venir", dateFait: null, dateEcheance: "2026-05-25" },
-      { id: 13, titre: "Loyer Locaux", montant: 300000, recurrence: "Mensuel", status: "Fait", dateFait: "2026-05-01", dateEcheance: "2026-05-01" },
-      { id: 14, titre: "Maintenance Logiciels", montant: 120000, recurrence: "Annuel", status: "A venir", dateFait: null, dateEcheance: "2026-08-15" },
-      { id: 15, titre: "Inspection Travail", montant: 0, recurrence: "Semestriel", status: "A venir", dateFait: null, dateEcheance: "2026-06-15" },
-      { id: 16, titre: "Bilan Comptable", montant: 0, recurrence: "Annuel", status: "A venir", dateFait: null, dateEcheance: "2026-12-31" },
-      { id: 17, titre: "Conseil Syndical", montant: 50000, recurrence: "Semestriel", status: "A venir", dateFait: null, dateEcheance: "2026-06-20" },
-      { id: 18, titre: "Visite Medicale", montant: 0, recurrence: "Annuel", status: "Fait", dateFait: "2026-03-20", dateEcheance: "2026-03-20" },
-      { id: 19, titre: "Cotisations Patronales", montant: 320000, recurrence: "Mensuel", status: "A venir", dateFait: null, dateEcheance: "2026-05-18" },
-    ];
+    const mockDeclarations = [];
 
-    const mockRenouvellements = [
-      { id: 101, titre: "CACES Chariot Elevateur", dateExpiration: "2026-08-15", delaiAlerte: 60, status: "Valide" },
-      { id: 102, titre: "CACES Nacelle", dateExpiration: "2026-06-30", delaiAlerte: 60, status: "Expire bientot" },
-      { id: 103, titre: "Habilitation Electrique", dateExpiration: "2026-09-10", delaiAlerte: 90, status: "Valide" },
-      { id: 104, titre: "Permis Poids Lourds", dateExpiration: "2025-12-20", delaiAlerte: 180, status: "Expire" },
-      { id: 105, titre: "Assurance Responsabilite Civile", dateExpiration: "2026-11-30", delaiAlerte: 90, status: "Valide" },
-      { id: 106, titre: "Assurance Vehicule 1", dateExpiration: "2026-07-15", delaiAlerte: 60, status: "Expire bientot" },
-      { id: 107, titre: "Controle Technique Engin 1", dateExpiration: "2026-10-05", delaiAlerte: 90, status: "Valide" },
-      { id: 108, titre: "Controle Technique Vehicule 1", dateExpiration: "2026-05-30", delaiAlerte: 30, status: "Expire bientot" },
-      { id: 109, titre: "Certification ISO 9001", dateExpiration: "2027-03-15", delaiAlerte: 120, status: "Valide" },
-      { id: 110, titre: "Certification Securite Site", dateExpiration: "2026-06-01", delaiAlerte: 60, status: "Expire bientot" },
-      { id: 111, titre: "Visite Medicale Employe 1", dateExpiration: "2026-07-20", delaiAlerte: 60, status: "Valide" },
-      { id: 112, titre: "Visite Medicale Employe 2", dateExpiration: "2026-05-15", delaiAlerte: 60, status: "Expire bientot" },
-      { id: 113, titre: "Formation Securite Incendie", dateExpiration: "2026-12-01", delaiAlerte: 90, status: "Valide" },
-      { id: 114, titre: "Licence Exploitation Engin 1", dateExpiration: "2025-11-30", delaiAlerte: 180, status: "Expire" },
-      { id: 115, titre: "Inspection Externe Site", dateExpiration: "2026-08-10", delaiAlerte: 90, status: "Valide" },
-      { id: 116, titre: "Assurance Vehicule 2", dateExpiration: "2026-06-20", delaiAlerte: 60, status: "Expire bientot" },
-      { id: 117, titre: "Controle Technique Vehicule 2", dateExpiration: "2026-09-12", delaiAlerte: 30, status: "Valide" },
-      { id: 118, titre: "Permis Conducteur Engin", dateExpiration: "2026-04-10", delaiAlerte: 180, status: "Expire" },
-      { id: 119, titre: "Certification Environnementale", dateExpiration: "2026-10-30", delaiAlerte: 120, status: "Valide" },
-      { id: 120, titre: "Visite Medicale Employe 3", dateExpiration: "2026-08-05", delaiAlerte: 60, status: "Valide" },
-      { id: 121, titre: "Formation Sauvetage Secourisme", dateExpiration: "2026-11-20", delaiAlerte: 90, status: "Valide" },
-      { id: 122, titre: "Inscription SIRET", dateExpiration: "2027-01-15", delaiAlerte: 180, status: "Valide" },
-      { id: 123, titre: "Abonnement RGPD", dateExpiration: "2026-05-31", delaiAlerte: 30, status: "Expire bientot" },
-      { id: 124, titre: "Audit Interne Qualite", dateExpiration: "2026-09-01", delaiAlerte: 60, status: "Valide" },
-      { id: 125, titre: "Certification Professionnel Chef Projet", dateExpiration: "2026-07-10", delaiAlerte: 90, status: "Valide" },
-      { id: 126, titre: "Assurance Tous Risques", dateExpiration: "2026-12-15", delaiAlerte: 90, status: "Valide" },
-    ];
+    const mockRenouvellements = [];
 
-    const mockChantiers = [
-      { id: 1001, titre: "Construction Bâtiment A", dateDebut: "2026-03-01", dateFin: "2026-06-15", metrage: 2500, prixMetre: 850, depensesPrevues: 800000, statut: "En cours" },
-      { id: 1002, titre: "Renovation Route Principale", dateDebut: "2026-04-15", dateFin: "2026-09-30", metrage: 5000, prixMetre: 320, depensesPrevues: 950000, statut: "En cours" },
-      { id: 1003, titre: "Construction Parking", dateDebut: "2026-02-01", dateFin: "2026-05-20", metrage: 3000, prixMetre: 420, depensesPrevues: 600000, statut: "Termine" },
-      { id: 1004, titre: "Refection Toitures", dateDebut: "2026-05-10", dateFin: "2026-07-31", metrage: 1500, prixMetre: 550, depensesPrevues: 500000, statut: "A venir" },
-      { id: 1005, titre: "Construction Mur de Cloture", dateDebut: "2026-06-01", dateFin: "2026-08-15", metrage: 800, prixMetre: 1200, depensesPrevues: 650000, statut: "A venir" },
-      { id: 1006, titre: "Canalisations Eau Usees", dateDebut: "2026-01-15", dateFin: "2026-04-30", metrage: 2200, prixMetre: 650, depensesPrevues: 900000, statut: "Termine" },
-      { id: 1007, titre: "Pose Reseau Electrique", dateDebut: "2026-04-01", dateFin: "2026-08-31", metrage: 3500, prixMetre: 480, depensesPrevues: 1100000, statut: "En cours" },
-      { id: 1008, titre: "Construction Pont", dateDebut: "2026-05-15", dateFin: "2026-11-30", metrage: 4200, prixMetre: 2100, depensesPrevues: 7500000, statut: "A venir" },
-      { id: 1009, titre: "Amenagement Paysager", dateDebut: "2026-03-15", dateFin: "2026-06-01", metrage: 800, prixMetre: 280, depensesPrevues: 150000, statut: "Termine" },
-      { id: 1010, titre: "Installation Eclairage Public", dateDebut: "2026-04-20", dateFin: "2026-07-15", metrage: 1200, prixMetre: 890, depensesPrevues: 850000, statut: "En cours" },
-    ];
+    const mockChantiers = [];
 
     // ─── EcranPlanning ──────────────────────────────────────────────────
     function EcranPlanning() {
