@@ -2440,7 +2440,7 @@
               h(FormField, { label: "Date fin" }, h("input", { type: "date", style: inputStyle, value: f.dateFin || "", onChange: function(e) { upd("dateFin", e.target.value); } }))
             ),
             h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
-              h(FormField, { label: "Metrage (m2)" }, h("input", { type: "number", style: inputStyle, value: f.metrage, onChange: function(e) { upd("metrage", parseInt(e.target.value) || 0); } })),
+              h(FormField, { label: "Metrage (ml)" }, h("input", { type: "number", style: inputStyle, value: f.metrage, onChange: function(e) { upd("metrage", parseInt(e.target.value) || 0); } })),
               h(FormField, { label: "Prix au metre (XPF)" }, h("input", { type: "number", style: inputStyle, value: f.prixMetre, onChange: function(e) { upd("prixMetre", parseInt(e.target.value) || 0); } }))
             ),
             h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
@@ -2549,10 +2549,10 @@
                 h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12, fontSize: 13 } },
                   h("div", { style: { background: "#f9fafb", padding: 10, borderRadius: 6 } },
                     h("div", { style: { color: "#6b7280", marginBottom: 4 } }, "Metrage"),
-                    h("div", { style: { fontWeight: 700, fontSize: 14 } }, fmtNum(chantier.metrage) + " m2")
+                    h("div", { style: { fontWeight: 700, fontSize: 14 } }, fmtNum(chantier.metrage) + " ml")
                   ),
                   h("div", { style: { background: "#f9fafb", padding: 10, borderRadius: 6 } },
-                    h("div", { style: { color: "#6b7280", marginBottom: 4 } }, "Prix/m2"),
+                    h("div", { style: { color: "#6b7280", marginBottom: 4 } }, "Prix/ml"),
                     h("div", { style: { fontWeight: 700, fontSize: 14, color: "#059669" } }, fmtNum(chantier.prixMetre) + " XPF")
                   ),
                   h("div", { style: { background: "#f9fafb", padding: 10, borderRadius: 6 } },
@@ -2687,8 +2687,8 @@
           var remaining = Math.max(0, chantier.metrage - realise);
 
           return h("div", { key: chantier.id, style: { marginBottom: 16 } },
-            h(Card, { onClick: function() { setExpandedChantier(isExpanded ? null : chantier.id); }, style: { cursor: "pointer", background: isExpanded ? "#f5f3ff" : "white" } },
-              h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "start", marginBottom: isExpanded ? 12 : 0 } },
+            h(Card, { style: { background: isExpanded ? "#f5f3ff" : "white" } },
+              h("div", { onClick: function() { setExpandedChantier(isExpanded ? null : chantier.id); }, style: { cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "start" } },
                 h("div", { style: { flex: 1 } },
                   h("h3", { style: { fontSize: 16, fontWeight: 700, margin: "0 0 8px" } }, chantier.titre),
                   h("div", { style: { display: "flex", gap: 16, alignItems: "center", marginBottom: 8 } },
@@ -2696,8 +2696,8 @@
                     h("span", { style: { fontSize: 11, fontWeight: 600, color: chantier.statut === "Termine" ? "#059669" : "#d97706", background: chantier.statut === "Termine" ? "#ecfdf5" : "#fffbeb", padding: "2px 8px", borderRadius: 3 } }, chantier.statut)
                   ),
                   h("div", { style: { display: "flex", gap: 12, fontSize: 12, marginBottom: 8 } },
-                    h("div", null, "Mois : " + fmtNum(monthMetrage) + " m2"),
-                    h("div", null, "Reste : " + fmtNum(remaining) + " m2")
+                    h("div", null, "Mois : " + fmtNum(monthMetrage) + " ml"),
+                    h("div", null, "Reste : " + fmtNum(remaining) + " ml")
                   ),
                   h("div", { style: { width: "100%", height: 10, background: "#e5e7eb", borderRadius: 4, overflow: "hidden", marginBottom: 4 } },
                     h("div", { style: { width: (avancement > 100 ? 100 : avancement) + "%", height: "100%", background: avancement > 100 ? "#059669" : avancement > 75 ? "#059669" : avancement > 50 ? "#d97706" : "#6b7280", transition: "width 0.3s" } })
@@ -2706,15 +2706,15 @@
                 ),
                 h(Icon, { name: isExpanded ? "chevron-up" : "chevron-down", size: 20, color: "#6b7280" })
               ),
-              isExpanded && h("div", { style: { borderTop: "1px solid #e5e7eb", paddingTop: 12, marginTop: 12 } },
+              isExpanded && h("div", { onClick: function(e) { e.stopPropagation(); }, style: { borderTop: "1px solid #e5e7eb", paddingTop: 12, marginTop: 12 } },
                 h("div", { style: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 16, fontSize: 13 } },
                   h("div", { style: { background: "#f9fafb", padding: 10, borderRadius: 6 } },
                     h("div", { style: { color: "#6b7280", marginBottom: 4, fontSize: 11, fontWeight: 600 } }, "Prevu"),
-                    h("div", { style: { fontWeight: 700, fontSize: 14 } }, fmtNum(chantier.metrage) + " m2")
+                    h("div", { style: { fontWeight: 700, fontSize: 14 } }, fmtNum(chantier.metrage) + " ml")
                   ),
                   h("div", { style: { background: "#f9fafb", padding: 10, borderRadius: 6 } },
                     h("div", { style: { color: "#6b7280", marginBottom: 4, fontSize: 11, fontWeight: 600 } }, "Realise"),
-                    h("div", { style: { fontWeight: 700, fontSize: 14, color: "#059669" } }, fmtNum(realise) + " m2")
+                    h("div", { style: { fontWeight: 700, fontSize: 14, color: "#059669" } }, fmtNum(realise) + " ml")
                   ),
                   h("div", { style: { background: "#f9fafb", padding: 10, borderRadius: 6 } },
                     h("div", { style: { color: "#6b7280", marginBottom: 4, fontSize: 11, fontWeight: 600 } }, "CA realise"),
@@ -2725,37 +2725,54 @@
                     h("div", { style: { fontWeight: 700, fontSize: 14, color: margeRealise >= 0 ? "#059669" : "#dc2626" } }, fmtMoney(Math.round(margeRealise)))
                   )
                 ),
-                h("div", { style: { background: "white", borderRadius: "var(--radius)", border: "1px solid var(--border)", padding: 12, marginBottom: 12, overflowX: "auto" } },
-                  h("div", { style: { display: "flex", minWidth: "100%" } },
-                    h("div", { style: { width: 60, flexShrink: 0, borderRight: "1px solid var(--border)" } },
-                      h("div", { style: { height: 28, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 600, borderBottom: "1px solid var(--border)" } }, "Jour"),
-                      [Array(daysInMonth)].map(function() { return Array(daysInMonth); })[0].map(function(_, i) {
-                        return h("div", { key: i, style: { height: 36, display: "flex", alignItems: "center", justifyContent: "center", borderBottom: "1px solid var(--border)", fontSize: 11 } }, (i + 1));
-                      })
-                    ),
-                    [Array(daysInMonth)].map(function() { return Array(daysInMonth); })[0].map(function(_, dayIdx) {
-                      var dayOfMonth = dayIdx + 1;
-                      var cellDate = new Date(monthStart.getFullYear(), monthStart.getMonth(), dayOfMonth);
-                      var dayOfWeek = cellDate.getDay();
-                      var isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-                      var isToday = dayOfMonth === new Date().getDate() && monthStart.getMonth() === new Date().getMonth() && monthStart.getFullYear() === new Date().getFullYear();
-                      var dateStr = getDateString(cellDate);
-                      var val = (saisies[chantier.id] && saisies[chantier.id][dateStr]) || "";
+                h("div", { style: { marginBottom: 8, fontSize: 13, fontWeight: 600, color: "#374151" } }, "Saisie metrage journalier (ml)"),
+                h("div", { style: { background: "white", borderRadius: "var(--radius)", border: "1px solid var(--border)", overflowX: "auto" } },
+                  h("div", { style: { display: "flex", minWidth: daysInMonth * 48 + 60 } },
+                    (function() {
+                      var dayCols = [];
+                      for (var dayIdx = 0; dayIdx < daysInMonth; dayIdx++) {
+                        (function(di) {
+                          var dayOfMonth = di + 1;
+                          var cellDate = new Date(monthStart.getFullYear(), monthStart.getMonth(), dayOfMonth);
+                          var dayOfWeek = cellDate.getDay();
+                          var isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+                          var isToday = dayOfMonth === new Date().getDate() && monthStart.getMonth() === new Date().getMonth() && monthStart.getFullYear() === new Date().getFullYear();
+                          var dateStr = getDateString(cellDate);
+                          var val = (saisies[chantier.id] && saisies[chantier.id][dateStr]) || "";
+                          var dayLetters = ["D", "L", "M", "M", "J", "V", "S"];
 
-                      return h("div", { key: dayIdx, style: { width: 48, flexShrink: 0, borderRight: "1px solid var(--border)", background: isWeekend ? "#f9fafb" : isToday ? "#f5f3ff" : "white" } },
-                        h("div", { style: { height: 28, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 600, borderBottom: "1px solid var(--border)", color: isWeekend ? "#94a3b8" : isToday ? "#7c3aed" : "#6b7280" } }, ["L", "M", "M", "J", "V", "S", "D"][dayOfWeek]),
-                        h("input", { type: "number", value: val, onChange: function(e) {
-                          var newSaisies = { ...saisies, [chantier.id]: { ...saisies[chantier.id] } };
-                          var v = e.target.value;
-                          if (v === "") delete newSaisies[chantier.id][dateStr];
-                          else newSaisies[chantier.id][dateStr] = parseInt(v) || 0;
-                          setSaisies(newSaisies);
-                        }, style: { width: 44, height: 36, padding: 0, textAlign: "center", fontSize: 12, fontWeight: 600, border: isWeekend ? "none" : "1px solid var(--border)", background: val ? "#2563eb" : isWeekend ? "#f9fafb" : "white", color: val ? "white" : "var(--text)", borderRadius: 4, cursor: isWeekend ? "not-allowed" : "text" }, disabled: isWeekend })
-                      );
-                    }),
-                    h("div", { style: { width: 60, flexShrink: 0, borderLeft: "1px solid var(--border)", background: "#f9fafb" } },
-                      h("div", { style: { height: 28, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 600, borderBottom: "1px solid var(--border)" } }, "Total"),
-                      h("div", { style: { height: 36, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: "#059669" } }, fmtNum(monthMetrage))
+                          dayCols.push(h("div", { key: "d" + di, style: { width: 48, flexShrink: 0, borderRight: "1px solid var(--border)", background: isWeekend ? "#f9fafb" : isToday ? "#f5f3ff" : "white" } },
+                            h("div", { style: { height: 20, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 600, color: isWeekend ? "#94a3b8" : isToday ? "#7c3aed" : "#6b7280" } }, dayLetters[dayOfWeek]),
+                            h("div", { style: { height: 18, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, borderBottom: "1px solid var(--border)", color: isToday ? "#7c3aed" : "#374151" } }, String(dayOfMonth)),
+                            h("input", {
+                              type: "number",
+                              value: val,
+                              onClick: function(e) { e.stopPropagation(); },
+                              onFocus: function(e) { e.stopPropagation(); },
+                              onChange: function(e) {
+                                e.stopPropagation();
+                                var newSaisies = Object.assign({}, saisies);
+                                newSaisies[chantier.id] = Object.assign({}, newSaisies[chantier.id] || {});
+                                var v = e.target.value;
+                                if (v === "") {
+                                  delete newSaisies[chantier.id][dateStr];
+                                } else {
+                                  newSaisies[chantier.id][dateStr] = parseInt(v) || 0;
+                                }
+                                setSaisies(newSaisies);
+                              },
+                              style: { width: 46, height: 36, padding: 0, textAlign: "center", fontSize: 12, fontWeight: 600, border: "none", borderTop: "none", background: val ? "#2563eb" : "transparent", color: val ? "white" : "var(--text)", outline: "none", cursor: isWeekend ? "not-allowed" : "text" },
+                              disabled: isWeekend,
+                              placeholder: isWeekend ? "" : "-"
+                            })
+                          ));
+                        })(dayIdx);
+                      }
+                      return dayCols;
+                    })(),
+                    h("div", { style: { width: 60, flexShrink: 0, borderLeft: "2px solid var(--border)", background: "#f0fdf4", display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center" } },
+                      h("div", { style: { fontSize: 9, fontWeight: 600, color: "#6b7280", marginBottom: 2 } }, "Total"),
+                      h("div", { style: { fontSize: 14, fontWeight: 700, color: "#059669" } }, fmtNum(monthMetrage))
                     )
                   )
                 )
@@ -2770,7 +2787,7 @@
         h("div", { style: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 24 } },
           h(KPICard, { icon: h(Icon, { name: "briefcase", size: 32, color: "#7c3aed" }), label: "Chantiers actifs", value: String(activeChantiers.length), color: "#7c3aed" }),
           h(KPICard, { icon: h(Icon, { name: "trending-up", size: 32, color: "#059669" }), label: "Avancement global", value: avancementGlobal + "%", color: "#059669" }),
-          h(KPICard, { icon: h(Icon, { name: "move", size: 32, color: "#d97706" }), label: "Metrage realise", value: fmtNum(totalRealiseAll), color: "#d97706" }),
+          h(KPICard, { icon: h(Icon, { name: "move", size: 32, color: "#d97706" }), label: "Metrage realise", value: fmtNum(totalRealiseAll) + " ml", color: "#d97706" }),
           h(KPICard, { icon: h(Icon, { name: "wallet", size: 32, color: "#2563eb" }), label: "CA realise", value: fmtNum(totalCARealisedAll), color: "#2563eb" })
         ),
         h("div", { style: { marginBottom: 16, display: "flex", gap: 12, alignItems: "center" } },
