@@ -209,6 +209,32 @@
       return { equipement_id: r.EquipementId || equipementIdByCode[r.Equipement] || null, date_releve: r.Date, horametre: r.Horametre !== "" ? parseFloat(r.Horametre) : null, km: r.KM !== "" ? parseFloat(r.KM) : null, saisi_par: r.Technicien || null };
     }
 
+    // ─── Conversion DB: chantiers, declarations, renouvellements, app_users ─
+    function chantierFromDb(r) {
+      return { id: r.id, titre: r.titre || "", dateDebut: r.date_debut || "", dateFin: r.date_fin || "", metrage: r.metrage || 0, prixMetre: r.prix_metre || 0, depensesPrevues: r.depenses_prevues || 0, statut: r.statut || "A venir" };
+    }
+    function chantierToDb(c) {
+      return { titre: c.titre, date_debut: c.dateDebut || null, date_fin: c.dateFin || null, metrage: parseInt(c.metrage) || 0, prix_metre: parseInt(c.prixMetre) || 0, depenses_prevues: parseInt(c.depensesPrevues) || 0, statut: c.statut || "A venir" };
+    }
+    function declarationFromDb(r) {
+      return { id: r.id, titre: r.titre || "", montant: r.montant || 0, recurrence: r.recurrence || "Mensuel", status: r.status || "A venir", dateFait: r.date_fait || null, dateEcheance: r.date_echeance || null };
+    }
+    function declarationToDb(d) {
+      return { titre: d.titre, montant: parseInt(d.montant) || 0, recurrence: d.recurrence || "Mensuel", status: d.status || "A venir", date_fait: d.dateFait || null, date_echeance: d.dateEcheance || null };
+    }
+    function renouvellementFromDb(r) {
+      return { id: r.id, titre: r.titre || "", dateExpiration: r.date_expiration || "", delaiAlerte: r.delai_alerte || 60, status: r.status || "Valide" };
+    }
+    function renouvellementToDb(r) {
+      return { titre: r.titre, date_expiration: r.dateExpiration || null, delai_alerte: parseInt(r.delaiAlerte) || 60, status: r.status || "Valide" };
+    }
+    function appUserFromDb(r) {
+      return { id: r.id, nom: r.nom || "", email: r.email || "", role: r.role || "Utilisateur", statut: r.statut || "Actif", pagesAutorisees: r.pages_autorisees || ["accueil"], dateCreation: r.date_creation || "", derniereConnexion: r.derniere_connexion || null };
+    }
+    function appUserToDb(u) {
+      return { nom: u.nom, email: u.email, role: u.role || "Utilisateur", statut: u.statut || "Actif", pages_autorisees: u.pagesAutorisees || ["accueil"], date_creation: u.dateCreation || new Date().toISOString().substring(0, 10) };
+    }
+
     // ─── Contexte global ────────────────────────────────────────────────
     const AppContext = createContext();
     function useAppData() { return useContext(AppContext); }
@@ -1930,12 +1956,13 @@
       var activeTab = _at[0]; var setActiveTab = _at[1];
       var _vm = useState("timeline");
       var viewMode = _vm[0]; var setViewMode = _vm[1];
-      var _decls = useState(mockDeclarations);
-      var declarations = _decls[0]; var setDeclarations = _decls[1];
-      var _rens = useState(mockRenouvellements);
-      var renouvellements = _rens[0]; var setRenouvellements = _rens[1];
-      var _chants = useState(mockChantiers);
-      var chantiers = _chants[0]; var setChantiers = _chants[1];
+      var ctx = useAppData();
+      var declarations = ctx.dbDeclarations;
+      var setDeclarations = ctx.setDbDeclarations;
+      var renouvellements = ctx.dbRenouvellements;
+      var setRenouvellements = ctx.setDbRenouvellements;
+      var chantiers = ctx.dbChantiers;
+      var setChantiers = ctx.setDbChantiers;
 
       // ── Modal / CRUD state ──
       var _showModal = useState(false);
@@ -1945,46 +1972,83 @@
       var _toDelete = useState(null);
       var toDelete = _toDelete[0]; var setToDelete = _toDelete[1];
 
-      var nextId = function() { return Date.now() + Math.floor(Math.random() * 1000); };
-
-      // ── CRUD Declarations ──
+      // ── CRUD Declarations (Supabase) ──
       var openNewDecl = function() { setEditing({ _type: "decl", id: null, titre: "", montant: 0, recurrence: "Mensuel", status: "A venir", dateFait: null, dateEcheance: formatDateISO(new Date()) }); setShowModal(true); };
       var openEditDecl = function(d) { setEditing(Object.assign({}, d, { _type: "decl" })); setShowModal(true); };
       var saveDecl = function(f) {
+        var dbData = declarationToDb(f);
         if (f.id) {
-          setDeclarations(declarations.map(function(d) { return d.id === f.id ? Object.assign({}, f) : d; }));
+          supabase.from("declarations").update(dbData).eq("id", f.id).select().single().then(function(res) {
+            if (res.error) { alert("Erreur sauvegarde declaration: " + res.error.message); return; }
+            setDeclarations(declarations.map(function(d) { return d.id === f.id ? declarationFromDb(res.data) : d; }));
+          });
         } else {
-          setDeclarations(declarations.concat(Object.assign({}, f, { id: nextId() })));
+          supabase.from("declarations").insert(dbData).select().single().then(function(res) {
+            if (res.error) { alert("Erreur ajout declaration: " + res.error.message); return; }
+            setDeclarations(declarations.concat(declarationFromDb(res.data)));
+          });
         }
         setShowModal(false); setEditing(null);
       };
-      var deleteDecl = function(id) { setDeclarations(declarations.filter(function(d) { return d.id !== id; })); setToDelete(null); };
+      var deleteDecl = function(id) {
+        supabase.from("declarations").delete().eq("id", id).then(function(res) {
+          if (res.error) { alert("Erreur suppression: " + res.error.message); return; }
+          setDeclarations(declarations.filter(function(d) { return d.id !== id; }));
+        });
+        setToDelete(null);
+      };
 
       // ── CRUD Renouvellements ──
       var openNewRen = function() { setEditing({ _type: "ren", id: null, titre: "", dateExpiration: formatDateISO(new Date()), delaiAlerte: 30, status: "Valide" }); setShowModal(true); };
       var openEditRen = function(r) { setEditing(Object.assign({}, r, { _type: "ren" })); setShowModal(true); };
       var saveRen = function(f) {
+        var dbData = renouvellementToDb(f);
         if (f.id) {
-          setRenouvellements(renouvellements.map(function(r) { return r.id === f.id ? Object.assign({}, f) : r; }));
+          supabase.from("renouvellements").update(dbData).eq("id", f.id).select().single().then(function(res) {
+            if (res.error) { alert("Erreur sauvegarde renouvellement: " + res.error.message); return; }
+            setRenouvellements(renouvellements.map(function(r) { return r.id === f.id ? renouvellementFromDb(res.data) : r; }));
+          });
         } else {
-          setRenouvellements(renouvellements.concat(Object.assign({}, f, { id: nextId() })));
+          supabase.from("renouvellements").insert(dbData).select().single().then(function(res) {
+            if (res.error) { alert("Erreur ajout renouvellement: " + res.error.message); return; }
+            setRenouvellements(renouvellements.concat(renouvellementFromDb(res.data)));
+          });
         }
         setShowModal(false); setEditing(null);
       };
-      var deleteRen = function(id) { setRenouvellements(renouvellements.filter(function(r) { return r.id !== id; })); setToDelete(null); };
+      var deleteRen = function(id) {
+        supabase.from("renouvellements").delete().eq("id", id).then(function(res) {
+          if (res.error) { alert("Erreur suppression: " + res.error.message); return; }
+          setRenouvellements(renouvellements.filter(function(r) { return r.id !== id; }));
+        });
+        setToDelete(null);
+      };
 
       // ── CRUD Chantiers ──
       var openNewChant = function() { setEditing({ _type: "chant", id: null, titre: "", dateDebut: formatDateISO(new Date()), dateFin: formatDateISO(addMonthsFnLocal(new Date(), 3)), metrage: 0, prixMetre: 0, depensesPrevues: 0, statut: "A venir" }); setShowModal(true); };
       var openEditChant = function(c) { setEditing(Object.assign({}, c, { _type: "chant" })); setShowModal(true); };
       var saveChant = function(f) {
+        var dbData = chantierToDb(f);
         if (f.id) {
-          setChantiers(chantiers.map(function(c) { return c.id === f.id ? Object.assign({}, f) : c; }));
+          supabase.from("chantiers").update(dbData).eq("id", f.id).select().single().then(function(res) {
+            if (res.error) { alert("Erreur sauvegarde chantier: " + res.error.message); return; }
+            setChantiers(chantiers.map(function(c) { return c.id === f.id ? chantierFromDb(res.data) : c; }));
+          });
         } else {
-          setChantiers(chantiers.concat(Object.assign({}, f, { id: nextId() })));
+          supabase.from("chantiers").insert(dbData).select().single().then(function(res) {
+            if (res.error) { alert("Erreur ajout chantier: " + res.error.message); return; }
+            setChantiers(chantiers.concat(chantierFromDb(res.data)));
+          });
         }
         setShowModal(false); setEditing(null);
       };
-      var deleteChant = function(id) { setChantiers(chantiers.filter(function(c) { return c.id !== id; })); setToDelete(null); };
+      var deleteChant = function(id) {
+        supabase.from("chantiers").delete().eq("id", id).then(function(res) {
+          if (res.error) { alert("Erreur suppression: " + res.error.message); return; }
+          setChantiers(chantiers.filter(function(c) { return c.id !== id; }));
+        });
+        setToDelete(null);
+      };
 
       var closeModal = function() { setShowModal(false); setEditing(null); };
 
@@ -2580,10 +2644,16 @@
         }
         if (!newSaisies[chantierId]) newSaisies[chantierId] = {};
         var v = e.target.value;
+        var numVal = 0;
         if (v === "" || v === null) {
           delete newSaisies[chantierId][dateStr];
+          // Delete from Supabase
+          supabase.from("saisies_metrage").delete().eq("chantier_id", chantierId).eq("date_saisie", dateStr).then(function() {});
         } else {
-          newSaisies[chantierId][dateStr] = parseInt(v, 10) || 0;
+          numVal = parseInt(v, 10) || 0;
+          newSaisies[chantierId][dateStr] = numVal;
+          // Upsert to Supabase
+          supabase.from("saisies_metrage").upsert({ chantier_id: chantierId, date_saisie: dateStr, valeur: numVal }, { onConflict: "chantier_id,date_saisie" }).then(function() {});
         }
         setSaisies(newSaisies);
       };
@@ -2622,14 +2692,21 @@
 
     // ─── EcranAvancement ────────────────────────────────────────────────
     function EcranAvancement() {
+      var ctxAv = useAppData();
       var _cm2 = useState(new Date());
       var currentMonth = _cm2[0]; var setCurrentMonth = _cm2[1];
       var _exp = useState(null);
       var expandedChantier = _exp[0]; var setExpandedChantier = _exp[1];
-      var _sais = useState(function() { return generateMockSaisies(); });
-      var saisies = _sais[0]; var setSaisies = _sais[1];
-      var _chAv = useState(mockChantiers);
-      var chantiers = _chAv[0]; var setChantiers = _chAv[1];
+      var chantiers = ctxAv.dbChantiers;
+      var setChantiers = ctxAv.setDbChantiers;
+      var saisies = ctxAv.dbSaisies;
+      var setSaisiesState = ctxAv.setDbSaisies;
+
+      // Wrapper setSaisies that also persists to Supabase
+      var setSaisies = function(newSaisies) {
+        setSaisiesState(newSaisies);
+      };
+
       var _showM = useState(false);
       var showModal = _showM[0]; var setShowModal = _showM[1];
       var _editAv = useState(null);
@@ -2677,15 +2754,25 @@
         setShowModal(true);
       };
       var saveChantier = function(f) {
+        var dbData = chantierToDb(f);
         if (f.id) {
-          setChantiers(chantiers.map(function(c) { return c.id === f.id ? Object.assign({}, f) : c; }));
+          supabase.from("chantiers").update(dbData).eq("id", f.id).select().single().then(function(res) {
+            if (res.error) { alert("Erreur sauvegarde chantier: " + res.error.message); return; }
+            setChantiers(chantiers.map(function(c) { return c.id === f.id ? chantierFromDb(res.data) : c; }));
+          });
         } else {
-          setChantiers(chantiers.concat(Object.assign({}, f, { id: nextIdAv() })));
+          supabase.from("chantiers").insert(dbData).select().single().then(function(res) {
+            if (res.error) { alert("Erreur ajout chantier: " + res.error.message); return; }
+            setChantiers(chantiers.concat(chantierFromDb(res.data)));
+          });
         }
         setShowModal(false); setEditing(null);
       };
       var deleteChantier = function(id) {
-        setChantiers(chantiers.filter(function(c) { return c.id !== id; }));
+        supabase.from("chantiers").delete().eq("id", id).then(function(res) {
+          if (res.error) { alert("Erreur suppression: " + res.error.message); return; }
+          setChantiers(chantiers.filter(function(c) { return c.id !== id; }));
+        });
         setToDelete(null);
       };
       var closeModalAv = function() { setShowModal(false); setEditing(null); };
@@ -3050,29 +3137,10 @@
       ];
 
       var allPageKeys = ALL_PAGES.map(function(p) { return p.key; });
-      var defaultUsers = [
-        { id: 1, nom: "Tom Picot", email: "tom.wallislabel@gmail.com", role: "Administrateur", statut: "Actif", dateCreation: "2025-01-15", derniereConnexion: "2026-05-30", pagesAutorisees: allPageKeys },
-        { id: 2, nom: "Tomy Picot", email: "tomy.picot@gmail.com", role: "Administrateur", statut: "Actif", dateCreation: "2025-01-15", derniereConnexion: "2026-05-30", pagesAutorisees: allPageKeys },
-        { id: 3, nom: "L. Moulin", email: "l.moulin@wallislabel.nc", role: "Utilisateur", statut: "Actif", dateCreation: "2025-03-10", derniereConnexion: null, pagesAutorisees: allPageKeys },
-        { id: 4, nom: "Dispatch", email: "dispatch@wallislabel.nc", role: "Utilisateur", statut: "Actif", dateCreation: "2025-03-10", derniereConnexion: null, pagesAutorisees: allPageKeys }
-      ];
 
-      var _users = useState(function() {
-        var saved = null;
-        try { saved = JSON.parse(localStorage.getItem("app_users")); } catch(e) {}
-        if (!saved) return defaultUsers;
-        // Merge: ajouter les comptes par defaut manquants
-        var existingEmails = {};
-        for (var i = 0; i < saved.length; i++) { existingEmails[(saved[i].email || "").toLowerCase()] = true; }
-        var merged = saved.slice();
-        for (var j = 0; j < defaultUsers.length; j++) {
-          if (!existingEmails[(defaultUsers[j].email || "").toLowerCase()]) {
-            merged.push(defaultUsers[j]);
-          }
-        }
-        return merged;
-      });
-      var users = _users[0]; var setUsers = _users[1];
+      var ctxAu = useAppData();
+      var users = ctxAu.dbAppUsers;
+      var setUsers = ctxAu.setDbAppUsers;
       var _showM = useState(false);
       var showModal = _showM[0]; var setShowModal = _showM[1];
       var _editing = useState(null);
@@ -3081,13 +3149,6 @@
       var toDelete = _delUser[0]; var setToDelete = _delUser[1];
       var _search = useState("");
       var search = _search[0]; var setSearch = _search[1];
-
-      // Persist users
-      useEffect(function() {
-        try { localStorage.setItem("app_users", JSON.stringify(users)); } catch(e) {}
-      }, [users]);
-
-      var nextIdU = function() { return Date.now() + Math.floor(Math.random() * 1000); };
 
       var openNew = function() {
         setEditing({ id: null, nom: "", email: "", role: "Utilisateur", statut: "Actif", dateCreation: new Date().toISOString().substring(0, 10), derniereConnexion: null, pagesAutorisees: ["accueil"] });
@@ -3098,15 +3159,28 @@
         setShowModal(true);
       };
       var saveUser = function(f) {
+        var dbData = appUserToDb(f);
         if (f.id) {
-          setUsers(users.map(function(u) { return u.id === f.id ? Object.assign({}, f) : u; }));
+          supabase.from("app_users").update(dbData).eq("id", f.id).select().single().then(function(res) {
+            if (!res.error) {
+              setUsers(users.map(function(u) { return u.id === f.id ? appUserFromDb(res.data) : u; }));
+            }
+          });
         } else {
-          setUsers(users.concat(Object.assign({}, f, { id: nextIdU() })));
+          supabase.from("app_users").insert(dbData).select().single().then(function(res) {
+            if (!res.error) {
+              setUsers(users.concat(appUserFromDb(res.data)));
+            }
+          });
         }
         setShowModal(false); setEditing(null);
       };
       var deleteUser = function(id) {
-        setUsers(users.filter(function(u) { return u.id !== id; }));
+        supabase.from("app_users").delete().eq("id", id).then(function(res) {
+          if (!res.error) {
+            setUsers(users.filter(function(u) { return u.id !== id; }));
+          }
+        });
         setToDelete(null);
       };
       var closeModal = function() { setShowModal(false); setEditing(null); };
@@ -3357,6 +3431,11 @@
       const [releves, setReleves] = useState([]);
       const [piecesEquipements, setPiecesEquipements] = useState([]);
       const [parametres, setParametres] = useState([]);
+      const [dbChantiers, setDbChantiers] = useState([]);
+      const [dbSaisies, setDbSaisies] = useState({});
+      const [dbDeclarations, setDbDeclarations] = useState([]);
+      const [dbRenouvellements, setDbRenouvellements] = useState([]);
+      const [dbAppUsers, setDbAppUsers] = useState([]);
       const [toast, setToast] = useState({ message: "", type: "success" });
 
       const showToast = (message, type = "success") => {
@@ -3375,7 +3454,7 @@
       const loadAll = useCallback(async () => {
         setDataLoading(true);
         try {
-          const [eqRes, pcRes, plRes, inRes, rlRes, peRes, paRes] = await Promise.all([
+          const [eqRes, pcRes, plRes, inRes, rlRes, peRes, paRes, chRes, saRes, dcRes, rnRes, auRes] = await Promise.all([
             supabase.from("equipements").select("*").order("immatriculation"),
             supabase.from("pieces").select("*").order("reference"),
             supabase.from("plans").select("*").order("nom"),
@@ -3383,6 +3462,11 @@
             supabase.from("releves_horametre").select("*").order("date_releve", { ascending: false }),
             supabase.from("pieces_equipements").select("*"),
             supabase.from("parametres").select("*").order("ordre"),
+            supabase.from("chantiers").select("*").order("titre"),
+            supabase.from("saisies_metrage").select("*"),
+            supabase.from("declarations").select("*").order("date_echeance"),
+            supabase.from("renouvellements").select("*").order("date_expiration"),
+            supabase.from("app_users").select("*").order("nom"),
           ]);
           if (eqRes.error) throw eqRes.error;
           if (pcRes.error) throw pcRes.error;
@@ -3391,6 +3475,7 @@
           if (rlRes.error) throw rlRes.error;
           if (peRes.error) throw peRes.error;
           if (paRes.error) throw paRes.error;
+          // New tables: don't throw on error (tables might not exist yet)
 
           const eqList = (eqRes.data || []).map(equipementFromDb);
           const eqCodeById = {}; const eqIdByCode = {};
@@ -3402,6 +3487,20 @@
           setReleves((rlRes.data || []).map((r) => releveFromDb(r, eqCodeById)));
           setPiecesEquipements(peRes.data || []);
           setParametres(paRes.data || []);
+          // Chantiers
+          setDbChantiers((chRes.data || []).map(chantierFromDb));
+          // Saisies: convert array to { chantierId: { dateStr: val } }
+          var saisiesMap = {};
+          (saRes.data || []).forEach(function(s) {
+            if (!saisiesMap[s.chantier_id]) saisiesMap[s.chantier_id] = {};
+            saisiesMap[s.chantier_id][s.date_saisie] = s.valeur || 0;
+          });
+          setDbSaisies(saisiesMap);
+          // Declarations & Renouvellements
+          setDbDeclarations((dcRes.data || []).map(declarationFromDb));
+          setDbRenouvellements((rnRes.data || []).map(renouvellementFromDb));
+          // App Users
+          setDbAppUsers((auRes.data || []).map(appUserFromDb));
         } catch (e) { showToast("Erreur chargement : " + e.message, "error"); }
         finally { setDataLoading(false); }
       }, []);
@@ -3725,13 +3824,11 @@
 
       const userEmail = session && session.user ? session.user.email : "";
 
-      // Load users from localStorage to determine role & page permissions
-      var appUsers = [];
-      try { appUsers = JSON.parse(localStorage.getItem("app_users")) || []; } catch(e) {}
+      // Determine role & page permissions from dbAppUsers (Supabase)
       var currentAppUser = null;
-      for (var ui = 0; ui < appUsers.length; ui++) {
-        if ((appUsers[ui].email || "").toLowerCase() === (userEmail || "").toLowerCase()) {
-          currentAppUser = appUsers[ui]; break;
+      for (var ui = 0; ui < dbAppUsers.length; ui++) {
+        if ((dbAppUsers[ui].email || "").toLowerCase() === (userEmail || "").toLowerCase()) {
+          currentAppUser = dbAppUsers[ui]; break;
         }
       }
       // isAdmin: true if role is "Administrateur" OR if email matches ADMIN_EMAIL (fallback)
@@ -3743,6 +3840,12 @@
       } else if (!isAdmin && !currentAppUser) {
         allowedPages = ["accueil"]; // unknown user = accueil only
       }
+
+      // Update derniere_connexion on login
+      useEffect(function() {
+        if (!session || !currentAppUser) return;
+        supabase.from("app_users").update({ derniere_connexion: new Date().toISOString() }).eq("id", currentAppUser.id).then(function() {});
+      }, [session]);
 
       // ─── Systeme de validation ──────────────────────────────────────
       const PENDING_KEY = "pending_validations";
@@ -3859,6 +3962,9 @@
       const contextValue = {
         interventions, equipements, plans, pieces, releves, piecesEquipements, parametres,
         isAdmin, userEmail, pendingValidations, validationLog,
+        dbChantiers, setDbChantiers, dbSaisies, setDbSaisies,
+        dbDeclarations, setDbDeclarations, dbRenouvellements, setDbRenouvellements,
+        dbAppUsers, setDbAppUsers, loadAll, showToast,
         addIntervention: wrappedAddIntervention, updateIntervention: wrappedUpdateIntervention, deleteIntervention,
         addEquipement: wrappedAddEquipement, updateEquipement: wrappedUpdateEquipement, deleteEquipement,
         addPlan: wrappedAddPlan, updatePlan: wrappedUpdatePlan, deletePlan,
