@@ -2694,8 +2694,7 @@
       var editing = _editAv[0]; var setEditing = _editAv[1];
       var _delAv = useState(null);
       var toDelete = _delAv[0]; var setToDelete = _delAv[1];
-      var _tabAv = useState("suivi");
-      var tabAv = _tabAv[0]; var setTabAv = _tabAv[1];
+
 
       var nextIdAv = function() { return Date.now() + Math.floor(Math.random() * 1000); };
 
@@ -2837,8 +2836,8 @@
           );
         }
 
-        var W = 700;
-        var H = 300;
+        var W = 1100;
+        var H = 340;
         var padL = 70;
         var padR = 70;
         var padT = 30;
@@ -2973,9 +2972,6 @@
         );
       }
 
-      var tabBtnStyle = function(active) {
-        return { padding: "8px 16px", border: "none", borderBottom: active ? "2px solid #7c3aed" : "2px solid transparent", background: "none", color: active ? "#7c3aed" : "#6b7280", fontWeight: active ? 700 : 500, fontSize: 13, cursor: "pointer" };
-      };
       var actionBtnStyleAv = { background: "none", border: "1px solid #e5e7eb", padding: "4px 6px", borderRadius: 4, cursor: "pointer", display: "flex", alignItems: "center" };
 
       return h("div", null,
@@ -2990,16 +2986,10 @@
           h(KPICard, { icon: h(Icon, { name: "move", size: 32, color: "#d97706" }), label: "Metrage realise", value: fmtNum(totalRealiseAll) + " m", color: "#d97706" }),
           h(KPICard, { icon: h(Icon, { name: "wallet", size: 32, color: "#2563eb" }), label: "CA realise", value: fmtNum(totalCARealisedAll), color: "#2563eb" })
         ),
-        // Tabs
-        h("div", { style: { display: "flex", borderBottom: "1px solid #e5e7eb", marginBottom: 20 } },
-          h("button", { onClick: function() { setTabAv("suivi"); }, style: tabBtnStyle(tabAv === "suivi") }, h(IconText, { icon: "clipboard-list", size: 14 }, "Suivi")),
-          h("button", { onClick: function() { setTabAv("courbe"); }, style: tabBtnStyle(tabAv === "courbe") }, h(IconText, { icon: "trending-up", size: 14 }, "Courbe de progression"))
-        ),
-        // Tab: Courbe
-        tabAv === "courbe" && renderChart(),
-        // Tab: Suivi
-        tabAv === "suivi" && h("div", null,
-          h("div", { style: { marginBottom: 16, display: "flex", gap: 12, alignItems: "center" } },
+        // Courbe de progression
+        renderChart(),
+        // Suivi chantiers
+        h("div", { style: { marginBottom: 16, display: "flex", gap: 12, alignItems: "center" } },
             h("button", { onClick: function() { setCurrentMonth(addMonthsAv(currentMonth, -1)); }, style: { background: "#7c3aed", color: "white", border: "none", padding: "8px 12px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 600 } }, h(Icon, { name: "chevron-left", size: 14, color: "white" })),
             h("div", { style: { fontSize: 14, fontWeight: 600, minWidth: 120, textAlign: "center" } }, currentMonth.toLocaleDateString("fr-FR", { month: "long", year: "numeric" })),
             h("button", { onClick: function() { setCurrentMonth(addMonthsAv(currentMonth, 1)); }, style: { background: "#7c3aed", color: "white", border: "none", padding: "8px 12px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 600 } }, h(Icon, { name: "chevron-right", size: 14, color: "white" }))
@@ -3086,8 +3076,7 @@
                 )
               )
             );
-          })
-        ),
+          }),
         // Modal CRUD
         renderModalChantier(),
         // Confirm delete
