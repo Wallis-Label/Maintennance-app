@@ -3031,6 +3031,246 @@
       );
     }
 
+    // ─── EcranAdminUtilisateurs ────────────────────────────────────────
+    function EcranAdminUtilisateurs() {
+      var ALL_PAGES = [
+        { key: "accueil", label: "Accueil", icon: "home" },
+        { key: "plans", label: "Plans", icon: "clipboard-list" },
+        { key: "interventions", label: "Interventions", icon: "wrench" },
+        { key: "planning", label: "Planning", icon: "calendar" },
+        { key: "avancement", label: "Avancement", icon: "hard-hat" },
+        { key: "equipements", label: "Equipements", icon: "settings" },
+        { key: "personnel", label: "Personnel", icon: "user-round" },
+        { key: "organisation", label: "Organisation", icon: "users" },
+        { key: "pieces", label: "Pieces detachees", icon: "package" },
+        { key: "historique", label: "Historique", icon: "scroll-text" },
+        { key: "parametres", label: "Parametres", icon: "sliders-horizontal" },
+        { key: "validations", label: "Validations", icon: "shield-check" },
+        { key: "admin-utilisateurs", label: "Admin Utilisateurs", icon: "user-cog" }
+      ];
+
+      var defaultUsers = [
+        { id: 1, nom: "Tom Picot", email: "tom.wallislabel@gmail.com", role: "Administrateur", statut: "Actif", dateCreation: "2025-01-15", derniereConnexion: "2026-05-30", pagesAutorisees: ALL_PAGES.map(function(p) { return p.key; }) },
+        { id: 2, nom: "Tomy Picot", email: "tomy.picot@gmail.com", role: "Administrateur", statut: "Actif", dateCreation: "2025-01-15", derniereConnexion: "2026-05-30", pagesAutorisees: ALL_PAGES.map(function(p) { return p.key; }) }
+      ];
+
+      var _users = useState(function() {
+        var saved = null;
+        try { saved = JSON.parse(localStorage.getItem("app_users")); } catch(e) {}
+        return saved || defaultUsers;
+      });
+      var users = _users[0]; var setUsers = _users[1];
+      var _showM = useState(false);
+      var showModal = _showM[0]; var setShowModal = _showM[1];
+      var _editing = useState(null);
+      var editing = _editing[0]; var setEditing = _editing[1];
+      var _delUser = useState(null);
+      var toDelete = _delUser[0]; var setToDelete = _delUser[1];
+      var _search = useState("");
+      var search = _search[0]; var setSearch = _search[1];
+
+      // Persist users
+      useEffect(function() {
+        try { localStorage.setItem("app_users", JSON.stringify(users)); } catch(e) {}
+      }, [users]);
+
+      var nextIdU = function() { return Date.now() + Math.floor(Math.random() * 1000); };
+
+      var openNew = function() {
+        setEditing({ id: null, nom: "", email: "", role: "Utilisateur", statut: "Actif", dateCreation: new Date().toISOString().substring(0, 10), derniereConnexion: null, pagesAutorisees: ["accueil"] });
+        setShowModal(true);
+      };
+      var openEdit = function(u) {
+        setEditing(Object.assign({}, u, { pagesAutorisees: (u.pagesAutorisees || []).slice() }));
+        setShowModal(true);
+      };
+      var saveUser = function(f) {
+        if (f.id) {
+          setUsers(users.map(function(u) { return u.id === f.id ? Object.assign({}, f) : u; }));
+        } else {
+          setUsers(users.concat(Object.assign({}, f, { id: nextIdU() })));
+        }
+        setShowModal(false); setEditing(null);
+      };
+      var deleteUser = function(id) {
+        setUsers(users.filter(function(u) { return u.id !== id; }));
+        setToDelete(null);
+      };
+      var closeModal = function() { setShowModal(false); setEditing(null); };
+
+      var togglePage = function(pageKey) {
+        if (!editing) return;
+        var current = editing.pagesAutorisees || [];
+        var idx = current.indexOf(pageKey);
+        var copy;
+        if (idx >= 0) {
+          copy = current.filter(function(k) { return k !== pageKey; });
+        } else {
+          copy = current.concat(pageKey);
+        }
+        setEditing(Object.assign({}, editing, { pagesAutorisees: copy }));
+      };
+
+      var selectAllPages = function() {
+        if (!editing) return;
+        setEditing(Object.assign({}, editing, { pagesAutorisees: ALL_PAGES.map(function(p) { return p.key; }) }));
+      };
+
+      var deselectAllPages = function() {
+        if (!editing) return;
+        setEditing(Object.assign({}, editing, { pagesAutorisees: [] }));
+      };
+
+      var filtered = users.filter(function(u) {
+        if (!search) return true;
+        var s = search.toLowerCase();
+        return (u.nom || "").toLowerCase().indexOf(s) >= 0 || (u.email || "").toLowerCase().indexOf(s) >= 0;
+      });
+
+      var statuts = ["Actif", "Inactif", "Suspendu"];
+
+      function renderModal() {
+        if (!showModal || !editing) return null;
+        var f = editing;
+        var upd = function(key, val) {
+          var copy = Object.assign({}, f);
+          if (key === "pagesAutorisees") {
+            copy[key] = val.slice();
+          } else {
+            copy[key] = val;
+          }
+          setEditing(copy);
+        };
+
+        return h(Modal, { onClose: closeModal, title: f.id ? "Modifier l'utilisateur" : "Nouvel utilisateur" },
+          h("div", { style: { display: "grid", gap: 12 } },
+            h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
+              h(FormField, { label: "Nom complet" }, h("input", { style: inputStyle, value: f.nom, onChange: function(e) { upd("nom", e.target.value); } })),
+              h(FormField, { label: "Email" }, h("input", { type: "email", style: inputStyle, value: f.email, onChange: function(e) { upd("email", e.target.value); } }))
+            ),
+            h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
+              h(FormField, { label: "Role" }, h("input", { style: inputStyle, value: f.role, onChange: function(e) { upd("role", e.target.value); }, placeholder: "Ex: Chef de chantier" })),
+              h(FormField, { label: "Statut" }, h("select", { style: selectStyle, value: f.statut, onChange: function(e) { upd("statut", e.target.value); } },
+                statuts.map(function(s) { return h("option", { key: s, value: s }, s); })
+              ))
+            ),
+            h("div", { style: { marginTop: 4 } },
+              h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 } },
+                h("div", { style: { fontSize: 13, fontWeight: 700, color: "#374151" } }, "Pages autorisees"),
+                h("div", { style: { display: "flex", gap: 8 } },
+                  h("button", { onClick: selectAllPages, style: { fontSize: 11, fontWeight: 600, color: "#7c3aed", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" } }, "Tout selectionner"),
+                  h("button", { onClick: deselectAllPages, style: { fontSize: 11, fontWeight: 600, color: "#6b7280", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" } }, "Tout deselectionner")
+                )
+              ),
+              h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 } },
+                ALL_PAGES.map(function(page) {
+                  var checked = (f.pagesAutorisees || []).indexOf(page.key) >= 0;
+                  return h("label", { key: page.key, style: { display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 6, border: "1px solid " + (checked ? "#7c3aed" : "#e5e7eb"), background: checked ? "#f5f3ff" : "white", cursor: "pointer", fontSize: 12, fontWeight: checked ? 600 : 400, transition: "all 0.15s" } },
+                    h("input", { type: "checkbox", checked: checked, onChange: function() { togglePage(page.key); }, style: { accentColor: "#7c3aed" } }),
+                    h(Icon, { name: page.icon, size: 14, color: checked ? "#7c3aed" : "#9ca3af" }),
+                    h("span", null, page.label)
+                  );
+                })
+              )
+            ),
+            h("div", { style: { display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 } },
+              h(Button, { onClick: closeModal, variant: "secondary" }, "Annuler"),
+              h(Button, { onClick: function() {
+                if (!f.nom) return alert("Le nom est obligatoire");
+                if (!f.email) return alert("L'email est obligatoire");
+                saveUser(f);
+              } }, h(IconText, { icon: "save", size: 14 }, "Enregistrer"))
+            )
+          )
+        );
+      }
+
+      var thStyle = { padding: "12px", fontWeight: 600, color: "#6b7280", borderBottom: "1px solid #e5e7eb", textAlign: "left", fontSize: 12 };
+      var tdStyle = { padding: "10px 12px", borderBottom: "1px solid #f3f4f6", fontSize: 13 };
+      var statusColors = { "Actif": { bg: "#dcfce7", text: "#166534" }, "Inactif": { bg: "#f3f4f6", text: "#374151" }, "Suspendu": { bg: "#fee2e2", text: "#991b1b" } };
+
+      return h("div", null,
+        h(PageHeader, {
+          title: h(IconText, { icon: "user-cog", size: 20 }, "Administration Utilisateurs"),
+          subtitle: users.length + " utilisateur" + (users.length > 1 ? "s" : "") + " enregistre" + (users.length > 1 ? "s" : ""),
+          action: h(Button, { onClick: openNew }, h(IconText, { icon: "plus", size: 14, color: "white" }, "Nouvel utilisateur"))
+        }),
+        // KPIs
+        h("div", { style: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 24 } },
+          h(KPICard, { icon: h(Icon, { name: "users", size: 32, color: "#7c3aed" }), label: "Total utilisateurs", value: String(users.length), color: "#7c3aed" }),
+          h(KPICard, { icon: h(Icon, { name: "user-check", size: 32, color: "#059669" }), label: "Actifs", value: String(users.filter(function(u) { return u.statut === "Actif"; }).length), color: "#059669" }),
+          h(KPICard, { icon: h(Icon, { name: "user-x", size: 32, color: "#dc2626" }), label: "Inactifs / Suspendus", value: String(users.filter(function(u) { return u.statut !== "Actif"; }).length), color: "#dc2626" })
+        ),
+        // Search
+        h("div", { style: { marginBottom: 16 } },
+          h("div", { style: { position: "relative", maxWidth: 350 } },
+            h("div", { style: { position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" } }, h(Icon, { name: "search", size: 16, color: "#9ca3af" })),
+            h("input", { type: "text", placeholder: "Rechercher un utilisateur...", value: search, onChange: function(e) { setSearch(e.target.value); }, style: Object.assign({}, inputStyle, { paddingLeft: 36, width: "100%" }) })
+          )
+        ),
+        // Table
+        h("div", { style: { background: "white", borderRadius: 12, border: "1px solid #e5e7eb", boxShadow: "0 1px 3px rgba(0,0,0,0.1)", overflow: "hidden" } },
+          h("div", { style: { overflowX: "auto" } },
+            h("table", { style: { width: "100%", borderCollapse: "collapse" } },
+              h("thead", null,
+                h("tr", { style: { background: "#f9fafb" } },
+                  h("th", { style: thStyle }, "Nom"),
+                  h("th", { style: thStyle }, "Email"),
+                  h("th", { style: thStyle }, "Role"),
+                  h("th", { style: thStyle }, "Pages"),
+                  h("th", { style: thStyle }, "Statut"),
+                  h("th", { style: thStyle }, "Derniere connexion"),
+                  h("th", { style: Object.assign({}, thStyle, { width: 80 }) }, "")
+                )
+              ),
+              h("tbody", null,
+                filtered.length === 0
+                  ? h("tr", null, h("td", { colSpan: 7, style: { padding: 40, textAlign: "center", color: "#9ca3af" } }, "Aucun utilisateur trouve"))
+                  : filtered.map(function(u) {
+                      var sc = statusColors[u.statut] || statusColors["Inactif"];
+                      var pageCount = (u.pagesAutorisees || []).length;
+                      return h("tr", { key: u.id, style: { borderBottom: "1px solid #f3f4f6" } },
+                        h("td", { style: Object.assign({}, tdStyle, { fontWeight: 700 }) },
+                          h("div", { style: { display: "flex", alignItems: "center", gap: 10 } },
+                            h("div", { style: { width: 32, height: 32, borderRadius: "50%", background: "#7c3aed", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 700 } }, (u.nom || "?").charAt(0).toUpperCase()),
+                            h("span", null, u.nom)
+                          )
+                        ),
+                        h("td", { style: Object.assign({}, tdStyle, { color: "#6b7280" }) }, u.email),
+                        h("td", { style: tdStyle },
+                          h("span", { style: { fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 4, background: u.role === "Administrateur" ? "#ede9fe" : "#f0fdf4", color: u.role === "Administrateur" ? "#6d28d9" : "#166534" } }, u.role)
+                        ),
+                        h("td", { style: tdStyle },
+                          h("span", { style: { fontSize: 11, fontWeight: 600, color: "#6b7280" } }, pageCount + " / " + ALL_PAGES.length + " pages")
+                        ),
+                        h("td", { style: tdStyle },
+                          h("span", { style: { fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 12, background: sc.bg, color: sc.text } }, u.statut)
+                        ),
+                        h("td", { style: Object.assign({}, tdStyle, { fontSize: 12, color: "#6b7280" }) },
+                          u.derniereConnexion || "Jamais"
+                        ),
+                        h("td", { style: Object.assign({}, tdStyle, { whiteSpace: "nowrap" }) },
+                          h("button", { onClick: function() { openEdit(u); }, style: { background: "transparent", border: "none", cursor: "pointer", padding: 4 }, title: "Modifier" }, h(Icon, { name: "pencil", size: 15, color: "#6b7280" })),
+                          u.email !== ADMIN_EMAIL ? h("button", { onClick: function() { setToDelete(u); }, style: { background: "transparent", border: "none", cursor: "pointer", padding: 4 }, title: "Supprimer" }, h(Icon, { name: "trash-2", size: 15, color: "#dc2626" })) : null
+                        )
+                      );
+                    })
+              )
+            )
+          )
+        ),
+        // Modal
+        renderModal(),
+        // Confirm delete
+        toDelete && h(ConfirmDialog, {
+          title: "Supprimer l'utilisateur",
+          message: "Supprimer \"" + toDelete.nom + " (" + toDelete.email + ")\" ? Cette action est irreversible.",
+          onConfirm: function() { deleteUser(toDelete.id); },
+          onCancel: function() { setToDelete(null); }
+        })
+      );
+    }
+
     // ─── Sidebar ────────────────────────────────────────────────────────
     function Sidebar({ currentPage, onNavigate, userEmail, onLogout, isAdmin, pendingCount }) {
       const sections = [
@@ -3053,6 +3293,7 @@
           { key: "historique", label: "Historique", lucide: "scroll-text" },
           { key: "parametres", label: "Parametres", lucide: "sliders-horizontal" },
           { key: "validations", label: "Validations", lucide: "shield-check", adminOnly: true },
+          { key: "admin-utilisateurs", label: "Utilisateurs", lucide: "user-cog", adminOnly: true },
         ]},
       ];
       return h("div", { style: { width: 260, background: "var(--sidebar-bg)", color: "white", minHeight: "100vh", display: "flex", flexDirection: "column", flexShrink: 0 } },
@@ -3596,6 +3837,7 @@
         if (currentPage === "parametres") return h(EcranParametres, null);
         if (currentPage === "planning") return h(EcranPlanning, null);
         if (currentPage === "avancement") return h(EcranAvancement, null);
+        if (currentPage === "admin-utilisateurs") return isAdmin ? h(EcranAdminUtilisateurs, null) : h(EcranAccueil, { onNavigate: navigate });
         return h(EcranAccueil, { onNavigate: navigate });
       };
 
