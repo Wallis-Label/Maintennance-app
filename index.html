@@ -2442,7 +2442,7 @@
               h(FormField, { label: "Date fin" }, h("input", { type: "date", style: inputStyle, value: f.dateFin || "", onChange: function(e) { upd("dateFin", e.target.value); } }))
             ),
             h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
-              h(FormField, { label: "Metrage (ml)" }, h("input", { type: "number", style: inputStyle, value: f.metrage, onChange: function(e) { upd("metrage", parseInt(e.target.value) || 0); } })),
+              h(FormField, { label: "Metrage (m)" }, h("input", { type: "number", style: inputStyle, value: f.metrage, onChange: function(e) { upd("metrage", parseInt(e.target.value) || 0); } })),
               h(FormField, { label: "Prix au metre (XPF)" }, h("input", { type: "number", style: inputStyle, value: f.prixMetre, onChange: function(e) { upd("prixMetre", parseInt(e.target.value) || 0); } }))
             ),
             h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
@@ -2551,10 +2551,10 @@
                 h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12, fontSize: 13 } },
                   h("div", { style: { background: "#f9fafb", padding: 10, borderRadius: 6 } },
                     h("div", { style: { color: "#6b7280", marginBottom: 4 } }, "Metrage"),
-                    h("div", { style: { fontWeight: 700, fontSize: 14 } }, fmtNum(chantier.metrage) + " ml")
+                    h("div", { style: { fontWeight: 700, fontSize: 14 } }, fmtNum(chantier.metrage) + " m")
                   ),
                   h("div", { style: { background: "#f9fafb", padding: 10, borderRadius: 6 } },
-                    h("div", { style: { color: "#6b7280", marginBottom: 4 } }, "Prix/ml"),
+                    h("div", { style: { color: "#6b7280", marginBottom: 4 } }, "Prix/m"),
                     h("div", { style: { fontWeight: 700, fontSize: 14, color: "#059669" } }, fmtNum(chantier.prixMetre) + " XPF")
                   ),
                   h("div", { style: { background: "#f9fafb", padding: 10, borderRadius: 6 } },
@@ -2686,6 +2686,18 @@
       var expandedChantier = _exp[0]; var setExpandedChantier = _exp[1];
       var _sais = useState(function() { return generateMockSaisies(); });
       var saisies = _sais[0]; var setSaisies = _sais[1];
+      var _chAv = useState(mockChantiers);
+      var chantiers = _chAv[0]; var setChantiers = _chAv[1];
+      var _showM = useState(false);
+      var showModal = _showM[0]; var setShowModal = _showM[1];
+      var _editAv = useState(null);
+      var editing = _editAv[0]; var setEditing = _editAv[1];
+      var _delAv = useState(null);
+      var toDelete = _delAv[0]; var setToDelete = _delAv[1];
+      var _tabAv = useState("suivi");
+      var tabAv = _tabAv[0]; var setTabAv = _tabAv[1];
+
+      var nextIdAv = function() { return Date.now() + Math.floor(Math.random() * 1000); };
 
       function addMonthsAv(d, n) {
         var copy = new Date(d);
@@ -2706,15 +2718,38 @@
         return (day < 10 ? "0" : "") + day + "/" + (month < 10 ? "0" : "") + month + "/" + year;
       }
 
-      function getDateStringAv(d) {
+      function formatDateISOAv(d) {
         var date = new Date(d);
-        var year = date.getFullYear();
-        var month = date.getMonth() + 1;
+        var y = date.getFullYear();
+        var m = date.getMonth() + 1;
         var day = date.getDate();
-        return year + "-" + (month < 10 ? "0" : "") + month + "-" + (day < 10 ? "0" : "") + day;
+        return y + "-" + (m < 10 ? "0" : "") + m + "-" + (day < 10 ? "0" : "") + day;
       }
 
-      var activeChantiers = mockChantiers.filter(function(c) { return c.statut === "En cours" || c.statut === "Termine"; });
+      // CRUD handlers
+      var openNewChantier = function() {
+        setEditing({ id: null, titre: "", dateDebut: formatDateISOAv(new Date()), dateFin: formatDateISOAv(addMonthsAv(new Date(), 3)), metrage: 0, prixMetre: 0, depensesPrevues: 0, statut: "A venir" });
+        setShowModal(true);
+      };
+      var openEditChantier = function(c) {
+        setEditing(Object.assign({}, c));
+        setShowModal(true);
+      };
+      var saveChantier = function(f) {
+        if (f.id) {
+          setChantiers(chantiers.map(function(c) { return c.id === f.id ? Object.assign({}, f) : c; }));
+        } else {
+          setChantiers(chantiers.concat(Object.assign({}, f, { id: nextIdAv() })));
+        }
+        setShowModal(false); setEditing(null);
+      };
+      var deleteChantier = function(id) {
+        setChantiers(chantiers.filter(function(c) { return c.id !== id; }));
+        setToDelete(null);
+      };
+      var closeModalAv = function() { setShowModal(false); setEditing(null); };
+
+      var activeChantiers = chantiers.filter(function(c) { return c.statut === "En cours" || c.statut === "Termine"; });
       var daysInMonth = getDaysInMonth(currentMonth);
       var year = currentMonth.getFullYear();
       var monthIdx = currentMonth.getMonth();
@@ -2750,97 +2785,317 @@
       var dayLetters = ["D", "L", "M", "M", "J", "V", "S"];
       var todayDate = new Date();
 
+      // ─── Build chart data: cumulative metrage & CA by month ───
+      function buildChartData() {
+        var allDates = [];
+        activeChantiers.forEach(function(c) {
+          if (!saisies[c.id]) return;
+          var keys = Object.keys(saisies[c.id]);
+          for (var i = 0; i < keys.length; i++) { if (allDates.indexOf(keys[i]) === -1) allDates.push(keys[i]); }
+        });
+        allDates.sort();
+        if (allDates.length === 0) return [];
+
+        // Group by month
+        var monthMap = {};
+        for (var i = 0; i < allDates.length; i++) {
+          var d = allDates[i];
+          var mKey = d.substring(0, 7); // "2026-03"
+          if (!monthMap[mKey]) monthMap[mKey] = { metrage: 0, ca: 0 };
+          activeChantiers.forEach(function(c) {
+            if (saisies[c.id] && saisies[c.id][d]) {
+              var val = saisies[c.id][d];
+              monthMap[mKey].metrage += val;
+              monthMap[mKey].ca += val * c.prixMetre;
+            }
+          });
+        }
+
+        var mKeys = Object.keys(monthMap).sort();
+        var cumMetrage = 0;
+        var cumCA = 0;
+        var pts = [];
+        for (var j = 0; j < mKeys.length; j++) {
+          cumMetrage += monthMap[mKeys[j]].metrage;
+          cumCA += monthMap[mKeys[j]].ca;
+          var parts = mKeys[j].split("-");
+          var monthNames = ["Jan", "Fev", "Mar", "Avr", "Mai", "Juin", "Juil", "Aout", "Sep", "Oct", "Nov", "Dec"];
+          var label = monthNames[parseInt(parts[1], 10) - 1] + " " + parts[0].substring(2);
+          pts.push({ label: label, metrage: cumMetrage, ca: cumCA });
+        }
+        return pts;
+      }
+
+      var chartData = buildChartData();
+
+      function renderChart() {
+        if (chartData.length < 2) {
+          return h("div", { style: { background: "white", borderRadius: 12, padding: 40, border: "1px solid #e5e7eb", textAlign: "center", color: "#9ca3af", marginBottom: 24 } },
+            h(Icon, { name: "bar-chart-3", size: 48, color: "#d1d5db" }),
+            h("div", { style: { marginTop: 12, fontSize: 14, fontWeight: 600 } }, "Pas assez de donnees pour afficher le graphique"),
+            h("div", { style: { marginTop: 4, fontSize: 12 } }, "Saisissez des metrages sur au moins 2 mois")
+          );
+        }
+
+        var W = 700;
+        var H = 300;
+        var padL = 70;
+        var padR = 70;
+        var padT = 30;
+        var padB = 50;
+        var chartW = W - padL - padR;
+        var chartH = H - padT - padB;
+
+        var maxMet = 0;
+        var maxCA = 0;
+        for (var i = 0; i < chartData.length; i++) {
+          if (chartData[i].metrage > maxMet) maxMet = chartData[i].metrage;
+          if (chartData[i].ca > maxCA) maxCA = chartData[i].ca;
+        }
+        maxMet = Math.ceil(maxMet / 1000) * 1000 || 1000;
+        maxCA = Math.ceil(maxCA / 1000000) * 1000000 || 1000000;
+
+        var metragePoints = [];
+        var caPoints = [];
+        for (var i = 0; i < chartData.length; i++) {
+          var x = padL + (i / (chartData.length - 1)) * chartW;
+          var yM = padT + chartH - (chartData[i].metrage / maxMet) * chartH;
+          var yC = padT + chartH - (chartData[i].ca / maxCA) * chartH;
+          metragePoints.push(Math.round(x) + "," + Math.round(yM));
+          caPoints.push(Math.round(x) + "," + Math.round(yC));
+        }
+
+        var metrageLine = metragePoints.join(" ");
+        var caLine = caPoints.join(" ");
+
+        // Area fill paths
+        var metrageArea = "M" + metragePoints[0] + " L" + metragePoints.join(" L") + " L" + Math.round(padL + chartW) + "," + (padT + chartH) + " L" + padL + "," + (padT + chartH) + " Z";
+        var caArea = "M" + caPoints[0] + " L" + caPoints.join(" L") + " L" + Math.round(padL + chartW) + "," + (padT + chartH) + " L" + padL + "," + (padT + chartH) + " Z";
+
+        // Y-axis labels (left = metrage, right = CA)
+        var yLabelsM = [];
+        var yLabelsCA = [];
+        for (var s = 0; s <= 4; s++) {
+          var yPos = padT + chartH - (s / 4) * chartH;
+          yLabelsM.push(h("text", { key: "ym" + s, x: padL - 8, y: yPos + 4, textAnchor: "end", fontSize: 10, fill: "#d97706", fontWeight: 600 }, fmtNum(Math.round(maxMet * s / 4)) + " m"));
+          yLabelsCA.push(h("text", { key: "yc" + s, x: W - padR + 8, y: yPos + 4, textAnchor: "start", fontSize: 10, fill: "#2563eb", fontWeight: 600 }, fmtNum(Math.round(maxCA * s / 4 / 1000)) + "k"));
+        }
+
+        // Grid lines
+        var gridLines = [];
+        for (var g = 0; g <= 4; g++) {
+          var gy = padT + chartH - (g / 4) * chartH;
+          gridLines.push(h("line", { key: "gl" + g, x1: padL, x2: W - padR, y1: gy, y2: gy, stroke: "#f3f4f6", strokeWidth: 1 }));
+        }
+
+        // X-axis labels
+        var xLabels = [];
+        for (var i = 0; i < chartData.length; i++) {
+          var xPos = padL + (i / (chartData.length - 1)) * chartW;
+          xLabels.push(h("text", { key: "xl" + i, x: xPos, y: H - 10, textAnchor: "middle", fontSize: 11, fill: "#6b7280", fontWeight: 600 }, chartData[i].label));
+        }
+
+        // Dots
+        var metrageDots = [];
+        var caDots = [];
+        for (var i = 0; i < chartData.length; i++) {
+          var x = padL + (i / (chartData.length - 1)) * chartW;
+          var yM = padT + chartH - (chartData[i].metrage / maxMet) * chartH;
+          var yC = padT + chartH - (chartData[i].ca / maxCA) * chartH;
+          metrageDots.push(h("circle", { key: "md" + i, cx: x, cy: yM, r: 5, fill: "#d97706", stroke: "white", strokeWidth: 2 }));
+          caDots.push(h("circle", { key: "cd" + i, cx: x, cy: yC, r: 5, fill: "#2563eb", stroke: "white", strokeWidth: 2 }));
+        }
+
+        return h("div", { style: { background: "white", borderRadius: 12, padding: 20, border: "1px solid #e5e7eb", boxShadow: "0 1px 3px rgba(0,0,0,0.1)", marginBottom: 24 } },
+          h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 } },
+            h("h3", { style: { fontSize: 15, fontWeight: 700, margin: 0, color: "#374151" } }, h(IconText, { icon: "trending-up", size: 16 }, "Progression globale")),
+            h("div", { style: { display: "flex", gap: 16 } },
+              h("div", { style: { display: "flex", alignItems: "center", gap: 6 } },
+                h("div", { style: { width: 12, height: 3, background: "#d97706", borderRadius: 2 } }),
+                h("span", { style: { fontSize: 11, fontWeight: 600, color: "#d97706" } }, "Metrage (m)")
+              ),
+              h("div", { style: { display: "flex", alignItems: "center", gap: 6 } },
+                h("div", { style: { width: 12, height: 3, background: "#2563eb", borderRadius: 2 } }),
+                h("span", { style: { fontSize: 11, fontWeight: 600, color: "#2563eb" } }, "CA (XPF)")
+              )
+            )
+          ),
+          h("div", { style: { overflowX: "auto" } },
+            h("svg", { viewBox: "0 0 " + W + " " + H, style: { width: "100%", maxHeight: 320 } },
+              gridLines,
+              h("path", { d: metrageArea, fill: "#d97706", opacity: 0.08 }),
+              h("path", { d: caArea, fill: "#2563eb", opacity: 0.08 }),
+              h("polyline", { points: metrageLine, fill: "none", stroke: "#d97706", strokeWidth: 2.5, strokeLinejoin: "round" }),
+              h("polyline", { points: caLine, fill: "none", stroke: "#2563eb", strokeWidth: 2.5, strokeLinejoin: "round" }),
+              metrageDots,
+              caDots,
+              yLabelsM,
+              yLabelsCA,
+              xLabels,
+              h("line", { x1: padL, x2: padL, y1: padT, y2: padT + chartH, stroke: "#e5e7eb", strokeWidth: 1 }),
+              h("line", { x1: padL, x2: W - padR, y1: padT + chartH, y2: padT + chartH, stroke: "#e5e7eb", strokeWidth: 1 })
+            )
+          )
+        );
+      }
+
+      // ─── Modal form for CRUD ───
+      function renderModalChantier() {
+        if (!showModal || !editing) return null;
+        var f = editing;
+        var upd = function(key, val) {
+          var copy = Object.assign({}, f);
+          copy[key] = val;
+          setEditing(copy);
+        };
+        var statuts = ["A venir", "En cours", "Termine"];
+
+        return h(Modal, { onClose: closeModalAv, title: f.id ? "Modifier le chantier" : "Nouveau chantier" },
+          h("div", { style: { display: "grid", gap: 12 } },
+            h(FormField, { label: "Titre" }, h("input", { style: inputStyle, value: f.titre, onChange: function(e) { upd("titre", e.target.value); } })),
+            h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
+              h(FormField, { label: "Date debut" }, h("input", { type: "date", style: inputStyle, value: f.dateDebut, onChange: function(e) { upd("dateDebut", e.target.value); } })),
+              h(FormField, { label: "Date fin" }, h("input", { type: "date", style: inputStyle, value: f.dateFin, onChange: function(e) { upd("dateFin", e.target.value); } }))
+            ),
+            h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 } },
+              h(FormField, { label: "Metrage (m)" }, h("input", { type: "number", style: inputStyle, value: f.metrage, onChange: function(e) { upd("metrage", parseInt(e.target.value) || 0); } })),
+              h(FormField, { label: "Prix/m (XPF)" }, h("input", { type: "number", style: inputStyle, value: f.prixMetre, onChange: function(e) { upd("prixMetre", parseInt(e.target.value) || 0); } })),
+              h(FormField, { label: "Depenses prevues" }, h("input", { type: "number", style: inputStyle, value: f.depensesPrevues, onChange: function(e) { upd("depensesPrevues", parseInt(e.target.value) || 0); } }))
+            ),
+            h(FormField, { label: "Statut" }, h("select", { style: selectStyle, value: f.statut, onChange: function(e) { upd("statut", e.target.value); } },
+              statuts.map(function(s) { return h("option", { key: s, value: s }, s); })
+            )),
+            h("div", { style: { display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 8 } },
+              h(Button, { onClick: closeModalAv, variant: "secondary" }, "Annuler"),
+              h(Button, { onClick: function() { if (!f.titre) return alert("Le titre est obligatoire"); saveChantier(f); } }, h(IconText, { icon: "save", size: 14 }, "Enregistrer"))
+            )
+          )
+        );
+      }
+
+      var tabBtnStyle = function(active) {
+        return { padding: "8px 16px", border: "none", borderBottom: active ? "2px solid #7c3aed" : "2px solid transparent", background: "none", color: active ? "#7c3aed" : "#6b7280", fontWeight: active ? 700 : 500, fontSize: 13, cursor: "pointer" };
+      };
+      var actionBtnStyleAv = { background: "none", border: "1px solid #e5e7eb", padding: "4px 6px", borderRadius: 4, cursor: "pointer", display: "flex", alignItems: "center" };
+
       return h("div", null,
-        h(PageHeader, { title: h(IconText, { icon: "hard-hat", size: 20 }, "Avancement"), subtitle: "Suivi des chantiers actifs" }),
+        h(PageHeader, {
+          title: h(IconText, { icon: "hard-hat", size: 20 }, "Avancement"),
+          subtitle: "Suivi des chantiers actifs",
+          action: h(Button, { onClick: openNewChantier }, h(IconText, { icon: "plus", size: 14, color: "white" }, "Nouveau chantier"))
+        }),
         h("div", { style: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 24 } },
           h(KPICard, { icon: h(Icon, { name: "briefcase", size: 32, color: "#7c3aed" }), label: "Chantiers actifs", value: String(activeChantiers.length), color: "#7c3aed" }),
           h(KPICard, { icon: h(Icon, { name: "trending-up", size: 32, color: "#059669" }), label: "Avancement global", value: avancementGlobal + "%", color: "#059669" }),
-          h(KPICard, { icon: h(Icon, { name: "move", size: 32, color: "#d97706" }), label: "Metrage realise", value: fmtNum(totalRealiseAll) + " ml", color: "#d97706" }),
+          h(KPICard, { icon: h(Icon, { name: "move", size: 32, color: "#d97706" }), label: "Metrage realise", value: fmtNum(totalRealiseAll) + " m", color: "#d97706" }),
           h(KPICard, { icon: h(Icon, { name: "wallet", size: 32, color: "#2563eb" }), label: "CA realise", value: fmtNum(totalCARealisedAll), color: "#2563eb" })
         ),
-        h("div", { style: { marginBottom: 16, display: "flex", gap: 12, alignItems: "center" } },
-          h("button", { onClick: function() { setCurrentMonth(addMonthsAv(currentMonth, -1)); }, style: { background: "#7c3aed", color: "white", border: "none", padding: "8px 12px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 600 } }, h(Icon, { name: "chevron-left", size: 14, color: "white" })),
-          h("div", { style: { fontSize: 14, fontWeight: 600, minWidth: 120, textAlign: "center" } }, currentMonth.toLocaleDateString("fr-FR", { month: "long", year: "numeric" })),
-          h("button", { onClick: function() { setCurrentMonth(addMonthsAv(currentMonth, 1)); }, style: { background: "#7c3aed", color: "white", border: "none", padding: "8px 12px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 600 } }, h(Icon, { name: "chevron-right", size: 14, color: "white" }))
+        // Tabs
+        h("div", { style: { display: "flex", borderBottom: "1px solid #e5e7eb", marginBottom: 20 } },
+          h("button", { onClick: function() { setTabAv("suivi"); }, style: tabBtnStyle(tabAv === "suivi") }, h(IconText, { icon: "clipboard-list", size: 14 }, "Suivi")),
+          h("button", { onClick: function() { setTabAv("courbe"); }, style: tabBtnStyle(tabAv === "courbe") }, h(IconText, { icon: "trending-up", size: 14 }, "Courbe de progression"))
         ),
-        activeChantiers.map(function(chantier) {
-          var isExpanded = expandedChantier === chantier.id;
-          var realise = getRealise(chantier.id);
-          var caRealise = realise * chantier.prixMetre;
-          var avancement = chantier.metrage > 0 ? Math.round((realise / chantier.metrage) * 100) : 0;
-          var monthMet = getMonthMetrage(chantier.id);
-          var remaining = Math.max(0, chantier.metrage - realise);
+        // Tab: Courbe
+        tabAv === "courbe" && renderChart(),
+        // Tab: Suivi
+        tabAv === "suivi" && h("div", null,
+          h("div", { style: { marginBottom: 16, display: "flex", gap: 12, alignItems: "center" } },
+            h("button", { onClick: function() { setCurrentMonth(addMonthsAv(currentMonth, -1)); }, style: { background: "#7c3aed", color: "white", border: "none", padding: "8px 12px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 600 } }, h(Icon, { name: "chevron-left", size: 14, color: "white" })),
+            h("div", { style: { fontSize: 14, fontWeight: 600, minWidth: 120, textAlign: "center" } }, currentMonth.toLocaleDateString("fr-FR", { month: "long", year: "numeric" })),
+            h("button", { onClick: function() { setCurrentMonth(addMonthsAv(currentMonth, 1)); }, style: { background: "#7c3aed", color: "white", border: "none", padding: "8px 12px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 600 } }, h(Icon, { name: "chevron-right", size: 14, color: "white" }))
+          ),
+          activeChantiers.map(function(chantier) {
+            var isExpanded = expandedChantier === chantier.id;
+            var realise = getRealise(chantier.id);
+            var caRealise = realise * chantier.prixMetre;
+            var avancement = chantier.metrage > 0 ? Math.round((realise / chantier.metrage) * 100) : 0;
+            var monthMet = getMonthMetrage(chantier.id);
+            var remaining = Math.max(0, chantier.metrage - realise);
 
-          return h("div", { key: chantier.id, style: { marginBottom: 16 } },
-            h("div", { style: { background: isExpanded ? "#f5f3ff" : "white", borderRadius: 12, padding: 20, border: "1px solid #e5e7eb", boxShadow: "0 1px 3px rgba(0,0,0,0.1)" } },
-              h("div", { onClick: function() { setExpandedChantier(isExpanded ? null : chantier.id); }, style: { cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "start" } },
-                h("div", { style: { flex: 1 } },
-                  h("h3", { style: { fontSize: 16, fontWeight: 700, margin: "0 0 8px" } }, chantier.titre),
-                  h("div", { style: { display: "flex", gap: 16, alignItems: "center", marginBottom: 8 } },
-                    h("span", { style: { fontSize: 12, fontWeight: 600, color: "#6b7280" } }, formatDateFrAv(chantier.dateDebut) + " - " + formatDateFrAv(chantier.dateFin)),
-                    h("span", { style: { fontSize: 11, fontWeight: 600, color: chantier.statut === "Termine" ? "#059669" : "#d97706", background: chantier.statut === "Termine" ? "#ecfdf5" : "#fffbeb", padding: "2px 8px", borderRadius: 3 } }, chantier.statut)
+            return h("div", { key: chantier.id, style: { marginBottom: 16 } },
+              h("div", { style: { background: isExpanded ? "#f5f3ff" : "white", borderRadius: 12, padding: 20, border: "1px solid #e5e7eb", boxShadow: "0 1px 3px rgba(0,0,0,0.1)" } },
+                h("div", { onClick: function() { setExpandedChantier(isExpanded ? null : chantier.id); }, style: { cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "start" } },
+                  h("div", { style: { flex: 1 } },
+                    h("div", { style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 8 } },
+                      h("h3", { style: { fontSize: 16, fontWeight: 700, margin: 0 } }, chantier.titre),
+                      h("button", { onClick: function(e) { e.stopPropagation(); openEditChantier(chantier); }, style: actionBtnStyleAv, title: "Modifier" }, h(Icon, { name: "pencil", size: 14, color: "#6b7280" })),
+                      h("button", { onClick: function(e) { e.stopPropagation(); setToDelete({ id: chantier.id, titre: chantier.titre }); }, style: actionBtnStyleAv, title: "Supprimer" }, h(Icon, { name: "trash-2", size: 14, color: "#ef4444" }))
+                    ),
+                    h("div", { style: { display: "flex", gap: 16, alignItems: "center", marginBottom: 8 } },
+                      h("span", { style: { fontSize: 12, fontWeight: 600, color: "#6b7280" } }, formatDateFrAv(chantier.dateDebut) + " - " + formatDateFrAv(chantier.dateFin)),
+                      h("span", { style: { fontSize: 11, fontWeight: 600, color: chantier.statut === "Termine" ? "#059669" : "#d97706", background: chantier.statut === "Termine" ? "#ecfdf5" : "#fffbeb", padding: "2px 8px", borderRadius: 3 } }, chantier.statut)
+                    ),
+                    h("div", { style: { display: "flex", gap: 16, fontSize: 12, marginBottom: 8 } },
+                      h("span", null, "Mois : " + fmtNum(monthMet) + " m"),
+                      h("span", null, "Reste : " + fmtNum(remaining) + " m")
+                    ),
+                    h("div", { style: { width: "100%", height: 10, background: "#e5e7eb", borderRadius: 4, overflow: "hidden", marginBottom: 4 } },
+                      h("div", { style: { width: Math.min(avancement, 100) + "%", height: "100%", background: avancement >= 75 ? "#059669" : avancement >= 50 ? "#d97706" : "#6b7280", transition: "width 0.3s" } })
+                    ),
+                    h("div", { style: { fontSize: 11, color: "#6b7280", fontWeight: 600 } }, realise + " / " + chantier.metrage + " m (" + avancement + "%)")
                   ),
-                  h("div", { style: { display: "flex", gap: 16, fontSize: 12, marginBottom: 8 } },
-                    h("span", null, "Mois : " + fmtNum(monthMet) + " ml"),
-                    h("span", null, "Reste : " + fmtNum(remaining) + " ml")
-                  ),
-                  h("div", { style: { width: "100%", height: 10, background: "#e5e7eb", borderRadius: 4, overflow: "hidden", marginBottom: 4 } },
-                    h("div", { style: { width: Math.min(avancement, 100) + "%", height: "100%", background: avancement >= 75 ? "#059669" : avancement >= 50 ? "#d97706" : "#6b7280", transition: "width 0.3s" } })
-                  ),
-                  h("div", { style: { fontSize: 11, color: "#6b7280", fontWeight: 600 } }, realise + " / " + chantier.metrage + " ml (" + avancement + "%)")
+                  h(Icon, { name: isExpanded ? "chevron-up" : "chevron-down", size: 20, color: "#6b7280" })
                 ),
-                h(Icon, { name: isExpanded ? "chevron-up" : "chevron-down", size: 20, color: "#6b7280" })
-              ),
-              isExpanded && h("div", { style: { borderTop: "1px solid #e5e7eb", paddingTop: 16, marginTop: 12 } },
-                h("div", { style: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 16, fontSize: 13 } },
-                  h("div", { style: { background: "#f9fafb", padding: 10, borderRadius: 6 } },
-                    h("div", { style: { color: "#6b7280", marginBottom: 4, fontSize: 11, fontWeight: 600 } }, "Prevu"),
-                    h("div", { style: { fontWeight: 700, fontSize: 14 } }, fmtNum(chantier.metrage) + " ml")
+                isExpanded && h("div", { style: { borderTop: "1px solid #e5e7eb", paddingTop: 16, marginTop: 12 } },
+                  h("div", { style: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 16, fontSize: 13 } },
+                    h("div", { style: { background: "#f9fafb", padding: 10, borderRadius: 6 } },
+                      h("div", { style: { color: "#6b7280", marginBottom: 4, fontSize: 11, fontWeight: 600 } }, "Prevu"),
+                      h("div", { style: { fontWeight: 700, fontSize: 14 } }, fmtNum(chantier.metrage) + " m")
+                    ),
+                    h("div", { style: { background: "#f9fafb", padding: 10, borderRadius: 6 } },
+                      h("div", { style: { color: "#6b7280", marginBottom: 4, fontSize: 11, fontWeight: 600 } }, "Realise"),
+                      h("div", { style: { fontWeight: 700, fontSize: 14, color: "#059669" } }, fmtNum(realise) + " m")
+                    ),
+                    h("div", { style: { background: "#f9fafb", padding: 10, borderRadius: 6 } },
+                      h("div", { style: { color: "#6b7280", marginBottom: 4, fontSize: 11, fontWeight: 600 } }, "CA realise"),
+                      h("div", { style: { fontWeight: 700, fontSize: 14, color: "#2563eb" } }, fmtNum(caRealise) + " XPF")
+                    ),
+                    h("div", { style: { background: "#f9fafb", padding: 10, borderRadius: 6 } },
+                      h("div", { style: { color: "#6b7280", marginBottom: 4, fontSize: 11, fontWeight: 600 } }, "Marge"),
+                      h("div", { style: { fontWeight: 700, fontSize: 14, color: caRealise >= (chantier.depensesPrevues || 0) ? "#059669" : "#dc2626" } }, fmtMoney(caRealise - (chantier.depensesPrevues || 0)))
+                    )
                   ),
-                  h("div", { style: { background: "#f9fafb", padding: 10, borderRadius: 6 } },
-                    h("div", { style: { color: "#6b7280", marginBottom: 4, fontSize: 11, fontWeight: 600 } }, "Realise"),
-                    h("div", { style: { fontWeight: 700, fontSize: 14, color: "#059669" } }, fmtNum(realise) + " ml")
-                  ),
-                  h("div", { style: { background: "#f9fafb", padding: 10, borderRadius: 6 } },
-                    h("div", { style: { color: "#6b7280", marginBottom: 4, fontSize: 11, fontWeight: 600 } }, "CA realise"),
-                    h("div", { style: { fontWeight: 700, fontSize: 14, color: "#2563eb" } }, fmtNum(caRealise) + " XPF")
-                  ),
-                  h("div", { style: { background: "#f9fafb", padding: 10, borderRadius: 6 } },
-                    h("div", { style: { color: "#6b7280", marginBottom: 4, fontSize: 11, fontWeight: 600 } }, "Marge"),
-                    h("div", { style: { fontWeight: 700, fontSize: 14, color: caRealise >= (chantier.depensesPrevues || 0) ? "#059669" : "#dc2626" } }, fmtMoney(caRealise - (chantier.depensesPrevues || 0)))
-                  )
-                ),
-                h("div", { style: { marginBottom: 8, fontSize: 13, fontWeight: 600, color: "#374151" } }, "Saisie metrage journalier (ml)"),
-                h("div", { style: { background: "white", borderRadius: 8, border: "1px solid #e5e7eb", overflowX: "auto" } },
-                  h("div", { style: { display: "inline-flex", minWidth: daysInMonth * 48 + 60 } },
-                    Array.apply(null, Array(daysInMonth)).map(function(_, di) {
-                      var dayOfMonth = di + 1;
-                      var cellDate = new Date(year, monthIdx, dayOfMonth);
-                      var dow = cellDate.getDay();
-                      var isWE = dow === 0 || dow === 6;
-                      var isTD = dayOfMonth === todayDate.getDate() && monthIdx === todayDate.getMonth() && year === todayDate.getFullYear();
-                      var ds = year + "-" + (monthIdx + 1 < 10 ? "0" : "") + (monthIdx + 1) + "-" + (dayOfMonth < 10 ? "0" : "") + dayOfMonth;
-                      return h(SaisieCell, {
-                        key: ds,
-                        chantierId: chantier.id,
-                        dateStr: ds,
-                        saisies: saisies,
-                        setSaisies: setSaisies,
-                        isWeekend: isWE,
-                        dayLetter: dayLetters[dow],
-                        dayNum: dayOfMonth,
-                        isToday: isTD
-                      });
-                    }),
-                    h("div", { style: { width: 60, flexShrink: 0, borderLeft: "2px solid #e5e7eb", background: "#f0fdf4", display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center" } },
-                      h("div", { style: { fontSize: 9, fontWeight: 600, color: "#6b7280", marginBottom: 2 } }, "Total"),
-                      h("div", { style: { fontSize: 14, fontWeight: 700, color: "#059669" } }, fmtNum(monthMet))
+                  h("div", { style: { marginBottom: 8, fontSize: 13, fontWeight: 600, color: "#374151" } }, "Saisie metrage journalier (m)"),
+                  h("div", { style: { background: "white", borderRadius: 8, border: "1px solid #e5e7eb", overflowX: "auto" } },
+                    h("div", { style: { display: "inline-flex", minWidth: daysInMonth * 48 + 60 } },
+                      Array.apply(null, Array(daysInMonth)).map(function(_, di) {
+                        var dayOfMonth = di + 1;
+                        var cellDate = new Date(year, monthIdx, dayOfMonth);
+                        var dow = cellDate.getDay();
+                        var isWE = dow === 0 || dow === 6;
+                        var isTD = dayOfMonth === todayDate.getDate() && monthIdx === todayDate.getMonth() && year === todayDate.getFullYear();
+                        var ds = year + "-" + (monthIdx + 1 < 10 ? "0" : "") + (monthIdx + 1) + "-" + (dayOfMonth < 10 ? "0" : "") + dayOfMonth;
+                        return h(SaisieCell, {
+                          key: ds,
+                          chantierId: chantier.id,
+                          dateStr: ds,
+                          saisies: saisies,
+                          setSaisies: setSaisies,
+                          isWeekend: isWE,
+                          dayLetter: dayLetters[dow],
+                          dayNum: dayOfMonth,
+                          isToday: isTD
+                        });
+                      }),
+                      h("div", { style: { width: 60, flexShrink: 0, borderLeft: "2px solid #e5e7eb", background: "#f0fdf4", display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center" } },
+                        h("div", { style: { fontSize: 9, fontWeight: 600, color: "#6b7280", marginBottom: 2 } }, "Total"),
+                        h("div", { style: { fontSize: 14, fontWeight: 700, color: "#059669" } }, fmtNum(monthMet))
+                      )
                     )
                   )
                 )
               )
-            )
-          );
+            );
+          })
+        ),
+        // Modal CRUD
+        renderModalChantier(),
+        // Confirm delete
+        toDelete && h(ConfirmDialog, {
+          title: "Supprimer le chantier",
+          message: "Supprimer \"" + toDelete.titre + "\" ? Cette action est irreversible.",
+          onConfirm: function() { deleteChantier(toDelete.id); },
+          onCancel: function() { setToDelete(null); }
         })
       );
     }
