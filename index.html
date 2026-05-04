@@ -237,7 +237,7 @@
 
     // ─── Conversion DB: affectations, paliers_primes ──────────────────
     function affectationFromDb(r) {
-      return { id: r.id, personnelId: r.personnel_id, chantierId: r.chantier_id, dateAffectation: r.date_affectation };
+      return { id: r.id, personnelId: r.personnel_id, chantierId: r.chantier_id, dateAffectation: r.date_affectation, typeJour: r.type_jour || "travail" };
     }
     function affectationToDb(a) {
       return { personnel_id: a.personnelId, chantier_id: a.chantierId, date_affectation: a.dateAffectation };
@@ -273,6 +273,18 @@
         if (sites.indexOf(p.site) < 0) sites.push(p.site);
       });
       return sites;
+    }
+
+    // ─── Helpers saisie (valeur peut etre un objet {valeur, typeJour} ou un nombre) ──
+    function getSaisieVal(entry) {
+      if (entry === null || entry === undefined) return 0;
+      if (typeof entry === "object") return entry.valeur || 0;
+      return entry || 0;
+    }
+    function getSaisieType(entry) {
+      if (entry === null || entry === undefined) return "normal";
+      if (typeof entry === "object") return entry.typeJour || "normal";
+      return "normal";
     }
 
     // ─── Contexte global ────────────────────────────────────────────────
@@ -2657,7 +2669,7 @@
           if (dow !== 0) {
             var dateStr = d.getFullYear() + "-" + (d.getMonth() + 1 < 10 ? "0" : "") + (d.getMonth() + 1) + "-" + (d.getDate() < 10 ? "0" : "") + d.getDate();
             var val = Math.round(dailyAvg * (0.6 + Math.random() * 0.8));
-            if (val > 0) saisies[chantier.id][dateStr] = val;
+            if (val > 0) saisies[chantier.id][dateStr] = { valeur: val, typeJour: "normal" };
           }
         }
       });
@@ -2675,10 +2687,10 @@
       var dayNum = props.dayNum;
       var isToday = props.isToday;
 
-      var val = "";
-      if (saisies[chantierId] && saisies[chantierId][dateStr] !== undefined) {
-        val = saisies[chantierId][dateStr];
-      }
+      var entry = (saisies[chantierId] && saisies[chantierId][dateStr] !== undefined) ? saisies[chantierId][dateStr] : null;
+      var val = getSaisieVal(entry);
+      var typeJour = getSaisieType(entry);
+      var activeBrush = props.activeBrush || null;
 
       var handleChange = function(e) {
         var newSaisies = {};
@@ -2691,21 +2703,44 @@
         var numVal = 0;
         if (v === "" || v === null) {
           delete newSaisies[chantierId][dateStr];
-          // Delete from Supabase
           supabase.from("saisies_metrage").delete().eq("chantier_id", chantierId).eq("date_saisie", dateStr).then(function(res) { if (res.error) alert("Erreur saisie: " + res.error.message); });
         } else {
           numVal = parseInt(v, 10) || 0;
-          newSaisies[chantierId][dateStr] = numVal;
-          // Upsert to Supabase
-          supabase.from("saisies_metrage").upsert({ chantier_id: chantierId, date_saisie: dateStr, valeur: numVal }, { onConflict: "chantier_id,date_saisie" }).then(function(res) { if (res.error) alert("Erreur saisie: " + res.error.message); });
+          newSaisies[chantierId][dateStr] = { valeur: numVal, typeJour: typeJour };
+          supabase.from("saisies_metrage").upsert({ chantier_id: chantierId, date_saisie: dateStr, valeur: numVal, type_jour: typeJour }, { onConflict: "chantier_id,date_saisie" }).then(function(res) { if (res.error) alert("Erreur saisie: " + res.error.message); });
         }
         setSaisies(newSaisies);
       };
 
-      var bgColor = isWeekend ? "#f1f5f9" : isToday ? "#f5f3ff" : "white";
-      var inputBg = val ? "#2563eb" : isWeekend ? "#f1f5f9" : "#f9fafb";
-      var inputColor = val ? "white" : "#374151";
-      var inputBorder = val ? "1px solid #2563eb" : isWeekend ? "1px solid #e5e7eb" : "1px solid #d1d5db";
+      var handleBrushClick = function() {
+        if (!activeBrush) return;
+        var newSaisies = {};
+        var keys = Object.keys(saisies);
+        for (var i = 0; i < keys.length; i++) {
+          newSaisies[keys[i]] = Object.assign({}, saisies[keys[i]]);
+        }
+        if (!newSaisies[chantierId]) newSaisies[chantierId] = {};
+        if (activeBrush === "eraser-type") {
+          // Reset to normal
+          if (entry) {
+            newSaisies[chantierId][dateStr] = { valeur: val, typeJour: "normal" };
+            supabase.from("saisies_metrage").upsert({ chantier_id: chantierId, date_saisie: dateStr, valeur: val, type_jour: "normal" }, { onConflict: "chantier_id,date_saisie" }).then(function(res) { if (res.error) alert("Erreur: " + res.error.message); });
+          }
+        } else {
+          newSaisies[chantierId][dateStr] = { valeur: val, typeJour: activeBrush };
+          supabase.from("saisies_metrage").upsert({ chantier_id: chantierId, date_saisie: dateStr, valeur: val, type_jour: activeBrush }, { onConflict: "chantier_id,date_saisie" }).then(function(res) { if (res.error) alert("Erreur: " + res.error.message); });
+        }
+        setSaisies(newSaisies);
+      };
+
+      var TYPE_COLORS = { panne: "#f59e0b", intemperies: "#3b82f6" };
+      var TYPE_LABELS = { panne: "P", intemperies: "I" };
+      var isSpecial = typeJour !== "normal";
+
+      var bgColor = isWeekend ? "#f1f5f9" : isToday ? "#f5f3ff" : isSpecial ? (TYPE_COLORS[typeJour] || "#f1f5f9") + "20" : "white";
+      var inputBg = isSpecial ? TYPE_COLORS[typeJour] || "#f59e0b" : val ? "#2563eb" : isWeekend ? "#f1f5f9" : "#f9fafb";
+      var inputColor = isSpecial ? "white" : val ? "white" : "#374151";
+      var inputBorder = isSpecial ? "1px solid " + (TYPE_COLORS[typeJour] || "#f59e0b") : val ? "1px solid #2563eb" : isWeekend ? "1px solid #e5e7eb" : "1px solid #d1d5db";
 
       var _focused = useState(false);
       var isFocused = _focused[0];
@@ -2716,21 +2751,37 @@
         inputBorder = "2px solid #7c3aed";
       }
 
-      return h("div", { style: { width: 48, flexShrink: 0, borderRight: "1px solid #e5e7eb", background: bgColor, textAlign: "center" } },
+      return h("div", {
+        onClick: activeBrush ? handleBrushClick : undefined,
+        onMouseDown: activeBrush ? function(e) { e.preventDefault(); if (props.onPaintStart) props.onPaintStart(); handleBrushClick(); } : undefined,
+        onMouseEnter: activeBrush && props.isPainting ? handleBrushClick : undefined,
+        style: { width: 48, flexShrink: 0, borderRight: "1px solid #e5e7eb", background: bgColor, textAlign: "center", cursor: activeBrush ? "pointer" : "default" }
+      },
         h("div", { style: { height: 20, fontSize: 9, fontWeight: 600, lineHeight: "20px", color: isWeekend ? "#94a3b8" : isToday ? "#7c3aed" : "#6b7280" } }, dayLetter),
         h("div", { style: { height: 18, fontSize: 11, fontWeight: 700, lineHeight: "18px", borderBottom: "1px solid #e5e7eb", color: isToday ? "#7c3aed" : "#374151" } }, String(dayNum)),
-        h("input", {
-          type: "number",
-          value: val,
-          disabled: isWeekend,
-          placeholder: isWeekend ? "" : "0",
-          onMouseDown: function(e) { e.stopPropagation(); },
-          onClick: function(e) { e.stopPropagation(); e.target.select(); },
-          onFocus: function(e) { e.stopPropagation(); setIsFocused(true); },
-          onBlur: function() { setIsFocused(false); },
-          onChange: handleChange,
-          style: { width: 44, height: 34, margin: 1, padding: 0, textAlign: "center", fontSize: 13, fontWeight: 700, border: inputBorder, borderRadius: 4, background: inputBg, color: inputColor, outline: "none", cursor: isWeekend ? "not-allowed" : "text", MozAppearance: "textfield", boxSizing: "border-box" }
-        })
+        isSpecial && !activeBrush ?
+          h("div", { style: { position: "relative" } },
+            h("div", { style: { position: "absolute", top: -1, left: 2, fontSize: 7, fontWeight: 800, color: TYPE_COLORS[typeJour], textTransform: "uppercase", zIndex: 1 } }, TYPE_LABELS[typeJour]),
+            h("input", {
+              type: "number", value: val, placeholder: "0",
+              onMouseDown: function(e) { e.stopPropagation(); },
+              onClick: function(e) { e.stopPropagation(); e.target.select(); },
+              onFocus: function(e) { e.stopPropagation(); setIsFocused(true); },
+              onBlur: function() { setIsFocused(false); },
+              onChange: handleChange,
+              style: { width: 44, height: 34, margin: 1, padding: 0, textAlign: "center", fontSize: 13, fontWeight: 700, border: inputBorder, borderRadius: 4, background: inputBg, color: inputColor, outline: "none", cursor: "text", MozAppearance: "textfield", boxSizing: "border-box" }
+            })
+          ) :
+          h("input", {
+            type: "number", value: val, disabled: isWeekend || !!activeBrush,
+            placeholder: isWeekend ? "" : "0",
+            onMouseDown: function(e) { if (!activeBrush) e.stopPropagation(); },
+            onClick: function(e) { if (!activeBrush) { e.stopPropagation(); e.target.select(); } },
+            onFocus: function(e) { e.stopPropagation(); setIsFocused(true); },
+            onBlur: function() { setIsFocused(false); },
+            onChange: activeBrush ? undefined : handleChange,
+            style: { width: 44, height: 34, margin: 1, padding: 0, textAlign: "center", fontSize: 13, fontWeight: 700, border: inputBorder, borderRadius: 4, background: inputBg, color: inputColor, outline: "none", cursor: isWeekend ? "not-allowed" : activeBrush ? "pointer" : "text", MozAppearance: "textfield", boxSizing: "border-box", pointerEvents: activeBrush ? "none" : "auto" }
+          })
       );
     }
 
@@ -2757,7 +2808,15 @@
       var editing = _editAv[0]; var setEditing = _editAv[1];
       var _delAv = useState(null);
       var toDelete = _delAv[0]; var setToDelete = _delAv[1];
+      var _chBrush = useState(null);
+      var chantierBrush = _chBrush[0]; var setChantierBrush = _chBrush[1];
+      var _chPainting = useState(false);
+      var chPainting = _chPainting[0]; var setChPainting = _chPainting[1];
 
+      var CHANTIER_EVENT_TYPES = [
+        { key: "panne", label: "Panne", color: "#f59e0b", icon: "alert-triangle" },
+        { key: "intemperies", label: "Intemperies", color: "#3b82f6", icon: "cloud-rain" }
+      ];
 
       var nextIdAv = function() { return Date.now() + Math.floor(Math.random() * 1000); };
 
@@ -2830,7 +2889,7 @@
         if (!saisies[chId]) return 0;
         var total = 0;
         var keys = Object.keys(saisies[chId]);
-        for (var i = 0; i < keys.length; i++) { total += (saisies[chId][keys[i]] || 0); }
+        for (var i = 0; i < keys.length; i++) { total += getSaisieVal(saisies[chId][keys[i]]); }
         return total;
       }
 
@@ -2839,7 +2898,7 @@
         var total = 0;
         for (var d = 1; d <= daysInMonth; d++) {
           var ds = year + "-" + (monthIdx + 1 < 10 ? "0" : "") + (monthIdx + 1) + "-" + (d < 10 ? "0" : "") + d;
-          if (saisies[chId][ds]) total += saisies[chId][ds];
+          if (saisies[chId][ds]) total += getSaisieVal(saisies[chId][ds]);
         }
         return total;
       }
@@ -2876,7 +2935,7 @@
           if (!monthMap[mKey]) monthMap[mKey] = { metrage: 0, ca: 0 };
           activeChantiers.forEach(function(c) {
             if (saisies[c.id] && saisies[c.id][d]) {
-              var val = saisies[c.id][d];
+              var val = getSaisieVal(saisies[c.id][d]);
               monthMap[mKey].metrage += val;
               monthMap[mKey].ca += val * c.prixMetre;
             }
@@ -3051,7 +3110,7 @@
 
       var actionBtnStyleAv = { background: "none", border: "1px solid #e5e7eb", padding: "4px 6px", borderRadius: 4, cursor: "pointer", display: "flex", alignItems: "center" };
 
-      return h("div", null,
+      return h("div", { onMouseUp: function() { setChPainting(false); }, onMouseLeave: function() { setChPainting(false); } },
         h(PageHeader, {
           title: h(IconText, { icon: "hard-hat", size: 20 }, "Avancement"),
           subtitle: "Suivi des chantiers actifs",
@@ -3122,7 +3181,33 @@
                       h("div", { style: { fontWeight: 700, fontSize: 14, color: caRealise >= (chantier.depensesPrevues || 0) ? "#059669" : "#dc2626" } }, fmtMoney(caRealise - (chantier.depensesPrevues || 0)))
                     )
                   ),
-                  h("div", { style: { marginBottom: 8, fontSize: 13, fontWeight: 600, color: "#374151" } }, "Saisie metrage journalier (m)"),
+                  h("div", { style: { marginBottom: 8, display: "flex", alignItems: "center", gap: 12 } },
+                    h("div", { style: { fontSize: 13, fontWeight: 600, color: "#374151" } }, "Saisie metrage journalier (m)"),
+                    h("div", { style: { display: "flex", gap: 6, alignItems: "center" } },
+                      CHANTIER_EVENT_TYPES.map(function(evt) {
+                        var isActive = chantierBrush === evt.key;
+                        return h("button", {
+                          key: evt.key,
+                          onClick: function(e) { e.stopPropagation(); setChantierBrush(isActive ? null : evt.key); },
+                          style: {
+                            display: "flex", alignItems: "center", gap: 4, padding: "4px 10px",
+                            border: isActive ? "2px solid " + evt.color : "1px solid #e2e8f0",
+                            borderRadius: 6, cursor: "pointer", fontSize: 11, fontWeight: 600,
+                            background: isActive ? evt.color + "15" : "white",
+                            color: isActive ? evt.color : "#64748b",
+                            boxShadow: isActive ? "0 0 0 2px " + evt.color + "30" : "none"
+                          }
+                        },
+                          h(Icon, { name: evt.icon, size: 12, color: isActive ? evt.color : "#94a3b8" }),
+                          evt.label
+                        );
+                      }),
+                      chantierBrush ? h("button", {
+                        onClick: function(e) { e.stopPropagation(); setChantierBrush(null); },
+                        style: { display: "flex", alignItems: "center", gap: 4, padding: "4px 10px", border: "1px solid #e2e8f0", borderRadius: 6, cursor: "pointer", fontSize: 11, fontWeight: 600, background: "white", color: "#64748b" }
+                      }, h(Icon, { name: "x", size: 12 }), "Annuler") : null
+                    )
+                  ),
                   h("div", { style: { background: "white", borderRadius: 8, border: "1px solid #e5e7eb", overflowX: "auto" } },
                     h("div", { style: { display: "inline-flex", minWidth: daysInMonth * 48 + 60 } },
                       Array.apply(null, Array(daysInMonth)).map(function(_, di) {
@@ -3141,7 +3226,10 @@
                           isWeekend: isWE,
                           dayLetter: dayLetters[dow],
                           dayNum: dayOfMonth,
-                          isToday: isTD
+                          isToday: isTD,
+                          activeBrush: chantierBrush,
+                          isPainting: chPainting,
+                          onPaintStart: function() { setChPainting(true); }
                         });
                       }),
                       h("div", { style: { width: 60, flexShrink: 0, borderLeft: "2px solid #e5e7eb", background: "#f0fdf4", display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center" } },
@@ -3185,6 +3273,12 @@
       var painting = _painting[0]; var setPainting = _painting[1];
 
       var CHANTIER_COLORS = ["#7c3aed", "#059669", "#d97706", "#dc2626", "#2563eb", "#db2777", "#0891b2", "#65a30d"];
+      var PERSONNEL_EVENTS = [
+        { key: "ferie", label: "Ferie", color: "#f59e0b", initial: "F" },
+        { key: "maladie", label: "Maladie", color: "#ef4444", initial: "M" },
+        { key: "conge", label: "Conge", color: "#06b6d4", initial: "C" },
+        { key: "chomage", label: "Chomage", color: "#8b5cf6", initial: "Ch" }
+      ];
 
       function addMonthsPe(d, n) {
         var copy = new Date(d);
@@ -3214,18 +3308,25 @@
         return ch ? ch.titre.charAt(0).toUpperCase() : "";
       }
 
-      // Build affectation map
+      // Build affectation map: { "empId-date": { chantierId, typeJour } }
       var affMap = {};
       affectations.forEach(function(a) {
-        affMap[a.personnelId + "-" + a.dateAffectation] = a.chantierId;
+        affMap[a.personnelId + "-" + a.dateAffectation] = { chantierId: a.chantierId, typeJour: a.typeJour || "travail" };
       });
       function getAffectation(empId, dateStr) {
-        return affMap[empId + "-" + dateStr] || "";
+        var entry = affMap[empId + "-" + dateStr];
+        return entry ? entry.chantierId : "";
+      }
+      function getAffectationType(empId, dateStr) {
+        var entry = affMap[empId + "-" + dateStr];
+        return entry ? entry.typeJour : "";
       }
 
-      function setAffectation(empId, dateStr, chantierId) {
+      function setAffectation(empId, dateStr, chantierId, typeJour) {
+        var tj = typeJour || "travail";
         var existing = affectations.find(function(a) { return a.personnelId === empId && a.dateAffectation === dateStr; });
-        if (chantierId === "" || chantierId === null) {
+        if ((chantierId === "" || chantierId === null) && tj === "travail") {
+          // Eraser: delete
           if (existing) {
             supabase.from("affectations").delete().eq("id", existing.id).then(function(res) {
               if (res.error) { alert("Erreur: " + res.error.message); return; }
@@ -3233,15 +3334,20 @@
             });
           }
         } else {
-          var chId = parseInt(chantierId);
+          var chId = chantierId ? parseInt(chantierId) : null;
           if (existing) {
-            if (existing.chantierId === chId) return; // Already same
-            supabase.from("affectations").update({ chantier_id: chId }).eq("id", existing.id).select().single().then(function(res) {
+            if (existing.chantierId === chId && existing.typeJour === tj) return; // Already same
+            var updateData = { type_jour: tj };
+            if (chId !== null) updateData.chantier_id = chId;
+            else updateData.chantier_id = null;
+            supabase.from("affectations").update(updateData).eq("id", existing.id).select().single().then(function(res) {
               if (res.error) { alert("Erreur: " + res.error.message); return; }
               setAffectations(affectations.map(function(a) { return a.id === existing.id ? affectationFromDb(res.data) : a; }));
             });
           } else {
-            supabase.from("affectations").insert({ personnel_id: empId, chantier_id: chId, date_affectation: dateStr }).select().single().then(function(res) {
+            var insertData = { personnel_id: empId, date_affectation: dateStr, type_jour: tj };
+            if (chId !== null) insertData.chantier_id = chId;
+            supabase.from("affectations").insert(insertData).select().single().then(function(res) {
               if (res.error) { alert("Erreur: " + res.error.message); return; }
               setAffectations(affectations.concat(affectationFromDb(res.data)));
             });
@@ -3249,19 +3355,26 @@
         }
       }
 
+      function isPersonnelEvent(b) {
+        return b === "ferie" || b === "maladie" || b === "conge" || b === "chomage";
+      }
       function handleCellClick(empId, dateStr) {
         if (brush === "eraser") {
-          setAffectation(empId, dateStr, "");
+          setAffectation(empId, dateStr, "", "travail");
+        } else if (isPersonnelEvent(brush)) {
+          setAffectation(empId, dateStr, null, brush);
         } else if (brush) {
-          setAffectation(empId, dateStr, brush);
+          setAffectation(empId, dateStr, brush, "travail");
         }
       }
       function handleCellEnter(empId, dateStr) {
         if (painting && brush) {
           if (brush === "eraser") {
-            setAffectation(empId, dateStr, "");
+            setAffectation(empId, dateStr, "", "travail");
+          } else if (isPersonnelEvent(brush)) {
+            setAffectation(empId, dateStr, null, brush);
           } else {
-            setAffectation(empId, dateStr, brush);
+            setAffectation(empId, dateStr, brush, "travail");
           }
         }
       }
@@ -3311,6 +3424,27 @@
                 ch.titre
               );
             }),
+            h("div", { style: { width: 1, height: 28, background: "#e2e8f0", margin: "0 4px" } }),
+            PERSONNEL_EVENTS.map(function(evt) {
+              var isActive = brush === evt.key;
+              return h("button", {
+                key: evt.key,
+                onClick: function() { setBrush(isActive ? null : evt.key); },
+                style: {
+                  display: "flex", alignItems: "center", gap: 6, padding: "8px 12px",
+                  border: isActive ? "2px solid " + evt.color : "1px solid #e2e8f0",
+                  borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 600,
+                  background: isActive ? evt.color + "15" : "white",
+                  color: isActive ? evt.color : "#64748b",
+                  boxShadow: isActive ? "0 0 0 3px " + evt.color + "30" : "none",
+                  transition: "all 0.15s"
+                }
+              },
+                h("div", { style: { width: 16, height: 16, borderRadius: 4, background: evt.color, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 8, fontWeight: 800, color: "white" } }, evt.initial),
+                evt.label
+              );
+            }),
+            h("div", { style: { width: 1, height: 28, background: "#e2e8f0", margin: "0 4px" } }),
             h("button", {
               onClick: function() { setBrush(brush === "eraser" ? null : "eraser"); },
               style: {
@@ -3327,8 +3461,8 @@
               "Effacer"
             ),
             brush ? h("div", { style: { marginLeft: 8, fontSize: 12, color: "#64748b", fontStyle: "italic" } },
-              brush === "eraser" ? "Cliquez ou glissez pour effacer" : "Cliquez ou glissez pour peindre"
-            ) : h("div", { style: { marginLeft: 8, fontSize: 12, color: "#94a3b8", fontStyle: "italic" } }, "Selectionnez un chantier ci-dessus")
+              brush === "eraser" ? "Cliquez ou glissez pour effacer" : isPersonnelEvent(brush) ? "Cliquez ou glissez pour marquer" : "Cliquez ou glissez pour peindre"
+            ) : h("div", { style: { marginLeft: 8, fontSize: 12, color: "#94a3b8", fontStyle: "italic" } }, "Selectionnez un outil ci-dessus")
           )
         ),
         // Month navigation
@@ -3379,8 +3513,11 @@
                     var dateObj = new Date(year, monthIdx, d);
                     var isWeekend = dateObj.getDay() === 0 || dateObj.getDay() === 6;
                     var currentVal = getAffectation(emp.id, dateStr);
-                    var cellColor = currentVal ? getChantierColor(currentVal) : null;
-                    var initial = currentVal ? getChantierInitial(currentVal) : "";
+                    var currentType = getAffectationType(emp.id, dateStr);
+                    var isEvt = currentType && currentType !== "travail";
+                    var evtInfo = isEvt ? PERSONNEL_EVENTS.find(function(e) { return e.key === currentType; }) : null;
+                    var cellColor = isEvt && evtInfo ? evtInfo.color : currentVal ? getChantierColor(currentVal) : null;
+                    var initial = isEvt && evtInfo ? evtInfo.initial : currentVal ? getChantierInitial(currentVal) : "";
 
                     return h("td", {
                       key: d,
@@ -3398,7 +3535,7 @@
                       h("div", { style: {
                         width: 30, height: 28, borderRadius: 5, margin: "0 auto",
                         display: "flex", alignItems: "center", justifyContent: "center",
-                        fontSize: 11, fontWeight: 700, color: "white",
+                        fontSize: isEvt ? 9 : 11, fontWeight: 700, color: "white",
                         background: cellColor || (isWeekend ? "#e2e8f0" : "#f1f5f9"),
                         transition: "all 0.1s",
                         opacity: cellColor ? 1 : 0.5,
@@ -3487,18 +3624,76 @@
             // Metrage in period
             var totalMetrage = 0;
             var totalJours = 0;
+            // ── Regles d'arbitrage primes ──
+            // 1. Collecter les jours normaux, panne, intemperies du chantier
+            var normalDays = []; // { date, val }
+            var panneDays = [];
+            var intempDays = [];
             if (saisies[ch.id]) {
               var keys = Object.keys(saisies[ch.id]);
               for (var i = 0; i < keys.length; i++) {
-                if (isDateInPeriod(keys[i], period.start, period.end) && saisies[ch.id][keys[i]] > 0) {
-                  totalMetrage += saisies[ch.id][keys[i]];
-                  totalJours++;
-                }
+                if (!isDateInPeriod(keys[i], period.start, period.end)) continue;
+                var sVal = getSaisieVal(saisies[ch.id][keys[i]]);
+                var sType = getSaisieType(saisies[ch.id][keys[i]]);
+                if (sType === "panne") { panneDays.push({ date: keys[i], val: sVal }); }
+                else if (sType === "intemperies") { intempDays.push({ date: keys[i], val: sVal }); }
+                else if (sVal > 0) { normalDays.push({ date: keys[i], val: sVal }); }
               }
             }
-            if (totalJours === 0) return;
-            var mhRealise = totalMetrage / (totalJours * 9);
+            // 2. Collecter les jours personnel de cet employe sur ce chantier
+            var empAffTypes = {};
+            empAff.forEach(function(a) { empAffTypes[a.dateAffectation] = a.typeJour || "travail"; });
+            // Moyenne basee sur les jours normaux uniquement
+            var normalMetrage = 0;
+            for (var ni = 0; ni < normalDays.length; ni++) { normalMetrage += normalDays[ni].val; }
+            var avgDailyMetrage = normalDays.length > 0 ? normalMetrage / normalDays.length : 0;
+            // 3. Panne rattrappee? auto: metrage normal >= objectif * jours normaux * 9
             var objectif = getObjectifForSite(paliers, site);
+            var panneRecovered = normalDays.length > 0 && (normalMetrage / (normalDays.length * 9)) >= objectif;
+            // 4. Pannes consecutives detection (regle 5)
+            panneDays.sort(function(a, b) { return a.date < b.date ? -1 : 1; });
+            // 5. Construire metrage et jours ajustes
+            var adjMetrage = normalMetrage;
+            var adjJours = normalDays.length;
+            // Intemperies: chaque jour = moyenne
+            adjMetrage += intempDays.length * avgDailyMetrage;
+            adjJours += intempDays.length;
+            // Pannes
+            if (panneRecovered) {
+              // Pas comptabilise: on n'ajoute rien
+            } else {
+              // Regle 5: si pannes consecutives, 1er jour = moyenne, reste = metrage ecrit
+              if (panneDays.length > 1) {
+                adjMetrage += avgDailyMetrage; // 1er jour = moyenne
+                adjJours += 1;
+                for (var pi = 1; pi < panneDays.length; pi++) {
+                  adjMetrage += panneDays[pi].val;
+                  adjJours += 1;
+                }
+              } else if (panneDays.length === 1) {
+                adjMetrage += panneDays[0].val;
+                adjJours += 1;
+              }
+            }
+            // Jours personnel: ferie/conge/intemperies/chomage = moyenne, maladie = 0
+            empAff.forEach(function(a) {
+              var tj = a.typeJour || "travail";
+              if (tj === "ferie" || tj === "conge" || tj === "chomage") {
+                adjMetrage += avgDailyMetrage;
+                adjJours += 1;
+              } else if (tj === "maladie") {
+                // 0 metrage mais jour compte
+                adjJours += 1;
+              }
+              // travail = deja dans normalDays
+            });
+            // Regle 6: si pas travaille du tout ou pas atteint objectif sur rattrapage -> moyenne
+            if (adjJours === 0) return;
+            var mhRealise = adjMetrage / (adjJours * 9);
+            // Regle 6: si mhRealise < objectif et il y avait des pannes non recup, appliquer moyenne
+            if (!panneRecovered && panneDays.length > 0 && mhRealise < objectif) {
+              mhRealise = normalDays.length > 0 ? normalMetrage / (normalDays.length * 9) : 0;
+            }
             var coef = lookupCoefficient(paliers, site, mhRealise);
             var diff = mhRealise - objectif;
             var primeChantier = diff > 0 && coef > 0 ? diff * coef : 0;
@@ -4091,11 +4286,11 @@
           setParametres(paRes.data || []);
           // Chantiers
           setDbChantiers((chRes.data || []).map(chantierFromDb));
-          // Saisies: convert array to { chantierId: { dateStr: val } }
+          // Saisies: convert array to { chantierId: { dateStr: { valeur, typeJour } } }
           var saisiesMap = {};
           (saRes.data || []).forEach(function(s) {
             if (!saisiesMap[s.chantier_id]) saisiesMap[s.chantier_id] = {};
-            saisiesMap[s.chantier_id][s.date_saisie] = s.valeur || 0;
+            saisiesMap[s.chantier_id][s.date_saisie] = { valeur: s.valeur || 0, typeJour: s.type_jour || "normal" };
           });
           setDbSaisies(saisiesMap);
           // Declarations & Renouvellements
