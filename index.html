@@ -2761,7 +2761,6 @@
 
       var onBrushApply = props.onBrushApply;
       var handleBrushClick = function() {
-        console.log("[BRUSH] handleBrushClick activeBrush=", activeBrush, "onBrushApply=", !!onBrushApply, "chantierId=", chantierId, "dateStr=", dateStr);
         if (!activeBrush) return;
         var newSaisies = {};
         var keys = Object.keys(saisies);
@@ -2857,21 +2856,17 @@
 
       // Propager un evenement chantier vers les affectations employes du site
       function propagateBrushToEmployees(chantierId, dateStr, brushType) {
-        console.log("[PROPAGATE] chantierId=", chantierId, "dateStr=", dateStr, "brushType=", brushType);
         // Trouver le site du chantier
         var ch = chantiers.find(function(c) { return c.id == chantierId; });
-        console.log("[PROPAGATE] chantier trouve=", ch ? ch.titre : "NON", "site=", ch ? ch.site : "AUCUN");
         var siteName = ch ? ch.site : "";
-        if (!siteName) { console.log("[PROPAGATE] ABANDON: pas de site"); return; }
+        if (!siteName) return;
         // Trouver tous les chantiers du meme site
         var siteChantierIds = chantiers.filter(function(c) { return c.site && c.site === siteName; }).map(function(c) { return c.id; });
-        console.log("[PROPAGATE] chantiers du site=", siteChantierIds);
 
         var newTypeJour = brushType === "eraser-type" ? "travail" : brushType;
 
         // Mettre a jour en DB via callback pour etat frais
         setAffectationsAv(function(prev) {
-          console.log("[PROPAGATE] nb affectations total=", prev.length);
           var updated = [];
           var result = prev.map(function(a) {
             if (a.dateAffectation !== dateStr) return a;
@@ -2881,16 +2876,12 @@
               if (String(a.chantierId) === String(siteChantierIds[i])) { match = true; break; }
             }
             if (!match) return a;
-            console.log("[PROPAGATE] MATCH employe=", a.personnelId, "ancien=", a.typeJour, "nouveau=", newTypeJour);
             updated.push(a);
             return Object.assign({}, a, { typeJour: newTypeJour });
           });
-          console.log("[PROPAGATE] nb mis a jour=", updated.length);
-          // Sauvegarder en DB
           updated.forEach(function(a) {
             supabase.from("affectations").update({ type_jour: newTypeJour }).eq("id", a.id).then(function(res) {
-              if (res.error) console.log("[PROPAGATE] DB ERROR:", res.error.message);
-              else console.log("[PROPAGATE] DB OK pour id=", a.id);
+              if (res.error) alert("Erreur propagation: " + res.error.message);
             });
           });
           return result;
