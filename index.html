@@ -1275,9 +1275,8 @@
       var ctx = useAppData();
       var myPending = pendingValidations.filter(function(p) { return p.submittedBy === userEmail; });
       var myLog = (ctx.validationLog || []).filter(function(l) { return l.submittedBy === userEmail; });
-      // Garder les 10 dernieres decisions datant de moins de 30 jours
-      var cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 30);
-      var recentLog = myLog.filter(function(l) { return new Date(l.decidedAt) >= cutoff; }).slice(0, 10);
+      // Historique complet des decisions, trie par date decroissante
+      var recentLog = myLog.slice().sort(function(a, b) { return (b.decidedAt || "").localeCompare(a.decidedAt || ""); });
       var _expanded = useState(false);
       var expanded = _expanded[0], setExpanded = _expanded[1];
       var _showLog = useState(true);
