@@ -3202,10 +3202,17 @@
                           evt.label
                         );
                       }),
-                      chantierBrush ? h("button", {
-                        onClick: function(e) { e.stopPropagation(); setChantierBrush(null); },
-                        style: { display: "flex", alignItems: "center", gap: 4, padding: "4px 10px", border: "1px solid #e2e8f0", borderRadius: 6, cursor: "pointer", fontSize: 11, fontWeight: 600, background: "white", color: "#64748b" }
-                      }, h(Icon, { name: "x", size: 12 }), "Annuler") : null
+                      h("button", {
+                        onClick: function(e) { e.stopPropagation(); setChantierBrush(chantierBrush === "eraser-type" ? null : "eraser-type"); },
+                        style: {
+                          display: "flex", alignItems: "center", gap: 4, padding: "4px 10px",
+                          border: chantierBrush === "eraser-type" ? "2px solid #dc2626" : "1px solid #e2e8f0",
+                          borderRadius: 6, cursor: "pointer", fontSize: 11, fontWeight: 600,
+                          background: chantierBrush === "eraser-type" ? "#fef2f2" : "white",
+                          color: chantierBrush === "eraser-type" ? "#dc2626" : "#64748b",
+                          boxShadow: chantierBrush === "eraser-type" ? "0 0 0 2px #dc262630" : "none"
+                        }
+                      }, h(Icon, { name: "eraser", size: 12, color: chantierBrush === "eraser-type" ? "#dc2626" : "#94a3b8" }), "Retirer statut")
                     )
                   ),
                   h("div", { style: { background: "white", borderRadius: 8, border: "1px solid #e5e7eb", overflowX: "auto" } },
