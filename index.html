@@ -2854,11 +2854,21 @@
         setSaisiesState(newSaisies);
       };
 
-      // Propager un evenement chantier vers les affectations employes
+      // Propager un evenement chantier vers les affectations employes du site
       function propagateBrushToEmployees(chantierId, dateStr, brushType) {
-        // Trouver tous les employes affectes a ce chantier ce jour-la
+        // Trouver le site du chantier
+        var ch = chantiers.find(function(c) { return c.id == chantierId; });
+        var siteName = ch ? ch.site : "";
+        // Trouver tous les chantiers du meme site
+        var siteChantierIds = chantiers.filter(function(c) { return c.site && c.site === siteName; }).map(function(c) { return c.id; });
+        // Trouver toutes les affectations sur ce site ce jour-la
         var empAffs = affectationsAv.filter(function(a) {
-          return a.chantierId === chantierId && a.dateAffectation === dateStr;
+          if (a.dateAffectation !== dateStr) return false;
+          if (!a.chantierId) return false;
+          for (var i = 0; i < siteChantierIds.length; i++) {
+            if (a.chantierId == siteChantierIds[i]) return true;
+          }
+          return false;
         });
         if (brushType === "eraser-type") {
           // Remettre les affectations en travail
@@ -2868,24 +2878,29 @@
             }
           });
           setAffectationsAv(affectationsAv.map(function(a) {
-            if (a.chantierId === chantierId && a.dateAffectation === dateStr && a.typeJour !== "travail") {
+            if (a.dateAffectation !== dateStr) return a;
+            var match = false;
+            for (var i = 0; i < siteChantierIds.length; i++) { if (a.chantierId == siteChantierIds[i]) { match = true; break; } }
+            if (match && a.typeJour !== "travail") {
               return Object.assign({}, a, { typeJour: "travail" });
             }
             return a;
           }));
-        } else if (brushType === "ferie") {
-          // Ferie: mettre toutes les affectations de ce chantier+jour en ferie
+        } else if (brushType === "ferie" || brushType === "panne" || brushType === "intemperies") {
+          // Propager le type sur toutes les affectations du site ce jour
           empAffs.forEach(function(a) {
-            supabase.from("affectations").update({ type_jour: "ferie" }).eq("id", a.id).then(function(res) { if (res.error) alert("Erreur: " + res.error.message); });
+            supabase.from("affectations").update({ type_jour: brushType }).eq("id", a.id).then(function(res) { if (res.error) alert("Erreur: " + res.error.message); });
           });
           setAffectationsAv(affectationsAv.map(function(a) {
-            if (a.chantierId === chantierId && a.dateAffectation === dateStr) {
-              return Object.assign({}, a, { typeJour: "ferie" });
+            if (a.dateAffectation !== dateStr) return a;
+            var match = false;
+            for (var i = 0; i < siteChantierIds.length; i++) { if (a.chantierId == siteChantierIds[i]) { match = true; break; } }
+            if (match) {
+              return Object.assign({}, a, { typeJour: brushType });
             }
             return a;
           }));
         }
-        // panne/intemperies: pas besoin de propager aux affectations, gere via saisies_metrage
       }
 
       var _showM = useState(false);
@@ -3353,10 +3368,12 @@
 
       var CHANTIER_COLORS = ["#7c3aed", "#059669", "#d97706", "#dc2626", "#2563eb", "#db2777", "#0891b2", "#65a30d"];
       var PERSONNEL_EVENTS = [
-        { key: "ferie", label: "Ferie", color: "#f59e0b", initial: "F" },
+        { key: "ferie", label: "Ferie", color: "#dc2626", initial: "F" },
         { key: "maladie", label: "Maladie", color: "#ef4444", initial: "M" },
         { key: "conge", label: "Conge", color: "#06b6d4", initial: "C" },
-        { key: "chomage", label: "Chomage", color: "#8b5cf6", initial: "Ch" }
+        { key: "chomage", label: "Chomage", color: "#8b5cf6", initial: "Ch" },
+        { key: "panne", label: "Panne", color: "#f59e0b", initial: "P" },
+        { key: "intemperies", label: "Intemperies", color: "#3b82f6", initial: "I" }
       ];
 
       function addMonthsPe(d, n) {
