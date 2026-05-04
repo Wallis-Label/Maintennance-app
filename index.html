@@ -1272,9 +1272,16 @@
     // ─── Ecran Personnel ──────────────────────────────────────────────
     // ─── Bandeau soumissions en attente (non-admin) ─────────────────
     function PendingBannerUser({ pendingValidations, userEmail, updatePendingItem, deletePendingItem }) {
+      var ctx = useAppData();
       var myPending = pendingValidations.filter(function(p) { return p.submittedBy === userEmail; });
+      var myLog = (ctx.validationLog || []).filter(function(l) { return l.submittedBy === userEmail; });
+      // Garder les 10 dernieres decisions datant de moins de 30 jours
+      var cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 30);
+      var recentLog = myLog.filter(function(l) { return new Date(l.decidedAt) >= cutoff; }).slice(0, 10);
       var _expanded = useState(false);
       var expanded = _expanded[0], setExpanded = _expanded[1];
+      var _showLog = useState(true);
+      var showLog = _showLog[0], setShowLog = _showLog[1];
       var _editingId = useState(null);
       var editingId = _editingId[0], setEditingId = _editingId[1];
       var _editData = useState(null);
@@ -1285,10 +1292,9 @@
       var localisations = useParams("localisation");
       var freqsPlan = useParams("frequence_plan");
       var catsPiece = useParams("cat_piece");
-      var ctx = useAppData();
       var equipements = ctx.equipements;
 
-      if (myPending.length === 0) return null;
+      if (myPending.length === 0 && recentLog.length === 0) return null;
 
       function startEdit(item) { setEditingId(item.id); setEditData(Object.assign({}, item.data)); }
       function cancelEdit() { setEditingId(null); setEditData(null); }
@@ -1321,14 +1327,22 @@
       };
       var keyLabels = { Title: "Titre", Categorie: "Categorie", Type: "Type", Localisation: "Localisation", Horametre: "Horametre", KM: "KM", Statut: "Statut", Equipement: "Equipement", Date_Intervention: "Date", Technicien: "Technicien", Statut_Intervention: "Statut", Cout: "Cout", Frequence: "Frequence", Reference: "Reference", Designation: "Designation", PrixUnitaire: "Prix u.", Stock: "Stock" };
 
+      var headerParts = [];
+      if (myPending.length > 0) headerParts.push(myPending.length + " en attente");
+      var nbAccepted = recentLog.filter(function(l) { return l.decision === "approved"; }).length;
+      var nbRefused = recentLog.filter(function(l) { return l.decision === "rejected"; }).length;
+      if (nbAccepted > 0) headerParts.push(nbAccepted + " acceptee(s)");
+      if (nbRefused > 0) headerParts.push(nbRefused + " refusee(s)");
+
       return h("div", { style: { background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: 10, padding: "12px 16px", marginBottom: 16 } },
         h("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }, onClick: function() { setExpanded(!expanded); } },
           h("div", { style: { display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#92400e", fontWeight: 600 } },
-            h(Icon, { name: "clock", size: 16, color: "#92400e" }),
-            myPending.length + " soumission(s) en attente de validation"),
+            h(Icon, { name: "bell", size: 16, color: "#92400e" }),
+            "Validations : " + headerParts.join(" / ")),
           h(Icon, { name: expanded ? "chevron-up" : "chevron-down", size: 16, color: "#92400e" })
         ),
         expanded && h("div", { style: { marginTop: 12, display: "flex", flexDirection: "column", gap: 10 } },
+          myPending.length > 0 && h("div", { style: { fontSize: 12, fontWeight: 700, color: "#92400e", marginBottom: 2 } }, "En attente"),
           myPending.map(function(item) {
             var isEditing = editingId === item.id;
             var keys = displayKeys[item.entity] || Object.keys(item.data);
@@ -1361,7 +1375,35 @@
                 ]
               )
             );
-          })
+          }),
+          recentLog.length > 0 && h("div", null,
+            h("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: myPending.length > 0 ? 10 : 0, marginBottom: 6 } },
+              h("span", { style: { fontSize: 12, fontWeight: 700, color: "#92400e" } }, "Decisions recentes"),
+              h("span", { style: { fontSize: 11, color: "#94a3b8", cursor: "pointer" }, onClick: function(e) { e.stopPropagation(); setShowLog(!showLog); } }, showLog ? "Masquer" : "Afficher")
+            ),
+            showLog && recentLog.map(function(entry, idx) {
+              var isApproved = entry.decision === "approved";
+              var badgeColor = isApproved ? "#16a34a" : "#dc2626";
+              var badgeBg = isApproved ? "#f0fdf4" : "#fef2f2";
+              var badgeBorder = isApproved ? "#bbf7d0" : "#fecaca";
+              var badgeText = isApproved ? "Accepte" : "Refuse";
+              var entityLabel = entry.entity === "equipement" ? "Equipement" : entry.entity === "intervention" ? "Intervention" : entry.entity === "plan" ? "Plan" : "Piece";
+              var itemName = entry.summary || "";
+              return h("div", { key: "log-" + idx, style: { background: "white", borderRadius: 8, padding: 12, border: "1px solid #e2e8f0", marginBottom: 6, borderLeft: "3px solid " + badgeColor } },
+                h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: entry.reason ? 6 : 0 } },
+                  h("div", { style: { display: "flex", alignItems: "center", gap: 8 } },
+                    h("span", { style: { fontSize: 11, fontWeight: 700, color: badgeColor, background: badgeBg, border: "1px solid " + badgeBorder, padding: "2px 8px", borderRadius: 4 } }, badgeText),
+                    h("span", { style: { fontSize: 13, fontWeight: 600 } }, entityLabel + " : " + itemName)
+                  ),
+                  h("span", { style: { fontSize: 11, color: "#94a3b8" } }, entry.decidedAt ? new Date(entry.decidedAt).toLocaleDateString("fr-FR") : "")
+                ),
+                entry.reason && h("div", { style: { fontSize: 12, color: "#dc2626", fontStyle: "italic", marginTop: 4, paddingLeft: 4 } },
+                  h(Icon, { name: "message-circle", size: 12, color: "#dc2626", style: { display: "inline-block", verticalAlign: "middle", marginRight: 4 } }),
+                  "Motif : " + entry.reason
+                )
+              );
+            })
+          )
         )
       );
     }
