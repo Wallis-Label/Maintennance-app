@@ -3441,7 +3441,7 @@
       }
 
       function isPersonnelEvent(b) {
-        return b === "ferie" || b === "maladie" || b === "conge" || b === "chomage";
+        return b === "maladie" || b === "conge" || b === "chomage";
       }
       function handleCellClick(empId, dateStr) {
         if (brush === "eraser") {
@@ -3510,7 +3510,7 @@
               );
             }),
             h("div", { style: { width: 1, height: 28, background: "#e2e8f0", margin: "0 4px" } }),
-            PERSONNEL_EVENTS.filter(function(evt) { return evt.key !== "ferie"; }).map(function(evt) {
+            PERSONNEL_EVENTS.filter(function(evt) { return evt.key !== "ferie" && evt.key !== "panne" && evt.key !== "intemperies"; }).map(function(evt) {
               var isActive = brush === evt.key;
               return h("button", {
                 key: evt.key,
