@@ -2963,155 +2963,102 @@
       var dayLetters = ["D", "L", "M", "M", "J", "V", "S"];
       var todayDate = new Date();
 
-      // ─── Build chart data: cumulative metrage & CA by month ───
+      // ─── Build chart data: metrage & CA par jour du mois ───
       function buildChartData() {
-        var allDates = [];
-        activeChantiers.forEach(function(c) {
-          if (!saisies[c.id]) return;
-          var keys = Object.keys(saisies[c.id]);
-          for (var i = 0; i < keys.length; i++) { if (allDates.indexOf(keys[i]) === -1) allDates.push(keys[i]); }
-        });
-        allDates.sort();
-        if (allDates.length === 0) return [];
-
-        // Group by month
-        var monthMap = {};
-        for (var i = 0; i < allDates.length; i++) {
-          var d = allDates[i];
-          var mKey = d.substring(0, 7); // "2026-03"
-          if (!monthMap[mKey]) monthMap[mKey] = { metrage: 0, ca: 0 };
+        var pts = [];
+        for (var d = 1; d <= daysInMonth; d++) {
+          var ds = year + "-" + (monthIdx + 1 < 10 ? "0" : "") + (monthIdx + 1) + "-" + (d < 10 ? "0" : "") + d;
+          var dayMet = 0;
+          var dayCA = 0;
           activeChantiers.forEach(function(c) {
-            if (saisies[c.id] && saisies[c.id][d]) {
-              var val = getSaisieVal(saisies[c.id][d]);
-              monthMap[mKey].metrage += val;
-              monthMap[mKey].ca += val * c.prixMetre;
+            if (saisies[c.id] && saisies[c.id][ds]) {
+              var val = getSaisieVal(saisies[c.id][ds]);
+              dayMet += val;
+              dayCA += val * c.prixMetre;
             }
           });
-        }
-
-        var mKeys = Object.keys(monthMap).sort();
-        var cumMetrage = 0;
-        var cumCA = 0;
-        var pts = [];
-        for (var j = 0; j < mKeys.length; j++) {
-          cumMetrage += monthMap[mKeys[j]].metrage;
-          cumCA += monthMap[mKeys[j]].ca;
-          var parts = mKeys[j].split("-");
-          var monthNames = ["Jan", "Fev", "Mar", "Avr", "Mai", "Juin", "Juil", "Aout", "Sep", "Oct", "Nov", "Dec"];
-          var label = monthNames[parseInt(parts[1], 10) - 1] + " " + parts[0].substring(2);
-          pts.push({ label: label, metrage: cumMetrage, ca: cumCA });
+          var cellDate = new Date(year, monthIdx, d);
+          var dow = cellDate.getDay();
+          pts.push({ day: d, metrage: dayMet, ca: dayCA, isWE: dow === 0 || dow === 6 });
         }
         return pts;
       }
 
       var chartData = buildChartData();
+      var chartHasData = chartData.some(function(p) { return p.metrage > 0; });
 
       function renderChart() {
-        if (chartData.length < 2) {
+        if (!chartHasData) {
           return h("div", { style: { background: "white", borderRadius: 12, padding: 40, border: "1px solid #e5e7eb", textAlign: "center", color: "#9ca3af", marginBottom: 24 } },
             h(Icon, { name: "bar-chart-3", size: 48, color: "#d1d5db" }),
-            h("div", { style: { marginTop: 12, fontSize: 14, fontWeight: 600 } }, "Pas assez de donnees pour afficher le graphique"),
-            h("div", { style: { marginTop: 4, fontSize: 12 } }, "Saisissez des metrages sur au moins 2 mois")
+            h("div", { style: { marginTop: 12, fontSize: 14, fontWeight: 600 } }, "Aucune saisie ce mois"),
+            h("div", { style: { marginTop: 4, fontSize: 12 } }, "Saisissez des metrages pour afficher le graphique")
           );
         }
 
         var W = 1100;
         var H = 340;
-        var padL = 70;
-        var padR = 70;
-        var padT = 30;
-        var padB = 50;
+        var padL = 60;
+        var padR = 20;
+        var padT = 20;
+        var padB = 40;
         var chartW = W - padL - padR;
-        var chartH = H - padT - padB;
+        var chartHt = H - padT - padB;
+        var n = chartData.length;
+        var gap = 2;
+        var barW = Math.floor((chartW - gap * n) / n);
+        if (barW < 6) barW = 6;
 
         var maxMet = 0;
-        var maxCA = 0;
-        for (var i = 0; i < chartData.length; i++) {
-          if (chartData[i].metrage > maxMet) maxMet = chartData[i].metrage;
-          if (chartData[i].ca > maxCA) maxCA = chartData[i].ca;
-        }
-        maxMet = Math.ceil(maxMet / 1000) * 1000 || 1000;
-        maxCA = Math.ceil(maxCA / 1000000) * 1000000 || 1000000;
-
-        var metragePoints = [];
-        var caPoints = [];
-        for (var i = 0; i < chartData.length; i++) {
-          var x = padL + (i / (chartData.length - 1)) * chartW;
-          var yM = padT + chartH - (chartData[i].metrage / maxMet) * chartH;
-          var yC = padT + chartH - (chartData[i].ca / maxCA) * chartH;
-          metragePoints.push(Math.round(x) + "," + Math.round(yM));
-          caPoints.push(Math.round(x) + "," + Math.round(yC));
-        }
-
-        var metrageLine = metragePoints.join(" ");
-        var caLine = caPoints.join(" ");
-
-        // Area fill paths
-        var metrageArea = "M" + metragePoints[0] + " L" + metragePoints.join(" L") + " L" + Math.round(padL + chartW) + "," + (padT + chartH) + " L" + padL + "," + (padT + chartH) + " Z";
-        var caArea = "M" + caPoints[0] + " L" + caPoints.join(" L") + " L" + Math.round(padL + chartW) + "," + (padT + chartH) + " L" + padL + "," + (padT + chartH) + " Z";
-
-        // Y-axis labels (left = metrage, right = CA)
-        var yLabelsM = [];
-        var yLabelsCA = [];
-        for (var s = 0; s <= 4; s++) {
-          var yPos = padT + chartH - (s / 4) * chartH;
-          yLabelsM.push(h("text", { key: "ym" + s, x: padL - 8, y: yPos + 4, textAnchor: "end", fontSize: 10, fill: "#d97706", fontWeight: 600 }, fmtNum(Math.round(maxMet * s / 4)) + " m"));
-          yLabelsCA.push(h("text", { key: "yc" + s, x: W - padR + 8, y: yPos + 4, textAnchor: "start", fontSize: 10, fill: "#2563eb", fontWeight: 600 }, fmtNum(Math.round(maxCA * s / 4 / 1000)) + "k"));
-        }
+        for (var i = 0; i < n; i++) { if (chartData[i].metrage > maxMet) maxMet = chartData[i].metrage; }
+        // Arrondir au palier superieur
+        if (maxMet <= 50) maxMet = Math.ceil(maxMet / 10) * 10 || 10;
+        else if (maxMet <= 500) maxMet = Math.ceil(maxMet / 50) * 50;
+        else maxMet = Math.ceil(maxMet / 100) * 100;
 
         // Grid lines
         var gridLines = [];
+        var yLabels = [];
         for (var g = 0; g <= 4; g++) {
-          var gy = padT + chartH - (g / 4) * chartH;
+          var gy = padT + chartHt - (g / 4) * chartHt;
           gridLines.push(h("line", { key: "gl" + g, x1: padL, x2: W - padR, y1: gy, y2: gy, stroke: "#f3f4f6", strokeWidth: 1 }));
+          yLabels.push(h("text", { key: "yl" + g, x: padL - 8, y: gy + 4, textAnchor: "end", fontSize: 10, fill: "#6b7280", fontWeight: 600 }, fmtNum(Math.round(maxMet * g / 4))));
         }
 
-        // X-axis labels
+        // Bars
+        var bars = [];
         var xLabels = [];
-        for (var i = 0; i < chartData.length; i++) {
-          var xPos = padL + (i / (chartData.length - 1)) * chartW;
-          xLabels.push(h("text", { key: "xl" + i, x: xPos, y: H - 10, textAnchor: "middle", fontSize: 11, fill: "#6b7280", fontWeight: 600 }, chartData[i].label));
+        for (var i = 0; i < n; i++) {
+          var x = padL + i * (barW + gap);
+          var barH = maxMet > 0 ? (chartData[i].metrage / maxMet) * chartHt : 0;
+          var barColor = chartData[i].isWE ? "#c4b5fd" : "#7c3aed";
+          bars.push(h("rect", { key: "b" + i, x: x, y: padT + chartHt - barH, width: barW, height: Math.max(barH, 0), rx: 2, fill: barColor, opacity: chartData[i].metrage > 0 ? 1 : 0.12 }));
+          if (chartData[i].metrage > 0 && barH > 14) {
+            bars.push(h("text", { key: "bv" + i, x: x + barW / 2, y: padT + chartHt - barH + 13, textAnchor: "middle", fontSize: 9, fill: "white", fontWeight: 700 }, chartData[i].metrage));
+          }
+          xLabels.push(h("text", { key: "xl" + i, x: x + barW / 2, y: H - 10, textAnchor: "middle", fontSize: 9, fill: chartData[i].isWE ? "#a78bfa" : "#6b7280", fontWeight: 600 }, String(chartData[i].day)));
         }
 
-        // Dots
-        var metrageDots = [];
-        var caDots = [];
-        for (var i = 0; i < chartData.length; i++) {
-          var x = padL + (i / (chartData.length - 1)) * chartW;
-          var yM = padT + chartH - (chartData[i].metrage / maxMet) * chartH;
-          var yC = padT + chartH - (chartData[i].ca / maxCA) * chartH;
-          metrageDots.push(h("circle", { key: "md" + i, cx: x, cy: yM, r: 5, fill: "#d97706", stroke: "white", strokeWidth: 2 }));
-          caDots.push(h("circle", { key: "cd" + i, cx: x, cy: yC, r: 5, fill: "#2563eb", stroke: "white", strokeWidth: 2 }));
-        }
+        // Total du mois
+        var totalMoisMet = chartData.reduce(function(s, p) { return s + p.metrage; }, 0);
+        var totalMoisCA = chartData.reduce(function(s, p) { return s + p.ca; }, 0);
 
         return h("div", { style: { background: "white", borderRadius: 12, padding: 20, border: "1px solid #e5e7eb", boxShadow: "0 1px 3px rgba(0,0,0,0.1)", marginBottom: 24 } },
           h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 } },
-            h("h3", { style: { fontSize: 15, fontWeight: 700, margin: 0, color: "#374151" } }, h(IconText, { icon: "trending-up", size: 16 }, "Progression globale")),
-            h("div", { style: { display: "flex", gap: 16 } },
-              h("div", { style: { display: "flex", alignItems: "center", gap: 6 } },
-                h("div", { style: { width: 12, height: 3, background: "#d97706", borderRadius: 2 } }),
-                h("span", { style: { fontSize: 11, fontWeight: 600, color: "#d97706" } }, "Metrage (m)")
-              ),
-              h("div", { style: { display: "flex", alignItems: "center", gap: 6 } },
-                h("div", { style: { width: 12, height: 3, background: "#2563eb", borderRadius: 2 } }),
-                h("span", { style: { fontSize: 11, fontWeight: 600, color: "#2563eb" } }, "CA (XPF)")
-              )
+            h("h3", { style: { fontSize: 15, fontWeight: 700, margin: 0, color: "#374151" } }, h(IconText, { icon: "bar-chart-3", size: 16 }, "Progression globale - " + currentMonth.toLocaleDateString("fr-FR", { month: "long", year: "numeric" }))),
+            h("div", { style: { display: "flex", gap: 16, fontSize: 12, fontWeight: 600 } },
+              h("span", { style: { color: "#7c3aed" } }, "Total : " + fmtNum(totalMoisMet) + " m"),
+              h("span", { style: { color: "#2563eb" } }, "CA : " + fmtNum(totalMoisCA) + " XPF")
             )
           ),
           h("div", { style: { overflowX: "auto" } },
             h("svg", { viewBox: "0 0 " + W + " " + H, style: { width: "100%", maxHeight: 320 } },
               gridLines,
-              h("path", { d: metrageArea, fill: "#d97706", opacity: 0.08 }),
-              h("path", { d: caArea, fill: "#2563eb", opacity: 0.08 }),
-              h("polyline", { points: metrageLine, fill: "none", stroke: "#d97706", strokeWidth: 2.5, strokeLinejoin: "round" }),
-              h("polyline", { points: caLine, fill: "none", stroke: "#2563eb", strokeWidth: 2.5, strokeLinejoin: "round" }),
-              metrageDots,
-              caDots,
-              yLabelsM,
-              yLabelsCA,
+              bars,
+              yLabels,
               xLabels,
-              h("line", { x1: padL, x2: padL, y1: padT, y2: padT + chartH, stroke: "#e5e7eb", strokeWidth: 1 }),
-              h("line", { x1: padL, x2: W - padR, y1: padT + chartH, y2: padT + chartH, stroke: "#e5e7eb", strokeWidth: 1 })
+              h("line", { x1: padL, x2: padL, y1: padT, y2: padT + chartHt, stroke: "#e5e7eb", strokeWidth: 1 }),
+              h("line", { x1: padL, x2: W - padR, y1: padT + chartHt, y2: padT + chartHt, stroke: "#e5e7eb", strokeWidth: 1 })
             )
           )
         );
