@@ -243,12 +243,13 @@
       return { personnel_id: a.personnelId, chantier_id: a.chantierId, date_affectation: a.dateAffectation };
     }
     function palierFromDb(r) {
-      return { id: r.id, site: r.site, seuilMh: parseFloat(r.seuil_mh), coefficient: parseInt(r.coefficient), objectifMh: parseFloat(r.objectif_mh) };
+      return { id: r.id, site: r.site || "", seuilMh: parseFloat(r.seuil_mh) || 0, coefficient: parseInt(r.coefficient) || 0, objectifMh: parseFloat(r.objectif_mh) || 0 };
     }
 
     // ─── Lookup coefficient from paliers ────────────────────────────────
-    function lookupCoefficient(paliers, site, mhRealise) {
-      var sitePaliers = paliers.filter(function(p) { return p.site === site; });
+    function lookupCoefficient(pals, site, mhRealise) {
+      if (!pals || !pals.length) return 0;
+      var sitePaliers = pals.filter(function(p) { return p.site === site; });
       if (sitePaliers.length === 0) return 0;
       sitePaliers.sort(function(a, b) { return a.seuilMh - b.seuilMh; });
       var coef = 0;
@@ -259,14 +260,16 @@
       }
       return coef;
     }
-    function getObjectifForSite(paliers, site) {
-      var sitePaliers = paliers.filter(function(p) { return p.site === site; });
+    function getObjectifForSite(pals, site) {
+      if (!pals || !pals.length) return 0;
+      var sitePaliers = pals.filter(function(p) { return p.site === site; });
       if (sitePaliers.length === 0) return 0;
-      return sitePaliers[0].objectifMh;
+      return sitePaliers[0].objectifMh || 0;
     }
-    function getAvailableSites(paliers) {
+    function getAvailableSites(pals) {
+      if (!pals || !pals.length) return [];
       var sites = [];
-      paliers.forEach(function(p) {
+      pals.forEach(function(p) {
         if (sites.indexOf(p.site) < 0) sites.push(p.site);
       });
       return sites;
@@ -2822,6 +2825,7 @@
       var daysInMonth = getDaysInMonth(currentMonth);
       var year = currentMonth.getFullYear();
       var monthIdx = currentMonth.getMonth();
+      var paliers = ctxAv.dbPaliers || [];
 
       function getRealise(chId) {
         if (!saisies[chId]) return 0;
@@ -2863,21 +2867,24 @@
         }
         return count;
       }
-      var paliers = ctxAv.dbPaliers;
       function getMhRealise(ch) {
-        var realise = getRealise(ch.id);
-        var jours = getJoursTravailles(ch.id);
-        if (jours === 0) return 0;
-        return realise / (jours * 9);
+        try {
+          var realise = getRealise(ch.id);
+          var jours = getJoursTravailles(ch.id);
+          if (jours === 0) return 0;
+          return realise / (jours * 9);
+        } catch(e) { console.error("getMhRealise error:", e); return 0; }
       }
       function calcPrime(ch) {
-        if (!ch.site) return 0;
-        var mhR = getMhRealise(ch);
-        var mhObj = getObjectifForSite(paliers, ch.site);
-        var coef = lookupCoefficient(paliers, ch.site, mhR);
-        var diff = mhR - mhObj;
-        if (diff <= 0 || coef === 0) return 0;
-        return diff * coef;
+        try {
+          if (!ch || !ch.site) return 0;
+          var mhR = getMhRealise(ch);
+          var mhObj = getObjectifForSite(paliers, ch.site);
+          var coef = lookupCoefficient(paliers, ch.site, mhR);
+          var diff = mhR - mhObj;
+          if (diff <= 0 || coef === 0) return 0;
+          return diff * coef;
+        } catch(e) { console.error("calcPrime error:", e); return 0; }
       }
 
       var dayLetters = ["D", "L", "M", "M", "J", "V", "S"];
@@ -3149,7 +3156,7 @@
                       h("div", { style: { fontWeight: 700, fontSize: 14, color: caRealise >= (chantier.depensesPrevues || 0) ? "#059669" : "#dc2626" } }, fmtMoney(caRealise - (chantier.depensesPrevues || 0)))
                     ),
                     h("div", { style: { background: "#fef2f2", padding: 10, borderRadius: 6, border: "1px solid #fecaca" } },
-                      h("div", { style: { color: "#991b1b", marginBottom: 4, fontSize: 11, fontWeight: 600 } }, "Prime (" + getMhRealise(chantier).toFixed(1) + " m/h)"),
+                      h("div", { style: { color: "#991b1b", marginBottom: 4, fontSize: 11, fontWeight: 600 } }, "Prime (" + (getMhRealise(chantier) || 0).toFixed(1) + " m/h)"),
                       h("div", { style: { fontWeight: 700, fontSize: 14, color: "#dc2626" } }, fmtNum(Math.round(calcPrime(chantier))) + " XPF")
                     )
                   ),
@@ -3872,7 +3879,7 @@
       const loadAll = useCallback(async () => {
         setDataLoading(true);
         try {
-          const [eqRes, pcRes, plRes, inRes, rlRes, peRes, paRes, chRes, saRes, dcRes, rnRes, auRes, afRes, ppRes] = await Promise.all([
+          const [eqRes, pcRes, plRes, inRes, rlRes, peRes, paRes, chRes, saRes, dcRes, rnRes, auRes] = await Promise.all([
             supabase.from("equipements").select("*").order("immatriculation"),
             supabase.from("pieces").select("*").order("reference"),
             supabase.from("plans").select("*").order("nom"),
@@ -3885,9 +3892,18 @@
             supabase.from("declarations").select("*").order("date_echeance"),
             supabase.from("renouvellements").select("*").order("date_expiration"),
             supabase.from("app_users").select("*").order("nom"),
-            supabase.from("affectations").select("*"),
-            supabase.from("paliers_primes").select("*").order("site").order("seuil_mh"),
           ]);
+          // Nouvelles tables (chargement separe pour eviter un crash si migration pas faite)
+          var afRes = { data: [], error: null };
+          var ppRes = { data: [], error: null };
+          try {
+            var results = await Promise.all([
+              supabase.from("affectations").select("*"),
+              supabase.from("paliers_primes").select("*").order("site").order("seuil_mh"),
+            ]);
+            afRes = results[0];
+            ppRes = results[1];
+          } catch(e) { console.error("Tables planning/primes non disponibles:", e.message); }
           if (eqRes.error) throw eqRes.error;
           if (pcRes.error) throw pcRes.error;
           if (plRes.error) throw plRes.error;
