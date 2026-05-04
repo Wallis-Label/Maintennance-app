@@ -3208,13 +3208,21 @@
     function EcranPlanningEmployes() {
       var ctx = useAppData();
       var chantiers = ctx.dbChantiers;
-      var affectations = ctx.dbAffectations;
+      var affectations = ctx.dbAffectations || [];
       var setAffectations = ctx.setDbAffectations;
       var parametres = ctx.parametres;
       var personnel = loadPersonnelFromParametres(parametres);
 
       var _cm = useState(new Date());
       var currentMonth = _cm[0]; var setCurrentMonth = _cm[1];
+      // Selected chantier brush for painting
+      var _brush = useState(null);
+      var brush = _brush[0]; var setBrush = _brush[1];
+      // Mouse down state for drag-painting
+      var _painting = useState(false);
+      var painting = _painting[0]; var setPainting = _painting[1];
+
+      var CHANTIER_COLORS = ["#7c3aed", "#059669", "#d97706", "#dc2626", "#2563eb", "#db2777", "#0891b2", "#65a30d"];
 
       function addMonthsPe(d, n) {
         var copy = new Date(d);
@@ -3235,94 +3243,173 @@
 
       var activeChantiers = chantiers.filter(function(c) { return c.statut === "En cours"; });
 
-      // Build affectation map: { "personnelId-date" : chantierId }
+      function getChantierColor(chId) {
+        var idx = activeChantiers.findIndex(function(ch) { return ch.id === chId; });
+        return idx >= 0 ? CHANTIER_COLORS[idx % CHANTIER_COLORS.length] : "#94a3b8";
+      }
+      function getChantierInitial(chId) {
+        var ch = activeChantiers.find(function(c) { return c.id === chId; });
+        return ch ? ch.titre.charAt(0).toUpperCase() : "";
+      }
+
+      // Build affectation map
       var affMap = {};
       affectations.forEach(function(a) {
         affMap[a.personnelId + "-" + a.dateAffectation] = a.chantierId;
       });
-
       function getAffectation(empId, dateStr) {
         return affMap[empId + "-" + dateStr] || "";
       }
 
       function setAffectation(empId, dateStr, chantierId) {
-        var key = empId + "-" + dateStr;
         var existing = affectations.find(function(a) { return a.personnelId === empId && a.dateAffectation === dateStr; });
         if (chantierId === "" || chantierId === null) {
-          // Remove
           if (existing) {
             supabase.from("affectations").delete().eq("id", existing.id).then(function(res) {
-              if (res.error) { alert("Erreur suppression affectation: " + res.error.message); return; }
+              if (res.error) { alert("Erreur: " + res.error.message); return; }
               setAffectations(affectations.filter(function(a) { return a.id !== existing.id; }));
             });
           }
         } else {
           var chId = parseInt(chantierId);
           if (existing) {
+            if (existing.chantierId === chId) return; // Already same
             supabase.from("affectations").update({ chantier_id: chId }).eq("id", existing.id).select().single().then(function(res) {
-              if (res.error) { alert("Erreur maj affectation: " + res.error.message); return; }
+              if (res.error) { alert("Erreur: " + res.error.message); return; }
               setAffectations(affectations.map(function(a) { return a.id === existing.id ? affectationFromDb(res.data) : a; }));
             });
           } else {
-            var dbData = { personnel_id: empId, chantier_id: chId, date_affectation: dateStr };
-            supabase.from("affectations").insert(dbData).select().single().then(function(res) {
-              if (res.error) { alert("Erreur ajout affectation: " + res.error.message); return; }
+            supabase.from("affectations").insert({ personnel_id: empId, chantier_id: chId, date_affectation: dateStr }).select().single().then(function(res) {
+              if (res.error) { alert("Erreur: " + res.error.message); return; }
               setAffectations(affectations.concat(affectationFromDb(res.data)));
             });
           }
         }
       }
 
-      var tdStyle = { padding: "4px 2px", borderBottom: "1px solid #e5e7eb", fontSize: 11, textAlign: "center", verticalAlign: "middle" };
-      var thStyle = Object.assign({}, tdStyle, { fontWeight: 700, background: "#f8fafc", position: "sticky", top: 0, zIndex: 2 });
+      function handleCellClick(empId, dateStr) {
+        if (brush === "eraser") {
+          setAffectation(empId, dateStr, "");
+        } else if (brush) {
+          setAffectation(empId, dateStr, brush);
+        }
+      }
+      function handleCellEnter(empId, dateStr) {
+        if (painting && brush) {
+          if (brush === "eraser") {
+            setAffectation(empId, dateStr, "");
+          } else {
+            setAffectation(empId, dateStr, brush);
+          }
+        }
+      }
 
-      return h("div", null,
+      // Stats
+      var totalAffectations = affectations.filter(function(a) {
+        var d = new Date(a.dateAffectation);
+        return d.getFullYear() === year && d.getMonth() === monthIdx;
+      }).length;
+
+      return h("div", {
+        onMouseUp: function() { setPainting(false); },
+        onMouseLeave: function() { setPainting(false); },
+        style: { userSelect: "none" }
+      },
         h(PageHeader, {
           title: h(IconText, { icon: "users", size: 20 }, "Planning Employes"),
-          subtitle: "Affectation journaliere des employes aux chantiers"
+          subtitle: "Selectionnez un chantier puis peignez le calendrier"
         }),
-        // Month navigation
-        h("div", { style: { marginBottom: 16, display: "flex", gap: 12, alignItems: "center" } },
-          h("button", { onClick: function() { setCurrentMonth(addMonthsPe(currentMonth, -1)); }, style: { background: "#7c3aed", color: "white", border: "none", padding: "8px 12px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 600 } }, h(Icon, { name: "chevron-left", size: 14, color: "white" })),
-          h("div", { style: { fontSize: 14, fontWeight: 600, minWidth: 120, textAlign: "center" } }, currentMonth.toLocaleDateString("fr-FR", { month: "long", year: "numeric" })),
-          h("button", { onClick: function() { setCurrentMonth(addMonthsPe(currentMonth, 1)); }, style: { background: "#7c3aed", color: "white", border: "none", padding: "8px 12px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 600 } }, h(Icon, { name: "chevron-right", size: 14, color: "white" }))
+        // KPIs
+        h("div", { style: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 24 } },
+          h(KPICard, { icon: h(Icon, { name: "users", size: 32, color: "#7c3aed" }), label: "Employes", value: String(personnel.length), color: "#7c3aed" }),
+          h(KPICard, { icon: h(Icon, { name: "briefcase", size: 32, color: "#059669" }), label: "Chantiers actifs", value: String(activeChantiers.length), color: "#059669" }),
+          h(KPICard, { icon: h(Icon, { name: "calendar-check", size: 32, color: "#d97706" }), label: "Affectations ce mois", value: String(totalAffectations), color: "#d97706" })
         ),
-        // Legend
-        activeChantiers.length > 0 ? h("div", { style: { display: "flex", gap: 12, marginBottom: 12, flexWrap: "wrap" } },
-          activeChantiers.map(function(ch, idx) {
-            var colors = ["#7c3aed", "#059669", "#d97706", "#dc2626", "#2563eb", "#db2777", "#0891b2", "#65a30d"];
-            var bg = colors[idx % colors.length];
-            return h("div", { key: ch.id, style: { display: "flex", alignItems: "center", gap: 6, fontSize: 12 } },
-              h("div", { style: { width: 12, height: 12, borderRadius: 3, background: bg } }),
-              h("span", { style: { fontWeight: 600 } }, ch.titre)
-            );
-          })
-        ) : null,
-        // Table
-        personnel.length === 0 ? h("div", { style: { padding: 40, textAlign: "center", color: "#94a3b8" } }, "Aucun employe dans Personnel") :
-        activeChantiers.length === 0 ? h("div", { style: { padding: 40, textAlign: "center", color: "#94a3b8" } }, "Aucun chantier en cours") :
-        h("div", { style: { background: "white", borderRadius: 8, border: "1px solid var(--border)", overflowX: "auto" } },
-          h("table", { style: { width: "100%", borderCollapse: "collapse", minWidth: daysInMonth * 40 + 180 } },
+        // Brush selector (chantier palette)
+        h("div", { style: { background: "white", borderRadius: 12, border: "1px solid var(--border)", padding: 16, marginBottom: 16, boxShadow: "var(--shadow-sm)" } },
+          h("div", { style: { fontSize: 12, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 } }, "Outil de peinture"),
+          h("div", { style: { display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" } },
+            activeChantiers.map(function(ch, idx) {
+              var color = CHANTIER_COLORS[idx % CHANTIER_COLORS.length];
+              var isActive = brush === ch.id;
+              return h("button", {
+                key: ch.id,
+                onClick: function() { setBrush(isActive ? null : ch.id); },
+                style: {
+                  display: "flex", alignItems: "center", gap: 8, padding: "8px 14px",
+                  border: isActive ? "2px solid " + color : "1px solid #e2e8f0",
+                  borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 600,
+                  background: isActive ? color + "15" : "white",
+                  color: isActive ? color : "#374151",
+                  boxShadow: isActive ? "0 0 0 3px " + color + "30" : "none",
+                  transition: "all 0.15s"
+                }
+              },
+                h("div", { style: { width: 16, height: 16, borderRadius: 4, background: color, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, color: "white" } }, ch.titre.charAt(0)),
+                ch.titre
+              );
+            }),
+            h("button", {
+              onClick: function() { setBrush(brush === "eraser" ? null : "eraser"); },
+              style: {
+                display: "flex", alignItems: "center", gap: 6, padding: "8px 14px",
+                border: brush === "eraser" ? "2px solid #dc2626" : "1px solid #e2e8f0",
+                borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 600,
+                background: brush === "eraser" ? "#fef2f2" : "white",
+                color: brush === "eraser" ? "#dc2626" : "#64748b",
+                boxShadow: brush === "eraser" ? "0 0 0 3px #dc262630" : "none",
+                transition: "all 0.15s"
+              }
+            },
+              h(Icon, { name: "eraser", size: 14, color: brush === "eraser" ? "#dc2626" : "#64748b" }),
+              "Effacer"
+            ),
+            brush ? h("div", { style: { marginLeft: 8, fontSize: 12, color: "#64748b", fontStyle: "italic" } },
+              brush === "eraser" ? "Cliquez ou glissez pour effacer" : "Cliquez ou glissez pour peindre"
+            ) : h("div", { style: { marginLeft: 8, fontSize: 12, color: "#94a3b8", fontStyle: "italic" } }, "Selectionnez un chantier ci-dessus")
+          )
+        ),
+        // Month navigation
+        h("div", { style: { marginBottom: 12, display: "flex", gap: 12, alignItems: "center", justifyContent: "center" } },
+          h("button", { onClick: function() { setCurrentMonth(addMonthsPe(currentMonth, -1)); }, style: { background: "#7c3aed", color: "white", border: "none", padding: "8px 14px", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 } }, h(Icon, { name: "chevron-left", size: 14, color: "white" })),
+          h("div", { style: { fontSize: 16, fontWeight: 700, minWidth: 180, textAlign: "center", textTransform: "capitalize" } }, currentMonth.toLocaleDateString("fr-FR", { month: "long", year: "numeric" })),
+          h("button", { onClick: function() { setCurrentMonth(addMonthsPe(currentMonth, 1)); }, style: { background: "#7c3aed", color: "white", border: "none", padding: "8px 14px", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 } }, h(Icon, { name: "chevron-right", size: 14, color: "white" }))
+        ),
+        // Grid
+        personnel.length === 0 ? h("div", { style: { padding: 40, textAlign: "center", color: "#94a3b8", background: "white", borderRadius: 12, border: "1px solid var(--border)" } }, "Aucun employe dans Personnel") :
+        activeChantiers.length === 0 ? h("div", { style: { padding: 40, textAlign: "center", color: "#94a3b8", background: "white", borderRadius: 12, border: "1px solid var(--border)" } }, "Aucun chantier en cours") :
+        h("div", { style: { background: "white", borderRadius: 12, border: "1px solid var(--border)", overflowX: "auto", boxShadow: "var(--shadow)" } },
+          h("table", { style: { width: "100%", borderCollapse: "collapse", minWidth: daysInMonth * 38 + 180 } },
             h("thead", null,
               h("tr", null,
-                h("th", { style: Object.assign({}, thStyle, { minWidth: 160, textAlign: "left", paddingLeft: 12, position: "sticky", left: 0, background: "#f8fafc", zIndex: 3 }) }, "Employe"),
+                h("th", { style: { padding: "10px 12px", fontWeight: 700, fontSize: 12, color: "#374151", background: "#f8fafc", textAlign: "left", borderBottom: "2px solid #e2e8f0", position: "sticky", left: 0, zIndex: 3, minWidth: 160 } }, "Employe"),
                 Array.apply(null, Array(daysInMonth)).map(function(_, i) {
                   var d = i + 1;
                   var dateObj = new Date(year, monthIdx, d);
                   var isWeekend = dateObj.getDay() === 0 || dateObj.getDay() === 6;
                   var isToday = dateObj.toDateString() === new Date().toDateString();
-                  return h("th", { key: d, style: Object.assign({}, thStyle, { minWidth: 36, background: isToday ? "#ede9fe" : isWeekend ? "#f1f5f9" : "#f8fafc" }) },
-                    h("div", { style: { fontSize: 9, color: "#94a3b8" } }, dayLetters[dateObj.getDay()]),
+                  return h("th", { key: d, style: {
+                    padding: "6px 0", minWidth: 34, textAlign: "center", fontSize: 10,
+                    borderBottom: "2px solid #e2e8f0", fontWeight: isToday ? 800 : 600,
+                    background: isToday ? "#ede9fe" : isWeekend ? "#f1f5f9" : "#f8fafc",
+                    color: isToday ? "#7c3aed" : isWeekend ? "#94a3b8" : "#64748b"
+                  } },
+                    h("div", { style: { fontSize: 9, marginBottom: 1 } }, dayLetters[dateObj.getDay()]),
                     h("div", null, d)
                   );
                 })
               )
             ),
             h("tbody", null,
-              personnel.map(function(emp) {
-                return h("tr", { key: emp.id },
-                  h("td", { style: Object.assign({}, tdStyle, { textAlign: "left", paddingLeft: 12, fontWeight: 600, fontSize: 12, whiteSpace: "nowrap", position: "sticky", left: 0, background: "white", zIndex: 1 }) },
-                    (emp.prenom || "") + " " + (emp.nom || "")
+              personnel.map(function(emp, empIdx) {
+                return h("tr", { key: emp.id, style: { background: empIdx % 2 === 0 ? "white" : "#fafbfc" } },
+                  h("td", { style: { padding: "8px 12px", fontWeight: 600, fontSize: 12, whiteSpace: "nowrap", borderBottom: "1px solid #f1f5f9", position: "sticky", left: 0, background: empIdx % 2 === 0 ? "white" : "#fafbfc", zIndex: 1, borderRight: "1px solid #e2e8f0" } },
+                    h("div", { style: { display: "flex", alignItems: "center", gap: 8 } },
+                      h("div", { style: { width: 28, height: 28, borderRadius: "50%", background: "#7c3aed", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, flexShrink: 0 } },
+                        (emp.prenom ? emp.prenom.charAt(0) : "") + (emp.nom ? emp.nom.charAt(0) : "")
+                      ),
+                      (emp.prenom || "") + " " + (emp.nom || "")
+                    )
                   ),
                   Array.apply(null, Array(daysInMonth)).map(function(_, i) {
                     var d = i + 1;
@@ -3330,23 +3417,31 @@
                     var dateObj = new Date(year, monthIdx, d);
                     var isWeekend = dateObj.getDay() === 0 || dateObj.getDay() === 6;
                     var currentVal = getAffectation(emp.id, dateStr);
-                    var colors = ["#7c3aed", "#059669", "#d97706", "#dc2626", "#2563eb", "#db2777", "#0891b2", "#65a30d"];
-                    var bgColor = "transparent";
-                    if (currentVal) {
-                      var chIdx = activeChantiers.findIndex(function(ch) { return ch.id === currentVal; });
-                      if (chIdx >= 0) bgColor = colors[chIdx % colors.length] + "22";
-                    }
-                    return h("td", { key: d, style: Object.assign({}, tdStyle, { padding: 1, background: isWeekend ? "#f9fafb" : bgColor }) },
-                      h("select", {
-                        value: currentVal || "",
-                        onChange: function(e) { setAffectation(emp.id, dateStr, e.target.value); },
-                        style: { width: "100%", border: "none", background: "transparent", fontSize: 10, padding: 2, cursor: "pointer", textAlign: "center", outline: "none" }
+                    var cellColor = currentVal ? getChantierColor(currentVal) : null;
+                    var initial = currentVal ? getChantierInitial(currentVal) : "";
+
+                    return h("td", {
+                      key: d,
+                      onMouseDown: function(e) {
+                        e.preventDefault();
+                        if (brush) { setPainting(true); handleCellClick(emp.id, dateStr); }
                       },
-                        h("option", { value: "" }, "-"),
-                        activeChantiers.map(function(ch, idx) {
-                          return h("option", { key: ch.id, value: ch.id }, ch.titre.substring(0, 8));
-                        })
-                      )
+                      onMouseEnter: function() { handleCellEnter(emp.id, dateStr); },
+                      style: {
+                        padding: 2, borderBottom: "1px solid #f1f5f9", textAlign: "center",
+                        cursor: brush ? "pointer" : "default",
+                        background: isWeekend ? "#f5f5f5" : "transparent"
+                      }
+                    },
+                      h("div", { style: {
+                        width: 30, height: 28, borderRadius: 5, margin: "0 auto",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        fontSize: 11, fontWeight: 700, color: "white",
+                        background: cellColor || (isWeekend ? "#e2e8f0" : "#f1f5f9"),
+                        transition: "all 0.1s",
+                        opacity: cellColor ? 1 : 0.5,
+                        boxShadow: cellColor ? "0 1px 3px " + cellColor + "40" : "none"
+                      } }, cellColor ? initial : "")
                     );
                   })
                 );
@@ -3362,13 +3457,15 @@
       var ctx = useAppData();
       var chantiers = ctx.dbChantiers;
       var saisies = ctx.dbSaisies;
-      var affectations = ctx.dbAffectations;
-      var paliers = ctx.dbPaliers;
+      var affectations = ctx.dbAffectations || [];
+      var paliers = ctx.dbPaliers || [];
       var parametres = ctx.parametres;
       var personnel = loadPersonnelFromParametres(parametres);
 
       var _selectedSite = useState("");
       var selectedSite = _selectedSite[0]; var setSelectedSite = _selectedSite[1];
+      var _showGrille = useState(false);
+      var showGrille = _showGrille[0]; var setShowGrille = _showGrille[1];
 
       var sites = getAvailableSites(paliers);
       var activeChantiers = chantiers.filter(function(c) { return c.statut === "En cours" || c.statut === "Termine"; });
@@ -3381,74 +3478,113 @@
         chantiersBySite[ch.site].push(ch);
       });
 
-      // Calculate prime per employee per site
-      function calcPrimesForSite(site) {
+      // ── Periode 25 au 25 ──
+      // Pour un mois M donne, la periode va du 25/(M-1) au 24/M
+      function getPeriodBounds(year, month) {
+        // month is 0-indexed (0=jan)
+        var startDate, endDate;
+        if (month === 0) {
+          startDate = new Date(year - 1, 11, 25); // 25 dec annee precedente
+        } else {
+          startDate = new Date(year, month - 1, 25);
+        }
+        endDate = new Date(year, month, 24);
+        return { start: startDate, end: endDate };
+      }
+      function formatISODate(d) {
+        var y = d.getFullYear();
+        var m = d.getMonth() + 1;
+        var day = d.getDate();
+        return y + "-" + (m < 10 ? "0" : "") + m + "-" + (day < 10 ? "0" : "") + day;
+      }
+      function isDateInPeriod(dateStr, start, end) {
+        var d = new Date(dateStr + "T00:00:00");
+        return d >= start && d <= end;
+      }
+
+      // Current period: current month
+      var now = new Date();
+      var currentPeriod = getPeriodBounds(now.getFullYear(), now.getMonth());
+      var periodLabel = "du 25/" + (now.getMonth() === 0 ? "12/" + (now.getFullYear() - 1) : (now.getMonth() < 10 ? "0" : "") + now.getMonth() + "/" + now.getFullYear()) + " au 24/" + (now.getMonth() + 1 < 10 ? "0" : "") + (now.getMonth() + 1) + "/" + now.getFullYear();
+
+      // Calculate prime for a site in a given period
+      function calcPrimesForSitePeriod(site, period) {
         var siteCh = chantiersBySite[site] || [];
         if (siteCh.length === 0) return [];
-
         var results = [];
         personnel.forEach(function(emp) {
           var totalPrime = 0;
           var details = [];
-
           siteCh.forEach(function(ch) {
-            // Count days this employee was assigned to this chantier
-            var empAff = affectations.filter(function(a) { return a.personnelId === emp.id && a.chantierId === ch.id; });
+            // Affectations in period
+            var empAff = affectations.filter(function(a) {
+              return a.personnelId === emp.id && a.chantierId === ch.id && isDateInPeriod(a.dateAffectation, period.start, period.end);
+            });
             var joursEmp = empAff.length;
             if (joursEmp === 0) return;
-
-            // Get total metrage and total days for this chantier
+            // Metrage in period
             var totalMetrage = 0;
             var totalJours = 0;
             if (saisies[ch.id]) {
               var keys = Object.keys(saisies[ch.id]);
               for (var i = 0; i < keys.length; i++) {
-                if (saisies[ch.id][keys[i]] > 0) {
+                if (isDateInPeriod(keys[i], period.start, period.end) && saisies[ch.id][keys[i]] > 0) {
                   totalMetrage += saisies[ch.id][keys[i]];
                   totalJours++;
                 }
               }
             }
-
             if (totalJours === 0) return;
-
-            // m/h realise = total_metrage / (total_jours * 9)
             var mhRealise = totalMetrage / (totalJours * 9);
             var objectif = getObjectifForSite(paliers, site);
             var coef = lookupCoefficient(paliers, site, mhRealise);
             var diff = mhRealise - objectif;
-            var primeChantier = 0;
-            if (diff > 0 && coef > 0) {
-              primeChantier = diff * coef;
-            }
-
+            var primeChantier = diff > 0 && coef > 0 ? diff * coef : 0;
             totalPrime += primeChantier;
-            details.push({
-              chantier: ch.titre,
-              jours: joursEmp,
-              mhRealise: mhRealise,
-              objectif: objectif,
-              coef: coef,
-              prime: primeChantier
-            });
+            details.push({ chantier: ch.titre, jours: joursEmp, mhRealise: mhRealise, objectif: objectif, coef: coef, prime: primeChantier });
           });
-
           if (details.length > 0) {
-            results.push({
-              employe: (emp.prenom || "") + " " + (emp.nom || ""),
-              employeId: emp.id,
-              totalPrime: totalPrime,
-              details: details
-            });
+            results.push({ employe: (emp.prenom || "") + " " + (emp.nom || ""), employeId: emp.id, totalPrime: totalPrime, details: details });
           }
         });
-
         return results;
       }
 
       var displaySite = selectedSite || (sites.length > 0 ? sites[0] : "");
-      var primeData = displaySite ? calcPrimesForSite(displaySite) : [];
+      var primeData = displaySite ? calcPrimesForSitePeriod(displaySite, currentPeriod) : [];
       var totalPrimeSite = primeData.reduce(function(s, r) { return s + r.totalPrime; }, 0);
+
+      // ── Recap all sites for current period ──
+      var recapByEmployee = {};
+      sites.forEach(function(site) {
+        var data = calcPrimesForSitePeriod(site, currentPeriod);
+        data.forEach(function(row) {
+          if (!recapByEmployee[row.employeId]) {
+            recapByEmployee[row.employeId] = { employe: row.employe, totalPrime: 0, sites: {} };
+          }
+          recapByEmployee[row.employeId].totalPrime += row.totalPrime;
+          recapByEmployee[row.employeId].sites[site] = row.totalPrime;
+        });
+      });
+      var recapList = Object.keys(recapByEmployee).map(function(k) { return recapByEmployee[k]; });
+      recapList.sort(function(a, b) { return b.totalPrime - a.totalPrime; });
+      var grandTotal = recapList.reduce(function(s, r) { return s + r.totalPrime; }, 0);
+      var avgPrime = recapList.length > 0 ? grandTotal / recapList.length : 0;
+
+      // ── Courbe 12 derniers mois ──
+      var chartData = [];
+      for (var mi = 11; mi >= 0; mi--) {
+        var chartDate = new Date(now.getFullYear(), now.getMonth() - mi, 1);
+        var per = getPeriodBounds(chartDate.getFullYear(), chartDate.getMonth());
+        var monthTotal = 0;
+        sites.forEach(function(site) {
+          var data = calcPrimesForSitePeriod(site, per);
+          data.forEach(function(row) { monthTotal += row.totalPrime; });
+        });
+        var monthName = chartDate.toLocaleDateString("fr-FR", { month: "short" });
+        chartData.push({ label: monthName, value: Math.round(monthTotal) });
+      }
+      var chartMax = Math.max.apply(null, chartData.map(function(d) { return d.value; }).concat([1]));
 
       var thStyle = { padding: "10px 12px", textAlign: "left", fontWeight: 700, fontSize: 12, color: "#374151", borderBottom: "2px solid #e5e7eb", background: "#f8fafc" };
       var tdStyle = { padding: "10px 12px", borderBottom: "1px solid #f1f5f9", fontSize: 13 };
@@ -3456,69 +3592,126 @@
       return h("div", null,
         h(PageHeader, {
           title: h(IconText, { icon: "trophy", size: 20 }, "Primes de Metrage"),
-          subtitle: "Calcul automatique des primes par site et par employe"
+          subtitle: "Periode " + periodLabel
         }),
         // KPIs
-        h("div", { style: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 24 } },
-          h(KPICard, { icon: h(Icon, { name: "map-pin", size: 32, color: "#7c3aed" }), label: "Sites actifs", value: String(Object.keys(chantiersBySite).length), color: "#7c3aed" }),
-          h(KPICard, { icon: h(Icon, { name: "users", size: 32, color: "#059669" }), label: "Employes affectes", value: String(primeData.length), color: "#059669" }),
-          h(KPICard, { icon: h(Icon, { name: "trophy", size: 32, color: "#d97706" }), label: "Prime totale " + (displaySite || ""), value: fmtNum(Math.round(totalPrimeSite)) + " XPF", color: "#d97706" })
+        h("div", { style: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 24 } },
+          h(KPICard, { icon: h(Icon, { name: "wallet", size: 32, color: "#7c3aed" }), label: "Prime totale payable", value: fmtNum(Math.round(grandTotal)) + " XPF", color: "#7c3aed" }),
+          h(KPICard, { icon: h(Icon, { name: "users", size: 32, color: "#059669" }), label: "Employes primes", value: String(recapList.length), color: "#059669" }),
+          h(KPICard, { icon: h(Icon, { name: "calculator", size: 32, color: "#d97706" }), label: "Prime moyenne", value: fmtNum(Math.round(avgPrime)) + " XPF", color: "#d97706" }),
+          h(KPICard, { icon: h(Icon, { name: "map-pin", size: 32, color: "#2563eb" }), label: "Sites actifs", value: String(Object.keys(chantiersBySite).length), color: "#2563eb" })
         ),
+        // Courbe 12 mois
+        h("div", { style: { background: "white", borderRadius: 12, border: "1px solid var(--border)", padding: 20, marginBottom: 24, boxShadow: "var(--shadow-sm)" } },
+          h("div", { style: { fontSize: 14, fontWeight: 700, marginBottom: 16, color: "#374151" } }, "Evolution des primes - 12 derniers mois"),
+          h("div", { style: { display: "flex", alignItems: "flex-end", gap: 4, height: 160 } },
+            chartData.map(function(d, i) {
+              var barH = chartMax > 0 ? Math.max(4, (d.value / chartMax) * 140) : 4;
+              return h("div", { key: i, style: { flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 } },
+                d.value > 0 ? h("div", { style: { fontSize: 9, fontWeight: 600, color: "#6b7280" } }, fmtNum(d.value)) : null,
+                h("div", { style: { width: "100%", maxWidth: 40, height: barH, background: i === chartData.length - 1 ? "#7c3aed" : "#c4b5fd", borderRadius: "4px 4px 0 0", transition: "height 0.3s" } }),
+                h("div", { style: { fontSize: 10, fontWeight: 600, color: "#64748b", marginTop: 4 } }, d.label)
+              );
+            })
+          )
+        ),
+        // ── Tableau recapitulatif par employe (toutes sites) ──
+        h("div", { style: { background: "white", borderRadius: 12, border: "1px solid var(--border)", overflow: "hidden", marginBottom: 24, boxShadow: "var(--shadow-sm)" } },
+          h("div", { style: { padding: "16px 16px 0", fontSize: 14, fontWeight: 700, color: "#374151" } }, "Recapitulatif par employe - Periode courante"),
+          recapList.length === 0 ?
+            h("div", { style: { padding: 30, textAlign: "center", color: "#94a3b8", fontSize: 13 } }, "Aucune prime calculee pour cette periode") :
+            h("table", { style: { width: "100%", borderCollapse: "collapse", marginTop: 12 } },
+              h("thead", null,
+                h("tr", null,
+                  h("th", { style: thStyle }, "Employe"),
+                  sites.map(function(s) { return h("th", { key: s, style: Object.assign({}, thStyle, { textAlign: "right" }) }, s); }),
+                  h("th", { style: Object.assign({}, thStyle, { textAlign: "right", color: "#7c3aed" }) }, "Total")
+                )
+              ),
+              h("tbody", null,
+                recapList.map(function(row, ri) {
+                  return h("tr", { key: ri, style: { background: ri % 2 === 0 ? "white" : "#fafbfc" } },
+                    h("td", { style: Object.assign({}, tdStyle, { fontWeight: 600 }) }, row.employe),
+                    sites.map(function(s) {
+                      var val = row.sites[s] || 0;
+                      return h("td", { key: s, style: Object.assign({}, tdStyle, { textAlign: "right", color: val > 0 ? "#059669" : "#94a3b8" }) }, val > 0 ? fmtNum(Math.round(val)) : "-");
+                    }),
+                    h("td", { style: Object.assign({}, tdStyle, { textAlign: "right", fontWeight: 700, color: "#7c3aed" }) }, fmtNum(Math.round(row.totalPrime)) + " XPF")
+                  );
+                }),
+                h("tr", { style: { background: "#f5f3ff" } },
+                  h("td", { style: Object.assign({}, tdStyle, { fontWeight: 700, fontSize: 14, borderTop: "2px solid #7c3aed" }) }, "Total"),
+                  sites.map(function(s) {
+                    var sTotal = recapList.reduce(function(sum, r) { return sum + (r.sites[s] || 0); }, 0);
+                    return h("td", { key: s, style: Object.assign({}, tdStyle, { textAlign: "right", fontWeight: 700, borderTop: "2px solid #7c3aed" }) }, fmtNum(Math.round(sTotal)));
+                  }),
+                  h("td", { style: Object.assign({}, tdStyle, { textAlign: "right", fontWeight: 800, fontSize: 14, color: "#7c3aed", borderTop: "2px solid #7c3aed" }) }, fmtNum(Math.round(grandTotal)) + " XPF")
+                )
+              )
+            )
+        ),
+        // ── Detail par site ──
+        h("div", { style: { fontSize: 14, fontWeight: 700, color: "#374151", marginBottom: 12 } }, "Detail par site"),
         // Site tabs
         sites.length > 0 ? h("div", { style: { display: "flex", gap: 8, marginBottom: 16 } },
           sites.map(function(site) {
             var isActive = site === displaySite;
             return h("button", {
               key: site,
-              onClick: function() { setSelectedSite(site); },
+              onClick: function() { setSelectedSite(site); setShowGrille(false); },
               style: { padding: "8px 16px", border: isActive ? "2px solid #7c3aed" : "1px solid #d1d5db", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: isActive ? 700 : 500, background: isActive ? "#ede9fe" : "white", color: isActive ? "#7c3aed" : "#374151" }
             }, site);
           })
         ) : null,
-        // Table
-        !displaySite ? h("div", { style: { padding: 40, textAlign: "center", color: "#94a3b8" } }, "Aucun site configure. Ajoutez un site a vos chantiers.") :
-        primeData.length === 0 ? h("div", { style: { padding: 40, textAlign: "center", color: "#94a3b8", background: "white", borderRadius: 8, border: "1px solid var(--border)" } }, "Aucun employe affecte sur ce site. Utilisez le Planning Employes pour affecter du personnel.") :
-        h("div", { style: { background: "white", borderRadius: 8, border: "1px solid var(--border)", overflow: "hidden" } },
+        // Detail table for selected site
+        !displaySite ? h("div", { style: { padding: 40, textAlign: "center", color: "#94a3b8" } }, "Aucun site configure.") :
+        primeData.length === 0 ? h("div", { style: { padding: 30, textAlign: "center", color: "#94a3b8", background: "white", borderRadius: 8, border: "1px solid var(--border)" } }, "Aucune prime pour ce site sur cette periode.") :
+        h("div", { style: { background: "white", borderRadius: 12, border: "1px solid var(--border)", overflow: "hidden", boxShadow: "var(--shadow-sm)" } },
           h("table", { style: { width: "100%", borderCollapse: "collapse" } },
             h("thead", null,
               h("tr", null,
                 h("th", { style: thStyle }, "Employe"),
                 h("th", { style: Object.assign({}, thStyle, { textAlign: "center" }) }, "Chantier"),
                 h("th", { style: Object.assign({}, thStyle, { textAlign: "center" }) }, "Jours"),
-                h("th", { style: Object.assign({}, thStyle, { textAlign: "center" }) }, "m/h realise"),
-                h("th", { style: Object.assign({}, thStyle, { textAlign: "center" }) }, "Objectif"),
+                h("th", { style: Object.assign({}, thStyle, { textAlign: "center" }) }, "m/h"),
+                h("th", { style: Object.assign({}, thStyle, { textAlign: "center" }) }, "Obj."),
                 h("th", { style: Object.assign({}, thStyle, { textAlign: "center" }) }, "Coef"),
-                h("th", { style: Object.assign({}, thStyle, { textAlign: "right" }) }, "Prime (XPF)")
+                h("th", { style: Object.assign({}, thStyle, { textAlign: "right" }) }, "Prime")
               )
             ),
             h("tbody", null,
               primeData.map(function(row) {
                 var lines = [];
                 row.details.forEach(function(det, idx) {
-                  lines.push(h("tr", { key: row.employeId + "-" + idx, style: idx > 0 ? { borderTop: "none" } : {} },
+                  lines.push(h("tr", { key: row.employeId + "-" + idx },
                     idx === 0 ? h("td", { style: Object.assign({}, tdStyle, { fontWeight: 600, verticalAlign: "top" }), rowSpan: row.details.length }, row.employe) : null,
                     h("td", { style: Object.assign({}, tdStyle, { textAlign: "center" }) }, det.chantier),
                     h("td", { style: Object.assign({}, tdStyle, { textAlign: "center" }) }, String(det.jours)),
-                    h("td", { style: Object.assign({}, tdStyle, { textAlign: "center", fontWeight: 600, color: det.mhRealise > det.objectif ? "#059669" : "#dc2626" }) }, det.mhRealise.toFixed(2)),
-                    h("td", { style: Object.assign({}, tdStyle, { textAlign: "center", color: "#64748b" }) }, det.objectif.toFixed(2)),
+                    h("td", { style: Object.assign({}, tdStyle, { textAlign: "center", fontWeight: 600, color: det.mhRealise > det.objectif ? "#059669" : "#dc2626" }) }, (det.mhRealise || 0).toFixed(2)),
+                    h("td", { style: Object.assign({}, tdStyle, { textAlign: "center", color: "#64748b" }) }, (det.objectif || 0).toFixed(2)),
                     h("td", { style: Object.assign({}, tdStyle, { textAlign: "center" }) }, fmtNum(det.coef)),
                     h("td", { style: Object.assign({}, tdStyle, { textAlign: "right", fontWeight: 600, color: det.prime > 0 ? "#059669" : "#94a3b8" }) }, fmtNum(Math.round(det.prime)))
                   ));
                 });
                 return lines;
               }).reduce(function(acc, cur) { return acc.concat(cur); }, []),
-              // Total row
               h("tr", { style: { background: "#f0fdf4" } },
-                h("td", { colSpan: 6, style: Object.assign({}, tdStyle, { fontWeight: 700, fontSize: 14, borderTop: "2px solid #059669" }) }, "Total " + displaySite),
-                h("td", { style: Object.assign({}, tdStyle, { textAlign: "right", fontWeight: 700, fontSize: 14, color: "#059669", borderTop: "2px solid #059669" }) }, fmtNum(Math.round(totalPrimeSite)) + " XPF")
+                h("td", { colSpan: 6, style: Object.assign({}, tdStyle, { fontWeight: 700, borderTop: "2px solid #059669" }) }, "Total " + displaySite),
+                h("td", { style: Object.assign({}, tdStyle, { textAlign: "right", fontWeight: 700, color: "#059669", borderTop: "2px solid #059669" }) }, fmtNum(Math.round(totalPrimeSite)) + " XPF")
               )
             )
           )
         ),
-        // Palier reference table
-        displaySite ? h("div", { style: { marginTop: 24 } },
-          h("div", { style: { fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 8 } }, "Grille des paliers - " + displaySite),
-          h("div", { style: { background: "white", borderRadius: 8, border: "1px solid var(--border)", overflow: "hidden" } },
+        // Grille paliers (accordeon)
+        displaySite ? h("div", { style: { marginTop: 16 } },
+          h("button", {
+            onClick: function() { setShowGrille(!showGrille); },
+            style: { display: "flex", alignItems: "center", gap: 8, background: "white", border: "1px solid var(--border)", borderRadius: showGrille ? "8px 8px 0 0" : 8, padding: "10px 16px", cursor: "pointer", fontSize: 13, fontWeight: 600, color: "#374151", width: "100%", justifyContent: "space-between" }
+          },
+            h(IconText, { icon: "table", size: 14 }, "Grille des paliers - " + displaySite),
+            h(Icon, { name: showGrille ? "chevron-up" : "chevron-down", size: 16, color: "#6b7280" })
+          ),
+          showGrille ? h("div", { style: { background: "white", borderRadius: "0 0 8px 8px", border: "1px solid var(--border)", borderTop: "none", overflow: "hidden" } },
             h("table", { style: { width: "100%", borderCollapse: "collapse" } },
               h("thead", null,
                 h("tr", null,
@@ -3527,7 +3720,7 @@
                 )
               ),
               h("tbody", null,
-                paliers.filter(function(p) { return p.site === displaySite; }).sort(function(a, b) { return a.seuilMh - b.seuilMh; }).map(function(p) {
+                (paliers || []).filter(function(p) { return p.site === displaySite; }).sort(function(a, b) { return a.seuilMh - b.seuilMh; }).map(function(p) {
                   return h("tr", { key: p.id },
                     h("td", { style: tdStyle }, ">= " + p.seuilMh + " m/h"),
                     h("td", { style: Object.assign({}, tdStyle, { textAlign: "right", fontWeight: 600 }) }, fmtNum(p.coefficient))
@@ -3535,7 +3728,7 @@
                 })
               )
             )
-          )
+          ) : null
         ) : null
       );
     }
