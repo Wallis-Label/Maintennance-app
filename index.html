@@ -3228,6 +3228,43 @@
                       h("div", { style: { fontWeight: 700, fontSize: 14, color: caRealise >= (chantier.depensesPrevues || 0) ? "#059669" : "#dc2626" } }, fmtMoney(caRealise - (chantier.depensesPrevues || 0)))
                     )
                   ),
+                  (function() {
+                    // Bar chart: metrage par jour du mois
+                    var dayVals = [];
+                    var maxDayVal = 0;
+                    for (var dd = 1; dd <= daysInMonth; dd++) {
+                      var dds = year + "-" + (monthIdx + 1 < 10 ? "0" : "") + (monthIdx + 1) + "-" + (dd < 10 ? "0" : "") + dd;
+                      var v = saisies[chantier.id] && saisies[chantier.id][dds] ? getSaisieVal(saisies[chantier.id][dds]) : 0;
+                      dayVals.push(v);
+                      if (v > maxDayVal) maxDayVal = v;
+                    }
+                    if (maxDayVal === 0) return null;
+                    var barW = Math.max(Math.floor(800 / daysInMonth) - 2, 8);
+                    var chartH2 = 120;
+                    var svgW2 = daysInMonth * (barW + 2) + 40;
+                    return h("div", { style: { background: "#f9fafb", borderRadius: 8, padding: "12px 16px", marginBottom: 14, border: "1px solid #e5e7eb" } },
+                      h("div", { style: { fontSize: 12, fontWeight: 700, color: "#374151", marginBottom: 8 } }, h(IconText, { icon: "bar-chart-3", size: 14 }, "Metrage par jour - " + currentMonth.toLocaleDateString("fr-FR", { month: "long", year: "numeric" }))),
+                      h("div", { style: { overflowX: "auto" } },
+                        h("svg", { viewBox: "0 0 " + svgW2 + " " + (chartH2 + 30), style: { width: "100%", maxHeight: 160 } },
+                          dayVals.map(function(val, idx) {
+                            var barH = maxDayVal > 0 ? (val / maxDayVal) * chartH2 : 0;
+                            var x = 20 + idx * (barW + 2);
+                            var dayDate = new Date(year, monthIdx, idx + 1);
+                            var isWE2 = dayDate.getDay() === 0 || dayDate.getDay() === 6;
+                            var dds2 = year + "-" + (monthIdx + 1 < 10 ? "0" : "") + (monthIdx + 1) + "-" + ((idx + 1) < 10 ? "0" : "") + (idx + 1);
+                            var typeJ = saisies[chantier.id] && saisies[chantier.id][dds2] ? getSaisieType(saisies[chantier.id][dds2]) : "normal";
+                            var barColor = typeJ === "panne" ? "#f59e0b" : typeJ === "intemperies" ? "#3b82f6" : isWE2 ? "#c4b5fd" : "#7c3aed";
+                            return h("g", { key: "bar" + idx },
+                              h("rect", { x: x, y: chartH2 - barH, width: barW, height: Math.max(barH, 0), rx: 2, fill: barColor, opacity: val > 0 ? 1 : 0.15 }),
+                              val > 0 && barH > 14 ? h("text", { x: x + barW / 2, y: chartH2 - barH + 12, textAnchor: "middle", fontSize: 8, fill: "white", fontWeight: 700 }, val) : null,
+                              h("text", { x: x + barW / 2, y: chartH2 + 14, textAnchor: "middle", fontSize: 8, fill: isWE2 ? "#a78bfa" : "#6b7280" }, String(idx + 1))
+                            );
+                          }),
+                          h("line", { x1: 18, x2: svgW2 - 2, y1: chartH2, y2: chartH2, stroke: "#e5e7eb", strokeWidth: 1 })
+                        )
+                      )
+                    );
+                  })(),
                   h("div", { style: { marginBottom: 8, display: "flex", alignItems: "center", gap: 12 } },
                     h("div", { style: { fontSize: 13, fontWeight: 600, color: "#374151" } }, "Saisie metrage journalier (m)"),
                     h("div", { style: { display: "flex", gap: 6, alignItems: "center" } },
