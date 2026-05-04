@@ -3796,7 +3796,7 @@
       var avgPrime = recapList.length > 0 ? grandTotal / recapList.length : 0;
 
       // ── Courbe glissante (commence au mois de deploiement, grandit jusqu'a 12 mois) ──
-      var featureStartDate = new Date(2026, 4, 1); // Mai 2026 = mois de deploiement
+      var featureStartDate = new Date(2026, 3, 1); // Avril 2026 = mois de deploiement
       var monthsSinceStart = (now.getFullYear() - featureStartDate.getFullYear()) * 12 + (now.getMonth() - featureStartDate.getMonth());
       if (monthsSinceStart < 0) monthsSinceStart = 0;
       var barsCount = Math.min(monthsSinceStart + 1, 12);
@@ -3831,7 +3831,7 @@
         ),
         // Courbe 12 mois
         h("div", { style: { background: "white", borderRadius: 12, border: "1px solid var(--border)", padding: 20, marginBottom: 24, boxShadow: "var(--shadow-sm)" } },
-          h("div", { style: { fontSize: 14, fontWeight: 700, marginBottom: 16, color: "#374151" } }, "Evolution des primes" + (barsCount < 12 ? " - depuis mai 2026" : " - 12 derniers mois")),
+          h("div", { style: { fontSize: 14, fontWeight: 700, marginBottom: 16, color: "#374151" } }, "Evolution des primes" + (barsCount < 12 ? " - depuis avril 2026" : " - 12 derniers mois")),
           h("div", { style: { display: "flex", alignItems: "flex-end", gap: 4, height: 160 } },
             chartData.map(function(d, i) {
               var barH = chartMax > 0 ? Math.max(4, (d.value / chartMax) * 140) : 4;
