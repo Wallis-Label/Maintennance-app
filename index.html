@@ -243,7 +243,7 @@
       return { personnel_id: a.personnelId, chantier_id: a.chantierId, date_affectation: a.dateAffectation };
     }
     function palierFromDb(r) {
-      return { id: r.id, site: r.site || "", seuilMh: parseFloat(r.seuil_mh) || 0, coefficient: parseInt(r.coefficient) || 0, objectifMh: parseFloat(r.objectif_mh) || 0 };
+      return { id: r.id, site: r.site || "", seuilMh: parseFloat(r.seuil_mh) || 0, coefficient: parseInt(r.coefficient) || 0, objectifMh: parseFloat(r.objectif_mh) || 0, moyenneJour: parseFloat(r.moyenne_jour) || 0 };
     }
 
     // ─── Lookup coefficient from paliers ────────────────────────────────
@@ -273,6 +273,12 @@
         if (sites.indexOf(p.site) < 0) sites.push(p.site);
       });
       return sites;
+    }
+
+    function getMoyenneForSite(pals, site) {
+      if (!pals || !pals.length || !site) return 0;
+      var sitePalier = pals.find(function(p) { return p.site === site; });
+      return sitePalier ? sitePalier.moyenneJour || 0 : 0;
     }
 
     // ─── Helpers saisie (valeur peut etre un objet {valeur, typeJour} ou un nombre) ──
@@ -3647,13 +3653,10 @@
                 else if (sVal > 0) { normalDays.push({ date: keys[i], val: sVal }); }
               }
             }
-            // 2. Collecter les jours personnel de cet employe sur ce chantier
-            var empAffTypes = {};
-            empAff.forEach(function(a) { empAffTypes[a.dateAffectation] = a.typeJour || "travail"; });
-            // Moyenne basee sur les jours normaux uniquement
+            // 2. Moyenne du site (configuree dans paliers_primes)
+            var siteMoyenne = getMoyenneForSite(paliers, site);
             var normalMetrage = 0;
             for (var ni = 0; ni < normalDays.length; ni++) { normalMetrage += normalDays[ni].val; }
-            var avgDailyMetrage = normalDays.length > 0 ? normalMetrage / normalDays.length : 0;
             // 3. Panne rattrappee? auto: metrage normal >= objectif * jours normaux * 9
             var objectif = getObjectifForSite(paliers, site);
             var panneRecovered = normalDays.length > 0 && (normalMetrage / (normalDays.length * 9)) >= objectif;
@@ -3662,8 +3665,8 @@
             // 5. Construire metrage et jours ajustes
             var adjMetrage = normalMetrage;
             var adjJours = normalDays.length;
-            // Intemperies: chaque jour = moyenne
-            adjMetrage += intempDays.length * avgDailyMetrage;
+            // Intemperies: chaque jour = moyenne du site
+            adjMetrage += intempDays.length * siteMoyenne;
             adjJours += intempDays.length;
             // Pannes
             if (panneRecovered) {
@@ -3671,7 +3674,7 @@
             } else {
               // Regle 5: si pannes consecutives, 1er jour = moyenne, reste = metrage ecrit
               if (panneDays.length > 1) {
-                adjMetrage += avgDailyMetrage; // 1er jour = moyenne
+                adjMetrage += siteMoyenne; // 1er jour = moyenne du site
                 adjJours += 1;
                 for (var pi = 1; pi < panneDays.length; pi++) {
                   adjMetrage += panneDays[pi].val;
@@ -3682,22 +3685,38 @@
                 adjJours += 1;
               }
             }
-            // Jours personnel: ferie/conge/intemperies/chomage = moyenne, maladie = 0
-            empAff.forEach(function(a) {
+            // 6. Jours personnel: ferie/conge/chomage = moyenne du dernier site, maladie = 0
+            // Pour cet employe, chercher les jours personnel dans la periode
+            var empAllAff = affectations.filter(function(a) {
+              return a.personnelId === emp.id && isDateInPeriod(a.dateAffectation, period.start, period.end);
+            });
+            empAllAff.forEach(function(a) {
               var tj = a.typeJour || "travail";
+              if (tj === "travail") return; // deja compte dans normalDays via chantier
+              // Trouver le dernier site de l'employe avant cette date
+              var lastSite = "";
+              var sorted = affectations.filter(function(af) {
+                return af.personnelId === emp.id && af.chantierId && af.dateAffectation < a.dateAffectation && af.typeJour === "travail";
+              }).sort(function(x, y) { return x.dateAffectation > y.dateAffectation ? -1 : 1; });
+              if (sorted.length > 0) {
+                var lastCh = chantiers.find(function(c) { return c.id === sorted[0].chantierId; });
+                lastSite = lastCh ? lastCh.site || "" : "";
+              }
+              // Ne compter que si le dernier site correspond au site calcule
+              if (lastSite !== site) return;
+              var moy = getMoyenneForSite(paliers, lastSite);
               if (tj === "ferie" || tj === "conge" || tj === "chomage") {
-                adjMetrage += avgDailyMetrage;
+                adjMetrage += moy;
                 adjJours += 1;
               } else if (tj === "maladie") {
                 // 0 metrage mais jour compte
                 adjJours += 1;
               }
-              // travail = deja dans normalDays
             });
             // Regle 6: si pas travaille du tout ou pas atteint objectif sur rattrapage -> moyenne
             if (adjJours === 0) return;
             var mhRealise = adjMetrage / (adjJours * 9);
-            // Regle 6: si mhRealise < objectif et il y avait des pannes non recup, appliquer moyenne
+            // Regle 6: si mhRealise < objectif et il y avait des pannes non recup, appliquer moyenne du site
             if (!panneRecovered && panneDays.length > 0 && mhRealise < objectif) {
               mhRealise = normalDays.length > 0 ? normalMetrage / (normalDays.length * 9) : 0;
             }
@@ -3880,6 +3899,33 @@
             h(Icon, { name: showGrille ? "chevron-up" : "chevron-down", size: 16, color: "#6b7280" })
           ),
           showGrille ? h("div", { style: { background: "white", borderRadius: "0 0 8px 8px", border: "1px solid var(--border)", borderTop: "none", overflow: "hidden" } },
+            h("div", { style: { padding: "12px 16px", background: "#f5f3ff", borderBottom: "1px solid #e5e7eb", display: "flex", gap: 24, alignItems: "center", flexWrap: "wrap" } },
+              h("div", { style: { display: "flex", alignItems: "center", gap: 8, fontSize: 13 } },
+                h("span", { style: { fontWeight: 600, color: "#374151" } }, "Objectif :"),
+                h("span", { style: { fontWeight: 700, color: "#7c3aed" } }, getObjectifForSite(paliers, displaySite) + " m/h")
+              ),
+              h("div", { style: { display: "flex", alignItems: "center", gap: 8, fontSize: 13 } },
+                h("span", { style: { fontWeight: 600, color: "#374151" } }, "Moyenne jour :"),
+                h("input", {
+                  type: "number",
+                  value: getMoyenneForSite(paliers, displaySite),
+                  onChange: function(e) {
+                    var newVal = parseFloat(e.target.value) || 0;
+                    // Update all paliers rows for this site
+                    var siteIds = (paliers || []).filter(function(p) { return p.site === displaySite; }).map(function(p) { return p.id; });
+                    if (siteIds.length === 0) return;
+                    supabase.from("paliers_primes").update({ moyenne_jour: newVal }).in("id", siteIds).then(function(res) {
+                      if (res.error) { alert("Erreur: " + res.error.message); return; }
+                      ctx.setDbPaliers(paliers.map(function(p) {
+                        return p.site === displaySite ? Object.assign({}, p, { moyenneJour: newVal }) : p;
+                      }));
+                    });
+                  },
+                  style: { width: 70, padding: "4px 8px", border: "1px solid #d1d5db", borderRadius: 4, fontSize: 13, fontWeight: 700, textAlign: "center", color: "#7c3aed" }
+                }),
+                h("span", { style: { fontSize: 11, color: "#6b7280" } }, "m/jour")
+              )
+            ),
             h("table", { style: { width: "100%", borderCollapse: "collapse" } },
               h("thead", null,
                 h("tr", null,
