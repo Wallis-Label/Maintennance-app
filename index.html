@@ -744,7 +744,8 @@
             await addReleve({ Equipement: f.Equipement, Date: f.Date_Intervention, Horametre: f.Horametre || "0", KM: f.KM || "0", Technicien: f.Technicien || "" });
           }
           setSaved(true);
-          setTimeout(() => { setSaved(false); onNavigate("historique"); }, 1500);
+          var blankForm = { Title: "", Equipement: "", Date_Intervention: new Date().toISOString().split("T")[0], Technicien: "", Statut_Intervention: "Planifiee", Travaux_Effectues: "", Temps_Arret: "", Cout: "", Plan: "", Horametre: "", KM: "", Type: "Preventive" };
+          setTimeout(() => { setSaved(false); if (editItem) { onNavigate("historique"); } else { setF(blankForm); } }, 1500);
         } catch (err) { alert("Erreur : " + err.message); }
         finally { setSaving(false); }
       };
@@ -773,7 +774,7 @@
             h("div", { style: { gridColumn: "1 / -1" } },
               h(FormField, { label: "Travaux effectues" }, h("textarea", { style: { ...inputStyle, minHeight: 80, resize: "vertical" }, value: f.Travaux_Effectues, onChange: (e) => upd("Travaux_Effectues", e.target.value), onBlur: () => upd("Travaux_Effectues", capitalizeFirst(f.Travaux_Effectues)), placeholder: "Decrivez les travaux..." })))),
           h("div", { style: { display: "flex", gap: 12, marginTop: 20, justifyContent: "flex-end" } },
-            h(Button, { variant: "secondary", onClick: () => onNavigate("accueil"), disabled: saving }, "Annuler"),
+            h(Button, { variant: "secondary", onClick: () => { if (editItem) { onNavigate("historique"); } else { setF({ Title: "", Equipement: "", Date_Intervention: new Date().toISOString().split("T")[0], Technicien: "", Statut_Intervention: "Planifiee", Travaux_Effectues: "", Temps_Arret: "", Cout: "", Plan: "", Horametre: "", KM: "", Type: "Preventive" }); } }, disabled: saving }, "Annuler"),
             h(Button, { onClick: submit, disabled: saving }, saving ? "Enregistrement..." : (editItem ? h(IconText, { icon: "save", size: 14 }, "Modifier") : h(IconText, { icon: "save", size: 14 }, "Enregistrer"))))));
     }
 
@@ -4295,25 +4296,27 @@
     // ─── Sidebar ────────────────────────────────────────────────────────
     function Sidebar({ currentPage, onNavigate, userEmail, onLogout, isAdmin, pendingCount, allowedPages }) {
       const sections = [
-        { name: "Principal", pages: [
+        { name: "Tableau de bord", pages: [
           { key: "accueil", label: "Accueil", lucide: "home" },
-          { key: "plans", label: "Plans", lucide: "clipboard-list" },
+        ]},
+        { name: "Maintenance", pages: [
+          { key: "equipements", label: "Equipements", lucide: "settings" },
           { key: "interventions", label: "Interventions", lucide: "wrench" },
-          { key: "planning", label: "Planning", lucide: "calendar" },
+          { key: "plans", label: "Plans", lucide: "clipboard-list" },
+          { key: "planning", label: "Planning interventions", lucide: "calendar" },
+          { key: "pieces", label: "Pieces detachees", lucide: "package" },
+          { key: "historique", label: "Historique", lucide: "scroll-text" },
         ]},
         { name: "Chantiers", pages: [
           { key: "avancement", label: "Avancement", lucide: "hard-hat" },
           { key: "planning-employes", label: "Planning Employes", lucide: "users" },
           { key: "primes", label: "Primes", lucide: "trophy" },
         ]},
-        { name: "Ressources", pages: [
-          { key: "equipements", label: "Equipements", lucide: "settings" },
+        { name: "Equipe", pages: [
           { key: "personnel", label: "Personnel", lucide: "user-round" },
           { key: "organisation", label: "Organisation", lucide: "users" },
-          { key: "pieces", label: "Pieces detachees", lucide: "package" },
         ]},
-        { name: "Rapports", pages: [
-          { key: "historique", label: "Historique", lucide: "scroll-text" },
+        { name: "Administration", pages: [
           { key: "parametres", label: "Parametres", lucide: "sliders-horizontal" },
           { key: "validations", label: "Validations", lucide: "shield-check", adminOnly: true },
           { key: "admin-utilisateurs", label: "Utilisateurs", lucide: "user-cog", adminOnly: true },
