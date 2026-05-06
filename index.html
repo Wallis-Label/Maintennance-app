@@ -181,7 +181,7 @@
       var desc = r.description || "";
       var extra = {};
       try { extra = JSON.parse(desc); } catch(e) { extra = { _text: desc }; }
-      return { Id: r.id, Title: r.nom || "", Frequence: r.frequence_label || ((r.type_recurrence === "horametre" ? "Horametre " : r.type_recurrence === "km" ? "KM " : "") + r.frequence), Description: extra._text || "", SeuilAlerte: String(extra.seuilAlerte ?? 50), Equipements: r.equipements_codes || "", ProchainIntervention: r.prochaine_execution_date || "", Statut: STATUT_PLAN_TO_UI[r.statut] || "Actif" };
+      return { Id: r.id, Title: r.nom || "", Frequence: r.frequence_label || ((r.type_recurrence === "horametre" ? "Horametre " : r.type_recurrence === "km" ? "KM " : "") + r.frequence), Description: extra._text || "", SeuilAlerte: String(extra.seuilAlerte ?? 50), SeuilAlerteAvenir: String(extra.seuilAlerteAvenir ?? ""), Equipements: r.equipements_codes || "", ProchainIntervention: r.prochaine_execution_date || "", Statut: STATUT_PLAN_TO_UI[r.statut] || "Actif" };
     }
     function planToDb(p) {
       const freq = p.Frequence || "";
@@ -193,6 +193,7 @@
       var descObj = {};
       if (p.Description) descObj._text = p.Description;
       descObj.seuilAlerte = parseInt(p.SeuilAlerte) || 50;
+      if (p.SeuilAlerteAvenir) descObj.seuilAlerteAvenir = parseInt(p.SeuilAlerteAvenir) || 0;
       var descStr = JSON.stringify(descObj);
       return { nom: p.Title, description: descStr, frequence_label: p.Frequence, equipements_codes: p.Equipements, prochaine_execution_date: p.ProchainIntervention || null, statut: STATUT_PLAN_TO_DB[p.Statut] || "actif", type_recurrence: type_rec, frequence: freq_num || 1 };
     }
@@ -347,8 +348,19 @@
           effectiveBase = cyclesAtteints;
         }
         const maxCompleted = planInterventions.reduce((a, i) => Math.max(a, parseInt(i.CycleNumber || 0)), effectiveBase);
+        // Deja depasse le seuil → a declencher
         if (cyclesAtteints > maxCompleted) {
           duePlans.push({ freqVal: freqVal, freqType: freqType });
+        } else {
+          // Pas encore depasse, mais dans le seuil d'alerte → a declencher aussi
+          var seuil = parseInt(p.SeuilAlerte || 50);
+          var prochainCycle = maxCompleted + 1;
+          var prochainSeuil = prochainCycle * freqVal;
+          var currentVal = freqType === "h" ? horam : km;
+          var reste = prochainSeuil - currentVal;
+          if (reste > 0 && reste <= seuil) {
+            duePlans.push({ freqVal: freqVal, freqType: freqType });
+          }
         }
       });
 
@@ -407,9 +419,11 @@
         // Prochain seuil
         var prochainCycle = maxCompleted + 1;
         var prochainSeuil = prochainCycle * freqVal;
-        var seuil = parseInt(p.SeuilAlerte || 50);
+        var seuilDecl = parseInt(p.SeuilAlerte || 50);
+        var seuilAvenir = parseInt(p.SeuilAlerteAvenir || 0);
         var reste = prochainSeuil - currentVal;
-        if (reste > 0 && reste <= seuil) {
+        // Alerte "a venir" : entre le seuil avenir et le seuil declenchement (exclut les deja declenches)
+        if (seuilAvenir > 0 && reste > seuilDecl && reste <= seuilAvenir) {
           alertes.push({ plan: p.Title, freqVal: freqVal, freqType: freqType, prochainSeuil: prochainSeuil, reste: Math.round(reste), unite: freqType === "h" ? "h" : "km" });
         }
       });
@@ -671,7 +685,7 @@
     // ─── Formulaire Plan ────────────────────────────────────────────────
     function PlanForm({ onSave, onCancel, editItem }) {
       const freqs = useParams("frequence_plan");
-      const [f, setF] = useState(editItem || { Title: "", Frequence: freqs[0] || "Mensuel", Description: "", SeuilAlerte: "50", Equipements: "", ProchainIntervention: new Date().toISOString().split("T")[0], Statut: "Actif" });
+      const [f, setF] = useState(editItem || { Title: "", Frequence: freqs[0] || "Mensuel", Description: "", SeuilAlerte: "50", SeuilAlerteAvenir: "", Equipements: "", ProchainIntervention: new Date().toISOString().split("T")[0], Statut: "Actif" });
       const [saving, setSaving] = useState(false);
       const upd = (k, v) => setF((p) => ({ ...p, [k]: v }));
       // Detecter l'unite du seuil depuis la frequence selectionnee
@@ -691,7 +705,8 @@
             freqs.length === 0 ? h("option", { value: "" }, "(aucun, ajoutez dans Parametres)") : freqs.map((x) => h("option", { key: x, value: x }, x)))),
           h(FormField, { label: "Statut" }, h("select", { style: selectStyle, value: f.Statut, onChange: (e) => upd("Statut", e.target.value) },
             ["Actif", "En retard", "Suspendu"].map((x) => h("option", { key: x, value: x }, x)))),
-          h(FormField, { label: "Seuil d'alerte (" + seuilUnite + " avant)" }, h("input", { type: "number", style: inputStyle, value: f.SeuilAlerte, onChange: (e) => upd("SeuilAlerte", e.target.value), placeholder: "Ex: 50" }))),
+          h(FormField, { label: "Declenchement (" + seuilUnite + " avant)" }, h("input", { type: "number", style: inputStyle, value: f.SeuilAlerte, onChange: (e) => upd("SeuilAlerte", e.target.value), placeholder: "Ex: 2000" })),
+          h(FormField, { label: "Alerte a venir (" + seuilUnite + " avant)" }, h("input", { type: "number", style: inputStyle, value: f.SeuilAlerteAvenir, onChange: (e) => upd("SeuilAlerteAvenir", e.target.value), placeholder: "Ex: 5000" }))),
         h(FormField, { label: "Description" }, h("textarea", { style: { ...inputStyle, minHeight: 70, resize: "vertical" }, value: f.Description, onChange: (e) => upd("Description", e.target.value), placeholder: "Description des operations..." })),
         h(FormField, { label: "Equipements concernes" }, h("input", { style: inputStyle, value: f.Equipements, onChange: (e) => upd("Equipements", e.target.value), placeholder: "Ex: 427 686 NC, AB-123-CD" })),
         h(FormField, { label: "Prochaine intervention" }, h("input", { type: "date", style: inputStyle, value: f.ProchainIntervention, onChange: (e) => upd("ProchainIntervention", e.target.value) })),
@@ -733,7 +748,8 @@
               h("div", { style: { fontSize: 13, color: "#4b5563", marginBottom: 10 } }, p.Description),
               h("div", { style: { fontSize: 12, color: "#6b7280", display: "flex", flexDirection: "column", gap: 4 } },
                 p.Equipements && h("div", { style: { display: "flex", alignItems: "center", gap: 4 } }, h(Icon, { name: "wrench", size: 12, color: "#6b7280" }), "Equipements: " + p.Equipements),
-                h("div", { style: { display: "flex", alignItems: "center", gap: 4 } }, h(Icon, { name: "clock", size: 12, color: "#6b7280" }), "Seuil d'alerte: " + (p.SeuilAlerte || "50") + (/km/i.test(p.Frequence || "") ? " km" : " h") + " avant"),
+                h("div", { style: { display: "flex", alignItems: "center", gap: 4 } }, h(Icon, { name: "alert-triangle", size: 12, color: "#6b7280" }), "Declenchement: " + (p.SeuilAlerte || "50") + (/km/i.test(p.Frequence || "") ? " km" : " h") + " avant"),
+                p.SeuilAlerteAvenir && h("div", { style: { display: "flex", alignItems: "center", gap: 4 } }, h(Icon, { name: "clock", size: 12, color: "#6b7280" }), "Alerte a venir: " + p.SeuilAlerteAvenir + (/km/i.test(p.Frequence || "") ? " km" : " h") + " avant"),
                 p.ProchainIntervention && h("div", { style: { display: "flex", alignItems: "center", gap: 4 } }, h(Icon, { name: "calendar", size: 12, color: "#6b7280" }), "Prochaine: " + p.ProchainIntervention))))),
         showModal && h(Modal, { title: editing ? "Modifier le plan" : "Nouveau plan de maintenance", onClose: () => { setShowModal(false); setEditing(null); } },
           h(PlanForm, { onSave: handleSave, onCancel: () => { setShowModal(false); setEditing(null); }, editItem: editing })),
