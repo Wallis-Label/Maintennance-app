@@ -335,12 +335,18 @@
           if (freqVal > 0) { cyclesAtteints = Math.floor(km / freqVal); cyclesBase = Math.floor(baseKM / freqVal); freqType = "km"; }
         } else return;
         if (freqVal === 0) return;
-        const maxCompleted = interventions.filter((i) =>
+        var planInterventions = interventions.filter((i) =>
           i.Type === "Preventive" &&
           (i.EquipementId === eq.Id || i.Equipement === eq.Title) &&
           (i.Plan || "").toLowerCase() === p.Title.toLowerCase() &&
           i.Statut_Intervention === "Termine"
-        ).reduce((a, i) => Math.max(a, parseInt(i.CycleNumber || 0)), cyclesBase);
+        );
+        // Si aucun historique (pas d'interventions et pas de base), considerer cycles passes comme faits
+        var effectiveBase = cyclesBase;
+        if (planInterventions.length === 0 && cyclesBase === 0 && cyclesAtteints > 0) {
+          effectiveBase = cyclesAtteints;
+        }
+        const maxCompleted = planInterventions.reduce((a, i) => Math.max(a, parseInt(i.CycleNumber || 0)), effectiveBase);
         if (cyclesAtteints > maxCompleted) {
           duePlans.push({ freqVal: freqVal, freqType: freqType });
         }
@@ -387,9 +393,15 @@
         else return;
         if (freqVal === 0) return;
         var cyclesAtteints = Math.floor(currentVal / freqVal);
-        var maxCompleted = interventions.filter(function(i) {
+        var planInts = interventions.filter(function(i) {
           return i.Type === "Preventive" && (i.EquipementId === eq.Id || i.Equipement === eq.Title) && (i.Plan || "").toLowerCase() === p.Title.toLowerCase() && i.Statut_Intervention === "Termine";
-        }).reduce(function(a, i) { return Math.max(a, parseInt(i.CycleNumber || 0)); }, cyclesBase);
+        });
+        // Si aucun historique, considerer que les cycles passes sont faits
+        var effectiveBase = cyclesBase;
+        if (planInts.length === 0 && cyclesBase === 0 && cyclesAtteints > 0) {
+          effectiveBase = cyclesAtteints;
+        }
+        var maxCompleted = planInts.reduce(function(a, i) { return Math.max(a, parseInt(i.CycleNumber || 0)); }, effectiveBase);
         // Si deja du, pas d'alerte anticipee (c'est gere par computeVisitesADeclencher)
         if (cyclesAtteints > maxCompleted) return;
         // Prochain seuil
