@@ -608,37 +608,59 @@
       const piecesFaibles = pieces.filter((p) => parseInt(p.Stock) <= parseInt(p.StockMin)).length;
       const visitesADeclencher = equipements.reduce((a, eq) => a + computeVisitesADeclencher(eq, plans, interventions), 0);
 
-      // Detail des visites a declencher par equipement
+      // Detail des visites a declencher par equipement (dans seuil) + equipements en retard (depasses)
       var detailVisitesDecl = [];
+      var detailOverdue = [];
       equipements.forEach(function(eq) {
-        var count = computeVisitesADeclencher(eq, plans, interventions);
-        if (count > 0) {
-          // Retrouver les plans concernes pour l'affichage
-          var eqCode = (eq.Title || "").toLowerCase();
-          var km = parseFloat(eq.KM || 0);
-          var horam = parseFloat(eq.Horametre || 0);
-          var infos = [];
-          plans.forEach(function(p) {
-            if (p.Statut === "Suspendu") return;
-            var concerne = !p.Equipements || p.Equipements.toLowerCase().includes(eqCode) || p.Equipements.toLowerCase().includes("tous");
-            if (!concerne) return;
-            var freq = p.Frequence || "";
-            var matchH = freq.match(/horametre\s*(\d+)/i) || freq.match(/^(\d+)\s*h/i);
-            var matchK = freq.match(/km\s*(\d+)/i) || freq.match(/(\d+)\s*km/i);
-            var freqVal = 0, freqType = "", currentVal = 0;
-            if (matchH) { freqVal = parseInt(matchH[1]); freqType = "h"; currentVal = horam; }
-            else if (matchK) { freqVal = parseInt(matchK[1]); freqType = "km"; currentVal = km; }
-            if (freqVal === 0) return;
-            var prochainSeuil = (Math.floor(currentVal / freqVal) + 1) * freqVal;
-            var reste = prochainSeuil - currentVal;
-            var seuil = parseInt(p.SeuilAlerte || 50);
-            if (reste <= seuil) {
-              infos.push(p.Title + " dans " + Math.round(reste) + (freqType === "h" ? "h" : "km"));
-            }
+        var eqCode = (eq.Title || "").toLowerCase();
+        var km = parseFloat(eq.KM || 0);
+        var horam = parseFloat(eq.Horametre || 0);
+        var baseH = parseFloat(eq.DernierEntretienH || 0);
+        var baseKM = parseFloat(eq.DernierEntretienKM || 0);
+        var infosPreventive = [];
+        var infosOverdue = [];
+        plans.forEach(function(p) {
+          if (p.Statut === "Suspendu") return;
+          var concerne = !p.Equipements || p.Equipements.toLowerCase().includes(eqCode) || p.Equipements.toLowerCase().includes("tous");
+          if (!concerne) return;
+          var freq = p.Frequence || "";
+          var matchH = freq.match(/horametre\s*(\d+)/i) || freq.match(/^(\d+)\s*h/i);
+          var matchK = freq.match(/km\s*(\d+)/i) || freq.match(/(\d+)\s*km/i);
+          var freqVal = 0, freqType = "", currentVal = 0, cyclesAtteints = 0, cyclesBase = 0;
+          if (matchH) { freqVal = parseInt(matchH[1]); freqType = "h"; currentVal = horam; cyclesAtteints = Math.floor(horam / freqVal); cyclesBase = Math.floor(baseH / freqVal); }
+          else if (matchK) { freqVal = parseInt(matchK[1]); freqType = "km"; currentVal = km; cyclesAtteints = Math.floor(km / freqVal); cyclesBase = Math.floor(baseKM / freqVal); }
+          if (freqVal === 0) return;
+          var planInterventions = interventions.filter(function(i) {
+            return i.Type === "Preventive" && (i.EquipementId === eq.Id || i.Equipement === eq.Title) && (i.Plan || "").toLowerCase() === p.Title.toLowerCase() && i.Statut_Intervention === "Termine";
           });
-          if (infos.length > 0) {
-            detailVisitesDecl.push({ equipement: eq.Title, equipementId: eq.Id, eqObj: eq, infos: infos });
+          var effectiveBase = cyclesBase;
+          if (planInterventions.length === 0 && cyclesBase === 0 && cyclesAtteints > 0) {
+            effectiveBase = cyclesAtteints;
           }
+          var maxCompleted = planInterventions.reduce(function(a, i) { return Math.max(a, parseInt(i.CycleNumber || 0)); }, effectiveBase);
+          if (cyclesAtteints > maxCompleted) {
+            // Vraiment en retard (depasse) - seulement si historique reel existe
+            var hasHistory = baseH > 0 || baseKM > 0 || planInterventions.length > 0;
+            if (hasHistory) {
+              var depassement = currentVal - (maxCompleted * freqVal);
+              infosOverdue.push(p.Title + " depasse de " + Math.round(depassement) + (freqType === "h" ? "h" : "km"));
+            }
+          } else {
+            // Dans le seuil d'alerte (maintenance preventive)
+            var seuil = parseInt(p.SeuilAlerte || 50);
+            var prochainCycle = maxCompleted + 1;
+            var prochainSeuil = prochainCycle * freqVal;
+            var reste = prochainSeuil - currentVal;
+            if (reste > 0 && reste <= seuil) {
+              infosPreventive.push(p.Title + " dans " + Math.round(reste) + (freqType === "h" ? "h" : "km"));
+            }
+          }
+        });
+        if (infosPreventive.length > 0) {
+          detailVisitesDecl.push({ equipement: eq.Title, equipementId: eq.Id, eqObj: eq, infos: infosPreventive });
+        }
+        if (infosOverdue.length > 0) {
+          detailOverdue.push({ equipement: eq.Title, equipementId: eq.Id, eqObj: eq, infos: infosOverdue });
         }
       });
 
@@ -657,20 +679,25 @@
           h(KPICard, { icon: h(Icon, { name: "truck", size: 32, color: "#6d28d9" }), label: "Equipements", value: fmtNum(totalEquip), color: "#6d28d9", onClick: () => onNavigate("equipements") }),
           h(KPICard, { icon: h(Icon, { name: "calendar", size: 32, color: "#2563eb" }), label: "Planifiees", value: fmtNum(planifiees), color: "#2563eb", onClick: () => onNavigate("interventions") }),
           h(KPICard, { icon: h(Icon, { name: "clock", size: 32, color: "#d97706" }), label: "En cours", value: fmtNum(enCours), color: "#d97706" }),
-          h(KPICard, { icon: h(Icon, { name: "bell-ring", size: 32, color: visitesADeclencher > 0 ? "#dc2626" : "#16a34a" }), label: "Visites a declencher", value: fmtNum(visitesADeclencher), color: visitesADeclencher > 0 ? "#dc2626" : "#16a34a", onClick: () => onNavigate("equipements") }),
+          h(KPICard, { icon: h(Icon, { name: "bell-ring", size: 32, color: visitesADeclencher > 0 ? "#dc2626" : "#16a34a" }), label: "Maintenance preventive", value: fmtNum(visitesADeclencher), color: visitesADeclencher > 0 ? "#dc2626" : "#16a34a", onClick: () => onNavigate("equipements") }),
           h(KPICard, { icon: h(Icon, { name: "clock", size: 32, color: nbAlertesAnticipees > 0 ? "#d97706" : "#16a34a" }), label: "Maintenances proches", value: fmtNum(nbAlertesAnticipees), color: nbAlertesAnticipees > 0 ? "#d97706" : "#16a34a" }),
           h(KPICard, { icon: h(Icon, { name: "alert-triangle", size: 32, color: "#dc2626" }), label: "Pieces faibles", value: fmtNum(piecesFaibles), color: "#dc2626", onClick: () => onNavigate("pieces") }),
           h(KPICard, { icon: h(Icon, { name: "bar-chart-2", size: 32, color: tauxConf >= 80 ? "#16a34a" : "#dc2626" }), label: "Conformite", value: tauxConf + "%", color: tauxConf >= 80 ? "#16a34a" : "#dc2626" })),
         h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 20 } },
           h(Card, null,
             h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, h(IconText, { icon: "alert-triangle", size: 16, color: "#dc2626" }, "Alertes urgentes")),
-            urgents.length === 0 ? h("p", { style: { color: "#9ca3af", textAlign: "center", padding: 20 } }, "Aucune alerte") :
+            urgents.length === 0 && detailOverdue.length === 0 ? h("p", { style: { color: "#9ca3af", textAlign: "center", padding: 20 } }, "Aucune alerte") :
               h("div", { style: { display: "flex", flexDirection: "column", gap: 8, maxHeight: 280, overflowY: "auto" } },
-                sortByField(urgents, "Title").map((u) => h("div", { key: u.Id, onClick: function() { onNavigate("interventions", u); }, style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "#fef2f2", borderRadius: 8, borderLeft: "4px solid #dc2626", cursor: "pointer", transition: "all 0.15s" } },
+                sortByField(urgents, "Title").map(function(u) { return h("div", { key: u.Id, onClick: function() { onNavigate("interventions", u); }, style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "#fef2f2", borderRadius: 8, borderLeft: "4px solid #dc2626", cursor: "pointer", transition: "all 0.15s" } },
                   h("div", null,
                     h("div", { style: { fontWeight: 600, fontSize: 14 } }, u.Title),
                     h("div", { style: { fontSize: 12, color: "#6b7280" } }, u.Equipement + " \u2014 " + u.Technicien)),
-                  h(StatusBadge, { status: u.Statut_Intervention }))))),
+                  h(StatusBadge, { status: u.Statut_Intervention })); }),
+                detailOverdue.map(function(v, idx) { return h("div", { key: "overdue-" + idx, onClick: function() { onNavigate("fiche-equipement", v.eqObj); }, style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "#fef2f2", borderRadius: 8, borderLeft: "4px solid #dc2626", cursor: "pointer", transition: "all 0.15s" } },
+                  h("div", null,
+                    h("div", { style: { fontWeight: 600, fontSize: 14 } }, v.equipement),
+                    h("div", { style: { fontSize: 12, color: "#6b7280" } }, v.infos.join(", "))),
+                  h("span", { style: { background: "#fee2e2", color: "#991b1b", padding: "4px 10px", borderRadius: 20, fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" } }, "En retard")); }))),
           h(Card, null,
             h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, h(IconText, { icon: "wrench", size: 16, color: "#d97706" }, "Travaux non termines")),
             (function() {
@@ -687,7 +714,7 @@
                   }));
             }()))),
         detailVisitesDecl.length > 0 && h(Card, { style: { marginBottom: 20 } },
-          h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, h(IconText, { icon: "bell-ring", size: 16, color: "#dc2626" }, "Visites a declencher")),
+          h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, h(IconText, { icon: "bell-ring", size: 16, color: "#dc2626" }, "Maintenance preventive")),
           h("div", { style: { display: "flex", flexDirection: "column", gap: 8, maxHeight: 280, overflowY: "auto" } },
             detailVisitesDecl.map(function(v, idx) {
               return h("div", { key: idx, onClick: function() { onNavigate("fiche-equipement", v.eqObj); }, style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "#fef2f2", borderRadius: 8, borderLeft: "4px solid #dc2626", cursor: "pointer", transition: "all 0.15s" } },
