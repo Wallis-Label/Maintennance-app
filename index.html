@@ -3795,17 +3795,17 @@
         chantiersBySite[ch.site].push(ch);
       });
 
-      // ── Periode 25 au 25 ──
-      // Pour un mois M donne, la periode va du 25/(M-1) au 24/M
+      // ── Periode du 26 au 25 ──
+      // Pour un mois M donne, la periode va du 26/(M-1) au 25/M
       function getPeriodBounds(year, month) {
         // month is 0-indexed (0=jan)
         var startDate, endDate;
         if (month === 0) {
-          startDate = new Date(year - 1, 11, 25); // 25 dec annee precedente
+          startDate = new Date(year - 1, 11, 26); // 26 dec annee precedente
         } else {
-          startDate = new Date(year, month - 1, 25);
+          startDate = new Date(year, month - 1, 26);
         }
-        endDate = new Date(year, month, 24);
+        endDate = new Date(year, month, 25);
         return { start: startDate, end: endDate };
       }
       function formatISODate(d) {
@@ -3827,7 +3827,7 @@
       var prevM = sm === 0 ? 12 : sm;
       var prevY = sm === 0 ? sy - 1 : sy;
       var curM = sm + 1;
-      var periodLabel = "du 25/" + (prevM < 10 ? "0" : "") + prevM + "/" + prevY + " au 24/" + (curM < 10 ? "0" : "") + curM + "/" + sy;
+      var periodLabel = "du 26/" + (prevM < 10 ? "0" : "") + prevM + "/" + prevY + " au 25/" + (curM < 10 ? "0" : "") + curM + "/" + sy;
 
       // Calculate prime for a site in a given period
       function calcPrimesForSitePeriod(site, period) {
