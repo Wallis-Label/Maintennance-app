@@ -690,7 +690,7 @@
 
     // ─── Ecran Plans ────────────────────────────────────────────────────
     function EcranPlans() {
-      const { plans, addPlan, updatePlan, deletePlan } = useAppData();
+      const { plans, addPlan, updatePlan, deletePlan, loadAll } = useAppData();
       const [search, setSearch] = useState("");
       const [showModal, setShowModal] = useState(false);
       const [editing, setEditing] = useState(null);
@@ -699,6 +699,7 @@
       const handleSave = async (p) => {
         if (editing) await updatePlan({ ...p, Id: editing.Id }); else await addPlan(p);
         setShowModal(false); setEditing(null);
+        loadAll();
       };
       const openEdit = (p) => { setEditing(p); setShowModal(true); };
       const openNew = () => { setEditing(null); setShowModal(true); };
