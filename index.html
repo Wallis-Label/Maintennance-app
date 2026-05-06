@@ -2880,11 +2880,81 @@
             updated.push(a);
             return Object.assign({}, a, { typeJour: newTypeJour });
           });
+          // Mettre a jour les affectations existantes
           updated.forEach(function(a) {
             supabase.from("affectations").update({ type_jour: newTypeJour }).eq("id", a.id).then(function(res) {
-              if (res.error) alert("Erreur propagation: " + res.error.message);
+              if (res.error) console.error("Erreur propagation update:", res.error.message);
             });
           });
+
+          // Si aucune affectation ce jour, trouver les employes recents du site et creer les affectations
+          var hasAffThisDay = false;
+          for (var k = 0; k < prev.length; k++) {
+            if (prev[k].dateAffectation === dateStr) {
+              for (var m = 0; m < siteChantierIds.length; m++) {
+                if (String(prev[k].chantierId) === String(siteChantierIds[m])) { hasAffThisDay = true; break; }
+              }
+            }
+            if (hasAffThisDay) break;
+          }
+
+          if (!hasAffThisDay && newTypeJour !== "travail") {
+            // Trouver les employes qui ont travaille recemment sur ce site (30 derniers jours)
+            var recentEmpIds = {};
+            prev.forEach(function(a) {
+              if (a.typeJour !== "travail" && a.typeJour !== "panne" && a.typeJour !== "intemperies" && a.typeJour !== "ferie") return;
+              var matchSite = false;
+              for (var s = 0; s < siteChantierIds.length; s++) {
+                if (String(a.chantierId) === String(siteChantierIds[s])) { matchSite = true; break; }
+              }
+              if (!matchSite) return;
+              // Verifier que c'est recent (dans les 30 derniers jours)
+              var diff = Math.abs(new Date(dateStr).getTime() - new Date(a.dateAffectation).getTime());
+              if (diff < 30 * 24 * 60 * 60 * 1000) {
+                recentEmpIds[a.personnelId] = a.chantierId;
+              }
+            });
+
+            var newAffectations = [];
+            var empIds = Object.keys(recentEmpIds);
+            for (var e = 0; e < empIds.length; e++) {
+              var empId = empIds[e];
+              var empChId = recentEmpIds[empId];
+              // Verifier pas deja une affectation ce jour pour cet employe
+              var alreadyExists = false;
+              for (var ae = 0; ae < prev.length; ae++) {
+                if (String(prev[ae].personnelId) === String(empId) && prev[ae].dateAffectation === dateStr) {
+                  alreadyExists = true; break;
+                }
+              }
+              if (alreadyExists) continue;
+
+              var newAff = { personnelId: parseFloat(empId), chantierId: empChId, dateAffectation: dateStr, typeJour: newTypeJour };
+              newAffectations.push(newAff);
+              // Inserer en DB
+              (function(na) {
+                supabase.from("affectations").insert({
+                  personnel_id: na.personnelId, chantier_id: na.chantierId,
+                  date_affectation: na.dateAffectation, type_jour: na.typeJour
+                }).select().single().then(function(res) {
+                  if (res.error) { console.error("Erreur creation affectation:", res.error.message); return; }
+                  // Mettre a jour l'id dans le state
+                  setAffectationsAv(function(p) {
+                    return p.map(function(x) {
+                      if (x.personnelId === na.personnelId && x.dateAffectation === na.dateAffectation && !x.id) {
+                        return affectationFromDb(res.data);
+                      }
+                      return x;
+                    });
+                  });
+                });
+              })(newAff);
+            }
+            if (newAffectations.length > 0) {
+              result = result.concat(newAffectations);
+            }
+          }
+
           return result;
         });
       }
@@ -3411,26 +3481,61 @@
       affectations.forEach(function(a) {
         affMap[a.personnelId + "-" + a.dateAffectation] = { chantierId: a.chantierId, typeJour: a.typeJour || "travail" };
       });
+
+      // Build map of recent chantiers per employee (last 60 days from current month)
+      var empRecentChantiers = {};
+      var refDate = new Date(year, monthIdx + 1, 0); // last day of current month
+      affectations.forEach(function(a) {
+        if (!a.chantierId) return;
+        var affDate = new Date(a.dateAffectation + "T12:00:00");
+        var diffDays = (refDate - affDate) / (1000 * 60 * 60 * 24);
+        if (diffDays >= 0 && diffDays <= 60) {
+          if (!empRecentChantiers[a.personnelId]) empRecentChantiers[a.personnelId] = {};
+          empRecentChantiers[a.personnelId][String(a.chantierId)] = true;
+        }
+      });
+
       function getAffectation(empId, dateStr) {
         var entry = affMap[empId + "-" + dateStr];
-        return entry ? entry.chantierId : "";
+        if (entry) return entry.chantierId;
+        // Pas d'affectation: verifier si un chantier recent a une panne/intemperie ce jour
+        var recentChs = empRecentChantiers[empId];
+        if (recentChs) {
+          var rKeys = Object.keys(recentChs);
+          for (var ri = 0; ri < rKeys.length; ri++) {
+            var sType = saisieTypeMap[rKeys[ri] + "-" + dateStr];
+            if (sType) return parseInt(rKeys[ri]); // retourne le chantierId pour afficher la couleur panne
+          }
+        }
+        return "";
       }
       function getAffectationType(empId, dateStr) {
         var entry = affMap[empId + "-" + dateStr];
-        if (!entry) return "";
-        // Verifier si le chantier a une panne/intemperie/ferie dans les saisies pour ce jour
-        if (entry.chantierId) {
-          var ch = chantiers.find(function(c) { return c.id == entry.chantierId; });
-          var siteName = ch ? ch.site : "";
-          if (siteName) {
-            var siteChs = chantiers.filter(function(c) { return c.site && c.site === siteName; });
-            for (var sci = 0; sci < siteChs.length; sci++) {
-              var saisieType = saisieTypeMap[String(siteChs[sci].id) + "-" + dateStr];
-              if (saisieType) return saisieType;
+        if (entry) {
+          // Verifier si le chantier a une panne/intemperie/ferie dans les saisies pour ce jour
+          if (entry.chantierId) {
+            var ch = chantiers.find(function(c) { return c.id == entry.chantierId; });
+            var siteName = ch ? ch.site : "";
+            if (siteName) {
+              var siteChs = chantiers.filter(function(c) { return c.site && c.site === siteName; });
+              for (var sci = 0; sci < siteChs.length; sci++) {
+                var saisieType = saisieTypeMap[String(siteChs[sci].id) + "-" + dateStr];
+                if (saisieType) return saisieType;
+              }
             }
           }
+          return entry.typeJour || "travail";
         }
-        return entry.typeJour || "travail";
+        // Pas d'affectation: verifier les chantiers recents pour pannes/intemperies
+        var recentChs = empRecentChantiers[empId];
+        if (recentChs) {
+          var rKeys = Object.keys(recentChs);
+          for (var ri = 0; ri < rKeys.length; ri++) {
+            var sType = saisieTypeMap[rKeys[ri] + "-" + dateStr];
+            if (sType) return sType;
+          }
+        }
+        return "";
       }
 
       function setAffectation(empId, dateStr, chantierId, typeJour) {
