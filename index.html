@@ -608,6 +608,40 @@
       const piecesFaibles = pieces.filter((p) => parseInt(p.Stock) <= parseInt(p.StockMin)).length;
       const visitesADeclencher = equipements.reduce((a, eq) => a + computeVisitesADeclencher(eq, plans, interventions), 0);
 
+      // Detail des visites a declencher par equipement
+      var detailVisitesDecl = [];
+      equipements.forEach(function(eq) {
+        var count = computeVisitesADeclencher(eq, plans, interventions);
+        if (count > 0) {
+          // Retrouver les plans concernes pour l'affichage
+          var eqCode = (eq.Title || "").toLowerCase();
+          var km = parseFloat(eq.KM || 0);
+          var horam = parseFloat(eq.Horametre || 0);
+          var infos = [];
+          plans.forEach(function(p) {
+            if (p.Statut === "Suspendu") return;
+            var concerne = !p.Equipements || p.Equipements.toLowerCase().includes(eqCode) || p.Equipements.toLowerCase().includes("tous");
+            if (!concerne) return;
+            var freq = p.Frequence || "";
+            var matchH = freq.match(/horametre\s*(\d+)/i) || freq.match(/^(\d+)\s*h/i);
+            var matchK = freq.match(/km\s*(\d+)/i) || freq.match(/(\d+)\s*km/i);
+            var freqVal = 0, freqType = "", currentVal = 0;
+            if (matchH) { freqVal = parseInt(matchH[1]); freqType = "h"; currentVal = horam; }
+            else if (matchK) { freqVal = parseInt(matchK[1]); freqType = "km"; currentVal = km; }
+            if (freqVal === 0) return;
+            var prochainSeuil = (Math.floor(currentVal / freqVal) + 1) * freqVal;
+            var reste = prochainSeuil - currentVal;
+            var seuil = parseInt(p.SeuilAlerte || 50);
+            if (reste <= seuil) {
+              infos.push(p.Title + " dans " + Math.round(reste) + (freqType === "h" ? "h" : "km"));
+            }
+          });
+          if (infos.length > 0) {
+            detailVisitesDecl.push({ equipement: eq.Title, equipementId: eq.Id, eqObj: eq, infos: infos });
+          }
+        }
+      });
+
       // Alertes anticipees : equipements proches du seuil de maintenance
       const toutesAlertesAnticipees = [];
       equipements.forEach(function(eq) {
@@ -652,6 +686,16 @@
                       h(StatusBadge, { status: i.Statut_Intervention }));
                   }));
             }()))),
+        detailVisitesDecl.length > 0 && h(Card, { style: { marginBottom: 20 } },
+          h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, h(IconText, { icon: "bell-ring", size: 16, color: "#dc2626" }, "Visites a declencher")),
+          h("div", { style: { display: "flex", flexDirection: "column", gap: 8, maxHeight: 280, overflowY: "auto" } },
+            detailVisitesDecl.map(function(v, idx) {
+              return h("div", { key: idx, onClick: function() { onNavigate("fiche-equipement", v.eqObj); }, style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "#fef2f2", borderRadius: 8, borderLeft: "4px solid #dc2626", cursor: "pointer", transition: "all 0.15s" } },
+                h("div", null,
+                  h("div", { style: { fontWeight: 600, fontSize: 14 } }, v.equipement),
+                  h("div", { style: { fontSize: 12, color: "#6b7280" } }, v.infos.join(", "))),
+                h("span", { style: { background: "#fee2e2", color: "#991b1b", padding: "4px 10px", borderRadius: 20, fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" } }, "A faire"));
+            }))),
         nbAlertesAnticipees > 0 && h(Card, { style: { marginBottom: 20 } },
           h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, h(IconText, { icon: "clock", size: 16, color: "#d97706" }, "Maintenances a venir")),
           h("div", { style: { display: "flex", flexDirection: "column", gap: 8, maxHeight: 280, overflowY: "auto" } },
