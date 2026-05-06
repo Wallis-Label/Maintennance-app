@@ -3867,34 +3867,16 @@
             var siteMoyenne = getMoyenneForSite(paliers, site);
             var normalMetrage = 0;
             for (var ni = 0; ni < normalDays.length; ni++) { normalMetrage += normalDays[ni].val; }
-            // 3. Panne rattrappee? auto: metrage normal >= objectif * jours normaux * 9
             var objectif = getObjectifForSite(paliers, site);
-            var panneRecovered = normalDays.length > 0 && (normalMetrage / (normalDays.length * 9)) >= objectif;
-            // 4. Pannes consecutives detection (regle 5)
-            panneDays.sort(function(a, b) { return a.date < b.date ? -1 : 1; });
-            // 5. Construire metrage et jours ajustes
+            // Construire metrage et jours ajustes
             var adjMetrage = normalMetrage;
             var adjJours = normalDays.length;
             // Intemperies: chaque jour = moyenne du site
             adjMetrage += intempDays.length * siteMoyenne;
             adjJours += intempDays.length;
-            // Pannes
-            if (panneRecovered) {
-              // Pas comptabilise: on n'ajoute rien
-            } else {
-              // Regle 5: si pannes consecutives, 1er jour = moyenne, reste = metrage ecrit
-              if (panneDays.length > 1) {
-                adjMetrage += siteMoyenne; // 1er jour = moyenne du site
-                adjJours += 1;
-                for (var pi = 1; pi < panneDays.length; pi++) {
-                  adjMetrage += panneDays[pi].val;
-                  adjJours += 1;
-                }
-              } else if (panneDays.length === 1) {
-                adjMetrage += panneDays[0].val;
-                adjJours += 1;
-              }
-            }
+            // Pannes: chaque jour = moyenne du site (meme traitement que intemperies)
+            adjMetrage += panneDays.length * siteMoyenne;
+            adjJours += panneDays.length;
             // 6. Jours personnel: ferie/conge/chomage = moyenne du dernier site, maladie = 0
             // Pour cet employe, chercher les jours personnel dans la periode
             var empAllAff = affectations.filter(function(a) {
@@ -3923,13 +3905,8 @@
                 adjJours += 1;
               }
             });
-            // Regle 6: si pas travaille du tout ou pas atteint objectif sur rattrapage -> moyenne
             if (adjJours === 0) return;
             var mhRealise = adjMetrage / (adjJours * 9);
-            // Regle 6: si mhRealise < objectif et il y avait des pannes non recup, appliquer moyenne du site
-            if (!panneRecovered && panneDays.length > 0 && mhRealise < objectif) {
-              mhRealise = normalDays.length > 0 ? normalMetrage / (normalDays.length * 9) : 0;
-            }
             var coef = lookupCoefficient(paliers, site, mhRealise);
             var diff = mhRealise - objectif;
             var primeChantier = diff > 0 && coef > 0 ? diff * coef : 0;
