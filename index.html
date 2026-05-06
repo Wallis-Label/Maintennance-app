@@ -3340,6 +3340,7 @@
       var chantiers = ctx.dbChantiers;
       var affectations = ctx.dbAffectations || [];
       var setAffectations = ctx.setDbAffectations;
+      var saisiesPe = ctx.dbSaisies || {};
       var parametres = ctx.parametres;
       var personnel = loadPersonnelFromParametres(parametres);
 
@@ -3390,6 +3391,21 @@
         return ch ? ch.titre.charAt(0).toUpperCase() : "";
       }
 
+      // Build saisie type map: { "chantierId-date": typeJour } pour pannes/intemperies/feries
+      var saisieTypeMap = {};
+      var saisieKeys = Object.keys(saisiesPe);
+      for (var si = 0; si < saisieKeys.length; si++) {
+        var chId = saisieKeys[si];
+        var dayKeys = Object.keys(saisiesPe[chId] || {});
+        for (var di = 0; di < dayKeys.length; di++) {
+          var sEntry = saisiesPe[chId][dayKeys[di]];
+          var sType = typeof sEntry === "object" ? (sEntry.typeJour || "normal") : "normal";
+          if (sType !== "normal") {
+            saisieTypeMap[chId + "-" + dayKeys[di]] = sType;
+          }
+        }
+      }
+
       // Build affectation map: { "empId-date": { chantierId, typeJour } }
       var affMap = {};
       affectations.forEach(function(a) {
@@ -3401,7 +3417,20 @@
       }
       function getAffectationType(empId, dateStr) {
         var entry = affMap[empId + "-" + dateStr];
-        return entry ? entry.typeJour : "";
+        if (!entry) return "";
+        // Verifier si le chantier a une panne/intemperie/ferie dans les saisies pour ce jour
+        if (entry.chantierId) {
+          var ch = chantiers.find(function(c) { return c.id == entry.chantierId; });
+          var siteName = ch ? ch.site : "";
+          if (siteName) {
+            var siteChs = chantiers.filter(function(c) { return c.site && c.site === siteName; });
+            for (var sci = 0; sci < siteChs.length; sci++) {
+              var saisieType = saisieTypeMap[String(siteChs[sci].id) + "-" + dateStr];
+              if (saisieType) return saisieType;
+            }
+          }
+        }
+        return entry.typeJour || "travail";
       }
 
       function setAffectation(empId, dateStr, chantierId, typeJour) {
