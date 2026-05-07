@@ -3440,7 +3440,7 @@
             var remaining = Math.max(0, chantier.metrage - realise);
 
             return h("div", { key: chantier.id, style: { marginBottom: 16 } },
-              h("div", { style: { background: isExpanded ? "#f5f3ff" : "white", borderRadius: 12, padding: 20, border: "1px solid #e5e7eb", boxShadow: "0 1px 3px rgba(0,0,0,0.1)" } },
+              h("div", { style: { background: isExpanded ? "#f5f3ff" : chantier.statut === "A venir" ? "#fafbff" : "white", borderRadius: 12, padding: 20, border: "1px solid " + (chantier.statut === "A venir" ? "#c7d2fe" : "#e5e7eb"), borderLeft: chantier.statut === "A venir" ? "4px solid #6366f1" : "1px solid #e5e7eb", boxShadow: "0 1px 3px rgba(0,0,0,0.1)" } },
                 h("div", { onClick: function() { setExpandedChantier(isExpanded ? null : chantier.id); }, style: { cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "start" } },
                   h("div", { style: { flex: 1 } },
                     h("div", { style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 8 } },
@@ -3450,7 +3450,7 @@
                     ),
                     h("div", { style: { display: "flex", gap: 16, alignItems: "center", marginBottom: 8 } },
                       h("span", { style: { fontSize: 12, fontWeight: 600, color: "#6b7280" } }, formatDateFrAv(chantier.dateDebut) + " - " + formatDateFrAv(chantier.dateFin)),
-                      h("span", { style: { fontSize: 11, fontWeight: 600, color: chantier.statut === "Termine" ? "#059669" : "#d97706", background: chantier.statut === "Termine" ? "#ecfdf5" : "#fffbeb", padding: "2px 8px", borderRadius: 3 } }, chantier.statut)
+                      h("span", { style: { fontSize: 11, fontWeight: 600, color: chantier.statut === "Termine" ? "#059669" : chantier.statut === "A venir" ? "#6366f1" : "#d97706", background: chantier.statut === "Termine" ? "#ecfdf5" : chantier.statut === "A venir" ? "#eef2ff" : "#fffbeb", padding: "2px 8px", borderRadius: 3 } }, chantier.statut)
                     ),
                     h("div", { style: { display: "flex", gap: 16, fontSize: 12, marginBottom: 8 } },
                       h("span", null, "Mois : " + fmtNum(monthMet) + " m"),
@@ -3834,7 +3834,8 @@
                 }
               },
                 h("div", { style: { width: 16, height: 16, borderRadius: 4, background: color, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, color: "white" } }, ch.titre.charAt(0)),
-                ch.titre
+                ch.titre,
+                ch.statut === "A venir" ? h("span", { style: { fontSize: 10, fontWeight: 600, color: "#64748b", background: "#f1f5f9", padding: "2px 6px", borderRadius: 4, marginLeft: 4 } }, "A venir") : null
               );
             }),
             h("div", { style: { width: 1, height: 28, background: "#e2e8f0", margin: "0 4px" } }),
