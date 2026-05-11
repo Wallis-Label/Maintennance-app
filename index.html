@@ -665,46 +665,23 @@
           }
           var maxCompleted = planInterventions.reduce(function(a, i) { return Math.max(a, parseInt(i.CycleNumber || 0)); }, effectiveBase);
           if (cyclesAtteints > maxCompleted) {
-            // Vraiment en retard (depasse) - seulement si historique reel existe
             var hasHistory = baseH > 0 || baseKM > 0 || planInterventions.length > 0;
             if (hasHistory) {
               var prochainDeclenchement = (maxCompleted + 1) * freqVal;
               var depassement = currentVal - prochainDeclenchement;
-              infosOverdue.push(p.Title + " depasse de " + Math.round(depassement) + (freqType === "h" ? "h" : "km"));
+              infosOverdue.push({ text: p.Title + " depasse de " + Math.round(depassement) + (freqType === "h" ? "h" : "km"), freqVal: freqVal, freqType: freqType });
             }
           } else {
-            // Dans le seuil d'alerte (maintenance preventive)
             var seuil = parseInt(p.SeuilAlerte || 50);
             var prochainCycle = maxCompleted + 1;
             var prochainSeuil = prochainCycle * freqVal;
             var reste = prochainSeuil - currentVal;
             if (reste > 0 && reste <= seuil) {
-              infosPreventive.push(p.Title + " dans " + Math.round(reste) + (freqType === "h" ? "h" : "km"));
+              infosPreventive.push({ text: p.Title + " dans " + Math.round(reste) + (freqType === "h" ? "h" : "km"), freqVal: freqVal, freqType: freqType });
             }
           }
         });
-        // Hierarchie : absorber les petits plans quand un plus gros est aussi du
-        var overdueWithFreq = [];
-        var preventiveWithFreq = [];
-        plans.forEach(function(p) {
-          if (p.Statut === "Suspendu") return;
-          var concerne2 = !p.Equipements || p.Equipements.toLowerCase().includes(eqCode) || p.Equipements.toLowerCase().includes("tous");
-          if (!concerne2) return;
-          var freq2 = p.Frequence || "";
-          var mH2 = freq2.match(/horametre\s*(\d+)/i) || freq2.match(/^(\d+)\s*h/i);
-          var mK2 = freq2.match(/km\s*(\d+)/i) || freq2.match(/(\d+)\s*km/i);
-          var fv2 = 0, ft2 = "";
-          if (mH2) { fv2 = parseInt(mH2[1]); ft2 = "h"; }
-          else if (mK2) { fv2 = parseInt(mK2[1]); ft2 = "km"; }
-          if (fv2 > 0) {
-            infosOverdue.forEach(function(info, idx) {
-              if (info.indexOf(p.Title) === 0) overdueWithFreq.push({ idx: idx, freqVal: fv2, freqType: ft2, info: info });
-            });
-            infosPreventive.forEach(function(info, idx) {
-              if (info.indexOf(p.Title) === 0) preventiveWithFreq.push({ idx: idx, freqVal: fv2, freqType: ft2, info: info });
-            });
-          }
-        });
+        // Hierarchie : absorber les petits plans quand un plus gros du meme type est aussi du
         function filterHierarchy(items) {
           return items.filter(function(dp) {
             var absorbed = items.some(function(other) {
@@ -713,8 +690,8 @@
             return !absorbed;
           });
         }
-        var filteredOverdue = filterHierarchy(overdueWithFreq).map(function(x) { return x.info; });
-        var filteredPreventive = filterHierarchy(preventiveWithFreq).map(function(x) { return x.info; });
+        var filteredPreventive = filterHierarchy(infosPreventive).map(function(x) { return x.text; });
+        var filteredOverdue = filterHierarchy(infosOverdue).map(function(x) { return x.text; });
         if (filteredPreventive.length > 0) {
           detailVisitesDecl.push({ equipement: eq.Title, equipementId: eq.Id, eqObj: eq, infos: filteredPreventive });
         }
