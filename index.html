@@ -2335,6 +2335,52 @@
         return month.getFullYear() + "-" + (m < 10 ? "0" : "") + m + "-" + (day < 10 ? "0" : "") + day;
       }
 
+      // ── Helpers non-chevauchement engin ──
+      function getBusyIntervalsForEngine(ceListAll, eqId, excludeCeId) {
+        return ceListAll
+          .filter(function(c) { return c.equipementId === eqId && c.id !== excludeCeId; })
+          .map(function(c) { return { start: parseDate(c.dateDebut), end: parseDate(c.dateFin) }; })
+          .sort(function(a, b) { return a.start - b.start; });
+      }
+      // Plus grande sous-periode libre dans [desiredStart, desiredEnd] evitant les intervalles busy
+      function findLargestFreeRange(desiredStart, desiredEnd, busy) {
+        var ranges = [];
+        var cursor = new Date(desiredStart);
+        for (var i = 0; i < busy.length; i++) {
+          var b = busy[i];
+          if (b.end < cursor) continue;
+          if (b.start > desiredEnd) break;
+          if (b.start > cursor) {
+            var gapEnd = new Date(b.start.getTime() - 86400000);
+            if (gapEnd >= cursor) ranges.push({ start: new Date(cursor.getTime()), end: gapEnd });
+          }
+          if (b.end >= cursor) cursor = new Date(b.end.getTime() + 86400000);
+        }
+        if (cursor <= desiredEnd) ranges.push({ start: new Date(cursor.getTime()), end: new Date(desiredEnd.getTime()) });
+        if (ranges.length === 0) return null;
+        ranges.sort(function(a, b) { return (b.end - b.start) - (a.end - a.start); });
+        return ranges[0];
+      }
+      // Clip une range [newStart, newEnd] pour eviter tout busy (sans split). Retourne null si impossible.
+      function clipRangeToAvoidBusy(newStart, newEnd, busy) {
+        var s = new Date(newStart.getTime());
+        var e = new Date(newEnd.getTime());
+        for (var i = 0; i < busy.length; i++) {
+          var b = busy[i];
+          if (b.end < s || b.start > e) continue;
+          // busy contient entierement notre range
+          if (b.start <= s && b.end >= e) return null;
+          // busy a l'interieur de notre range (necessiterait un split)
+          if (b.start > s && b.end < e) return null;
+          // busy chevauche notre debut
+          if (b.start <= s) { s = new Date(b.end.getTime() + 86400000); continue; }
+          // busy chevauche notre fin
+          if (b.end >= e) { e = new Date(b.start.getTime() - 86400000); continue; }
+        }
+        if (s > e) return null;
+        return { dateDebut: formatDateISO(s), dateFin: formatDateISO(e) };
+      }
+
       // ── State ref for drag (avoid stale closures) ──
       var planState = { declarations: declarations, renouvellements: renouvellements, chantiers: chantiers, chantierEquipements: ctx.dbChantierEquipements || [], currentMonth: currentMonth };
       var stateRef = React.useRef(planState);
@@ -2375,14 +2421,12 @@
       };
 
       var handleDragStartAnnuel = function(e, itemId, dragType, tab) {
-        console.log("[DRAG START]", { tab: tab, dragType: dragType, itemId: itemId, target: e.target });
         e.preventDefault();
         e.stopPropagation();
         var rowEl = e.target.closest("[data-annuel-row]");
-        if (!rowEl) { console.warn("[DRAG] no data-annuel-row found, aborting"); return; }
+        if (!rowEl) return;
         var timelineEl = rowEl.querySelector("[data-annuel-timeline]");
-        if (!timelineEl) { console.warn("[DRAG] no data-annuel-timeline found, aborting"); return; }
-        console.log("[DRAG] rowEl + timelineEl OK, timelineWidth=", timelineEl.offsetWidth);
+        if (!timelineEl) return;
         var st = stateRef.current;
         var year = st.currentMonth.getFullYear();
         var totalDaysYear = ((year % 4 === 0 && year % 100 !== 0) || year % 400 === 0) ? 366 : 365;
@@ -2415,11 +2459,9 @@
       };
 
       React.useEffect(function() {
-        var _mmCount = 0;
         var handleMouseMove = function(e) {
           var info = dragRef.current;
           if (!info.dragging) return;
-          _mmCount++;
           var deltaX = e.clientX - info.startX;
           var deltaDays;
           if (info.annuel) {
@@ -2427,9 +2469,6 @@
             deltaDays = Math.round(deltaX / pxPerDay);
           } else {
             deltaDays = Math.round(deltaX / 28);
-          }
-          if (_mmCount <= 3 || _mmCount % 10 === 0) {
-            console.log("[MM]", { n: _mmCount, deltaX: deltaX, deltaDays: deltaDays, dragType: info.dragType, tab: info.tab, annuel: info.annuel, pxPerDay: info.containerWidth / info.totalDaysYear });
           }
           if (deltaDays === 0) return;
           var st = stateRef.current;
@@ -2488,7 +2527,6 @@
               var origDebCEA = parseDate(info.origDebut);
               var origFinCEA = parseDate(info.origFin);
               var setCEA = ctx.setDbChantierEquipements;
-              console.log("[DRAG MOVE annuel]", { dragType: info.dragType, deltaDays: deltaDays, ceListLen: ceListA.length, hasSetCE: typeof setCEA });
               if (info.dragType === "move") {
                 var durCEA = Math.round((origFinCEA - origDebCEA) / 86400000);
                 var newDebCEA = new Date(origDebCEA.getTime() + deltaDays * 86400000);
@@ -2583,46 +2621,36 @@
             }
           }
 
-          if (info.tab === "chantier-equipement") {
-            var ceList = st.chantierEquipements || [];
-            var origDebCE = parseDate(info.origDebut);
-            var origFinCE = parseDate(info.origFin);
-            var setCE = ctx.setDbChantierEquipements;
-            console.log("[DRAG MOVE]", { dragType: info.dragType, deltaDays: deltaDays, ceListLen: ceList.length, hasSetCE: typeof setCE });
-            if (info.dragType === "move") {
-              var durCE = Math.round((origFinCE - origDebCE) / 86400000);
-              var newDebCE = new Date(origDebCE.getTime() + deltaDays * 86400000);
-              var newFinCE = new Date(newDebCE.getTime() + durCE * 86400000);
-              setCE(ceList.map(function(a) {
-                if (a.id === info.itemId) { return Object.assign({}, a, { dateDebut: formatDateISO(newDebCE), dateFin: formatDateISO(newFinCE) }); }
-                return a;
-              }));
-            } else if (info.dragType === "resize-start") {
-              var newDebCER = new Date(origDebCE.getTime() + deltaDays * 86400000);
-              if (newDebCER >= origFinCE) newDebCER = new Date(origFinCE.getTime() - 86400000);
-              setCE(ceList.map(function(a) {
-                if (a.id === info.itemId) { return Object.assign({}, a, { dateDebut: formatDateISO(newDebCER) }); }
-                return a;
-              }));
-            } else if (info.dragType === "resize-end") {
-              var newFinCER = new Date(origFinCE.getTime() + deltaDays * 86400000);
-              if (newFinCER <= origDebCE) newFinCER = new Date(origDebCE.getTime() + 86400000);
-              setCE(ceList.map(function(a) {
-                if (a.id === info.itemId) { return Object.assign({}, a, { dateFin: formatDateISO(newFinCER) }); }
-                return a;
-              }));
-            }
-          }
         };
         var handleMouseUp = function() {
           var info = dragRef.current;
           if (info.dragging) {
-            // Persistance pour les affectations engin <-> chantier
-            if (info.tab === "chantier-equipement" && info.itemId != null && ctx.updateChantierEquipement) {
+            // Persistance + verification non-chevauchement pour les affectations engin <-> chantier
+            if (info.tab === "chantier-equipement" && info.itemId != null) {
+              var setCEFin = ctx.setDbChantierEquipements;
               var ceListFin = stateRef.current.chantierEquipements || [];
               var aFin = ceListFin.find(function(x) { return x.id === info.itemId; });
               if (aFin) {
-                ctx.updateChantierEquipement(info.itemId, aFin);
+                var busyFin = getBusyIntervalsForEngine(ceListFin, aFin.equipementId, aFin.id);
+                var newStartFin = parseDate(aFin.dateDebut);
+                var newEndFin = parseDate(aFin.dateFin);
+                var clipped = clipRangeToAvoidBusy(newStartFin, newEndFin, busyFin);
+                if (!clipped) {
+                  // Revert : restore original dates
+                  if (setCEFin) {
+                    setCEFin(ceListFin.map(function(x) {
+                      return x.id === info.itemId ? Object.assign({}, x, { dateDebut: info.origDebut, dateFin: info.origFin }) : x;
+                    }));
+                  }
+                  alert("Chevauchement detecte avec une autre affectation de cet engin. Modification annulee.");
+                } else {
+                  // Clip applique : MAJ local + persistance
+                  var finalA = Object.assign({}, aFin, clipped);
+                  if (setCEFin) {
+                    setCEFin(ceListFin.map(function(x) { return x.id === info.itemId ? finalA : x; }));
+                  }
+                  if (ctx.updateChantierEquipement) ctx.updateChantierEquipement(info.itemId, finalA);
+                }
               }
             }
             info.dragging = false;
@@ -3331,9 +3359,15 @@
             if (!eqId || !addCE) return;
             var ch = chantiers.find(function(c) { return c.id === chantierId; });
             if (!ch) return;
-            var dup = ceList.some(function(a) { return a.chantierId === chantierId && a.equipementId === eqId; });
-            if (dup) { alert("Cet engin est deja affecte a ce chantier."); return; }
-            addCE({ chantierId: chantierId, equipementId: eqId, dateDebut: ch.dateDebut, dateFin: ch.dateFin, dureeMaintenanceJours: 1, notes: "" });
+            // Calcule la plus grande periode libre dans les dates du chantier,
+            // en evitant toutes les affectations existantes de cet engin (tous chantiers confondus)
+            var busy = getBusyIntervalsForEngine(ceList, eqId, null);
+            var range = findLargestFreeRange(parseDate(ch.dateDebut), parseDate(ch.dateFin), busy);
+            if (!range) {
+              alert("Cet engin est deja affecte ailleurs sur toute la duree du chantier. Aucune periode libre disponible.");
+              return;
+            }
+            addCE({ chantierId: chantierId, equipementId: eqId, dateDebut: formatDateISO(range.start), dateFin: formatDateISO(range.end), dureeMaintenanceJours: 1, notes: "" });
           }
 
           var rowHeightCE = 42;
@@ -3477,6 +3511,13 @@
                                           h("div", { style: { width: 2, height: 12, background: "white", borderRadius: 1, pointerEvents: "none" } })
                                         ),
                                         aWidthPct > 4 ? h("span", { style: { padding: "0 18px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textShadow: "0 1px 2px rgba(0,0,0,0.25)", pointerEvents: "none" } }, eq.Title) : null,
+                                        // Bouton supprimer (entre nom et poignee droite)
+                                        h("button", {
+                                          onMouseDown: function(e) { e.stopPropagation(); },
+                                          onClick: function(e) { e.stopPropagation(); if (confirm("Retirer " + eq.Title + " du chantier " + ch.titre + " ?")) deleteCE(a.id); },
+                                          title: "Retirer cette affectation",
+                                          style: { position: "absolute", right: 18, top: "50%", transform: "translateY(-50%)", width: 16, height: 16, border: "none", borderRadius: 8, background: "rgba(0,0,0,0.35)", color: "white", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, zIndex: 5 }
+                                        }, h(Icon, { name: "x", size: 10, color: "white" })),
                                         h("div", { onMouseDown: function(e) { if (e.button !== 0) return; e.stopPropagation(); handleDragStartAnnuel(e, a.id, "resize-end", "chantier-equipement"); }, title: "Glisser pour ajuster la date de fin", style: { position: "absolute", right: 0, top: 0, bottom: 0, width: 14, cursor: "ew-resize", zIndex: 4, background: "rgba(255,255,255,0.4)", borderLeft: "1px solid rgba(0,0,0,0.15)", display: "flex", alignItems: "center", justifyContent: "center", gap: 2 } },
                                           h("div", { style: { width: 2, height: 12, background: "white", borderRadius: 1, pointerEvents: "none" } }),
                                           h("div", { style: { width: 2, height: 12, background: "white", borderRadius: 1, pointerEvents: "none" } })
