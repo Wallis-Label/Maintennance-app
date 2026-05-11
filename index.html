@@ -582,7 +582,7 @@
     function LoginScreen({ onLoggedIn }) {
       const [email, setEmail] = useState("");
       const [password, setPassword] = useState("");
-      const [mode, setMode] = useState("signin"); // signin | signup
+      const [mode, setMode] = useState("signin"); // signin | signup | forgot
       const [loading, setLoading] = useState(false);
       const [error, setError] = useState("");
       const [info, setInfo] = useState("");
@@ -594,31 +594,96 @@
             const { data, error } = await supabase.auth.signInWithPassword({ email, password });
             if (error) throw error;
             onLoggedIn(data.user);
-          } else {
+          } else if (mode === "signup") {
             const { data, error } = await supabase.auth.signUp({ email, password });
             if (error) throw error;
             if (data.user && !data.session) setInfo("Compte cree ! Verifie ton email pour confirmer.");
             else if (data.session) onLoggedIn(data.user);
+          } else if (mode === "forgot") {
+            // Envoie le lien de reinitialisation. redirectTo = URL courante pour que la session de recovery soit
+            // posee sur le bon domaine. Necessite que cette URL soit dans la liste blanche de Supabase.
+            const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin + window.location.pathname });
+            if (error) throw error;
+            setInfo("Un email de reinitialisation a ete envoye a " + email + " (verifie aussi les spams).");
           }
         } catch (e) {
-          setError(e.message || "Erreur de connexion");
+          setError(e.message || "Erreur");
         } finally { setLoading(false); }
       };
+
+      var subtitle = mode === "signin" ? "Connecte-toi pour continuer"
+        : mode === "signup" ? "Cree ton compte employe"
+        : "Saisis ton email pour recevoir un lien de reinitialisation";
+      var btnLabel = mode === "signin" ? "Se connecter"
+        : mode === "signup" ? "Creer mon compte"
+        : "Envoyer le lien";
+      var canSubmit = mode === "forgot" ? !!email : (!!email && !!password);
 
       return h("div", { style: { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg, #1e1b4b 0%, #4c1d95 100%)" } },
         h("div", { style: { background: "white", padding: 40, borderRadius: 16, boxShadow: "0 20px 60px rgba(0,0,0,0.3)", width: "100%", maxWidth: 420 } },
           h("div", { style: { textAlign: "center", marginBottom: 30 } },
             h(Icon, { name: "wrench", size: 48, color: "#6d28d9" }),
             h("h1", { style: { fontSize: 24, fontWeight: 800, color: "#1e1b4b" } }, "Maintenance"),
-            h("p", { style: { fontSize: 14, color: "#6b7280", marginTop: 4 } }, mode === "signin" ? "Connecte-toi pour continuer" : "Cree ton compte employe")),
+            h("p", { style: { fontSize: 14, color: "#6b7280", marginTop: 4 } }, subtitle)),
           error && h("div", { style: { background: "#fee2e2", border: "1px solid #fca5a5", color: "#991b1b", padding: 12, borderRadius: 8, fontSize: 13, marginBottom: 16 } }, error),
           info && h("div", { style: { background: "#dcfce7", border: "1px solid #86efac", color: "#166534", padding: 12, borderRadius: 8, fontSize: 13, marginBottom: 16 } }, info),
-          h(FormField, { label: "Email" }, h("input", { type: "email", style: inputStyle, value: email, onChange: (e) => setEmail(e.target.value), placeholder: "ton@email.com" })),
-          h(FormField, { label: "Mot de passe" }, h("input", { type: "password", style: inputStyle, value: password, onChange: (e) => setPassword(e.target.value), placeholder: "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022", onKeyDown: (e) => e.key === "Enter" && submit() })),
-          h(Button, { onClick: submit, disabled: loading || !email || !password, style: { width: "100%", justifyContent: "center", padding: "12px 20px", marginTop: 8 } }, loading ? "..." : (mode === "signin" ? "Se connecter" : "Creer mon compte")),
-          h("div", { style: { textAlign: "center", marginTop: 20, fontSize: 13, color: "#6b7280" } },
-            mode === "signin" ? "Pas encore de compte ? " : "Deja inscrit ? ",
-            h("button", { onClick: () => { setMode(mode === "signin" ? "signup" : "signin"); setError(""); setInfo(""); }, style: { background: "transparent", border: "none", color: "#6d28d9", fontWeight: 600, cursor: "pointer", fontSize: 13 } }, mode === "signin" ? "Creer un compte" : "Se connecter"))));
+          h(FormField, { label: "Email" }, h("input", { type: "email", style: inputStyle, value: email, onChange: (e) => setEmail(e.target.value), placeholder: "ton@email.com", onKeyDown: (e) => e.key === "Enter" && mode === "forgot" && submit() })),
+          mode !== "forgot" ? h(FormField, { label: "Mot de passe" }, h("input", { type: "password", style: inputStyle, value: password, onChange: (e) => setPassword(e.target.value), placeholder: "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022", onKeyDown: (e) => e.key === "Enter" && submit() })) : null,
+          h(Button, { onClick: submit, disabled: loading || !canSubmit, style: { width: "100%", justifyContent: "center", padding: "12px 20px", marginTop: 8 } }, loading ? "..." : btnLabel),
+          mode === "signin" ? h("div", { style: { textAlign: "center", marginTop: 12 } },
+            h("button", { onClick: () => { setMode("forgot"); setError(""); setInfo(""); setPassword(""); }, style: { background: "transparent", border: "none", color: "#6d28d9", fontWeight: 600, cursor: "pointer", fontSize: 13 } }, "Mot de passe oublie ?")
+          ) : null,
+          h("div", { style: { textAlign: "center", marginTop: 16, fontSize: 13, color: "#6b7280" } },
+            mode === "signin" ? "Pas encore de compte ? " : (mode === "signup" ? "Deja inscrit ? " : "Retour : "),
+            h("button", {
+              onClick: () => {
+                setError(""); setInfo("");
+                if (mode === "signin") setMode("signup");
+                else setMode("signin");
+              },
+              style: { background: "transparent", border: "none", color: "#6d28d9", fontWeight: 600, cursor: "pointer", fontSize: 13 }
+            }, mode === "signin" ? "Creer un compte" : "Se connecter"))));
+    }
+
+    // \u2500\u2500\u2500 Ecran de saisie d'un nouveau mot de passe apres clic sur le lien email \u2500
+    function RecoveryPasswordScreen({ onDone }) {
+      const [newPassword, setNewPassword] = useState("");
+      const [confirmPassword, setConfirmPassword] = useState("");
+      const [loading, setLoading] = useState(false);
+      const [error, setError] = useState("");
+      const [info, setInfo] = useState("");
+
+      const submit = async () => {
+        setError(""); setInfo("");
+        if (newPassword.length < 6) { setError("Mot de passe : minimum 6 caracteres"); return; }
+        if (newPassword !== confirmPassword) { setError("Les deux mots de passe ne correspondent pas"); return; }
+        setLoading(true);
+        try {
+          const { error } = await supabase.auth.updateUser({ password: newPassword });
+          if (error) throw error;
+          setInfo("Mot de passe mis a jour. Redirection vers la connexion...");
+          setTimeout(async function() {
+            await supabase.auth.signOut();
+            if (onDone) onDone();
+          }, 1500);
+        } catch (e) {
+          setError(e.message || "Erreur de mise a jour");
+        } finally { setLoading(false); }
+      };
+
+      return h("div", { style: { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg, #1e1b4b 0%, #4c1d95 100%)" } },
+        h("div", { style: { background: "white", padding: 40, borderRadius: 16, boxShadow: "0 20px 60px rgba(0,0,0,0.3)", width: "100%", maxWidth: 420 } },
+          h("div", { style: { textAlign: "center", marginBottom: 30 } },
+            h(Icon, { name: "key-round", size: 48, color: "#6d28d9" }),
+            h("h1", { style: { fontSize: 24, fontWeight: 800, color: "#1e1b4b" } }, "Nouveau mot de passe"),
+            h("p", { style: { fontSize: 14, color: "#6b7280", marginTop: 4 } }, "Saisis ton nouveau mot de passe (6 caracteres minimum)")),
+          error && h("div", { style: { background: "#fee2e2", border: "1px solid #fca5a5", color: "#991b1b", padding: 12, borderRadius: 8, fontSize: 13, marginBottom: 16 } }, error),
+          info && h("div", { style: { background: "#dcfce7", border: "1px solid #86efac", color: "#166534", padding: 12, borderRadius: 8, fontSize: 13, marginBottom: 16 } }, info),
+          h(FormField, { label: "Nouveau mot de passe" }, h("input", { type: "password", style: inputStyle, value: newPassword, onChange: (e) => setNewPassword(e.target.value), placeholder: "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022", autoFocus: true })),
+          h(FormField, { label: "Confirme le mot de passe" }, h("input", { type: "password", style: inputStyle, value: confirmPassword, onChange: (e) => setConfirmPassword(e.target.value), placeholder: "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022", onKeyDown: (e) => e.key === "Enter" && submit() })),
+          h(Button, { onClick: submit, disabled: loading || !newPassword || !confirmPassword, style: { width: "100%", justifyContent: "center", padding: "12px 20px", marginTop: 8 } }, loading ? "..." : "Mettre a jour")
+        )
+      );
     }
 
     // ─── Ecran Accueil ──────────────────────────────────────────────────
@@ -701,84 +766,268 @@
       const nbAlertesAnticipees = toutesAlertesAnticipees.length;
 
       const derniersEquips = sortByField(equipements, "Title").slice(0, 10);
-      return h("div", null,
-        h(PageHeader, { title: h(IconText, { icon: "home", size: 20 }, "Tableau de bord"), subtitle: "Vue d'ensemble de la maintenance" }),
-        h("div", { style: { display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 24 } },
-          h(KPICard, { icon: h(Icon, { name: "truck", size: 32, color: "#6d28d9" }), label: "Equipements", value: fmtNum(totalEquip), color: "#6d28d9", onClick: () => onNavigate("equipements") }),
-          h(KPICard, { icon: h(Icon, { name: "calendar", size: 32, color: "#2563eb" }), label: "Planifiees", value: fmtNum(planifiees), color: "#2563eb", onClick: () => onNavigate("interventions") }),
-          h(KPICard, { icon: h(Icon, { name: "clock", size: 32, color: "#d97706" }), label: "En cours", value: fmtNum(enCours), color: "#d97706" }),
-          h(KPICard, { icon: h(Icon, { name: "bell-ring", size: 32, color: visitesADeclencher > 0 ? "#dc2626" : "#16a34a" }), label: "Maintenance preventive", value: fmtNum(visitesADeclencher), color: visitesADeclencher > 0 ? "#dc2626" : "#16a34a", onClick: () => onNavigate("equipements") }),
-          h(KPICard, { icon: h(Icon, { name: "clock", size: 32, color: nbAlertesAnticipees > 0 ? "#d97706" : "#16a34a" }), label: "Maintenances proches", value: fmtNum(nbAlertesAnticipees), color: nbAlertesAnticipees > 0 ? "#d97706" : "#16a34a" }),
-          h(KPICard, { icon: h(Icon, { name: "alert-triangle", size: 32, color: "#dc2626" }), label: "Pieces faibles", value: fmtNum(piecesFaibles), color: "#dc2626", onClick: () => onNavigate("pieces") }),
-          h(KPICard, { icon: h(Icon, { name: "bar-chart-2", size: 32, color: tauxConf >= 80 ? "#16a34a" : "#dc2626" }), label: "Conformite", value: tauxConf + "%", color: tauxConf >= 80 ? "#16a34a" : "#dc2626" })),
-        h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 20 } },
-          h(Card, null,
-            h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, h(IconText, { icon: "alert-triangle", size: 16, color: "#dc2626" }, "Alertes urgentes")),
-            urgents.length === 0 && detailOverdue.length === 0 ? h("p", { style: { color: "#9ca3af", textAlign: "center", padding: 20 } }, "Aucune alerte") :
-              h("div", { style: { display: "flex", flexDirection: "column", gap: 8, maxHeight: 280, overflowY: "auto" } },
-                sortByField(urgents, "Title").map(function(u) { return h("div", { key: u.Id, onClick: function() { onNavigate("interventions", u); }, style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "#fef2f2", borderRadius: 8, borderLeft: "4px solid #dc2626", cursor: "pointer", transition: "all 0.15s" } },
-                  h("div", null,
-                    h("div", { style: { fontWeight: 600, fontSize: 14 } }, u.Title),
-                    h("div", { style: { fontSize: 12, color: "#6b7280" } }, u.Equipement + " \u2014 " + u.Technicien)),
-                  h(StatusBadge, { status: u.Statut_Intervention })); }),
-                detailOverdue.map(function(v, idx) { return h("div", { key: "overdue-" + idx, onClick: function() { onNavigate("fiche-equipement", v.eqObj); }, style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "#fef2f2", borderRadius: 8, borderLeft: "4px solid #dc2626", cursor: "pointer", transition: "all 0.15s" } },
-                  h("div", null,
-                    h("div", { style: { fontWeight: 600, fontSize: 14 } }, v.equipement),
-                    h("div", { style: { fontSize: 12, color: "#6b7280" } }, v.infos.join(", "))),
-                  h("span", { style: { background: "#fee2e2", color: "#991b1b", padding: "4px 10px", borderRadius: 20, fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" } }, "En retard")); }))),
-          h(Card, null,
-            h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, h(IconText, { icon: "wrench", size: 16, color: "#d97706" }, "Travaux non termines")),
-            (function() {
-              var nonTermines = interventions.filter(function(i) { return i.Statut_Intervention === "Planifiee" || i.Statut_Intervention === "En cours" || i.Statut_Intervention === "Pas fait"; });
-              return nonTermines.length === 0 ? h("p", { style: { color: "#9ca3af", textAlign: "center", padding: 20 } }, "Tous les travaux sont termines") :
+
+      // ── DEMO : Personnalisation du tableau de bord (Option B, persistance localStorage) ──
+      var _ed = useState(false);
+      var dashEditMode = _ed[0]; var setDashEditMode = _ed[1];
+      var _spk = useState(false);
+      var showAddPicker = _spk[0]; var setShowAddPicker = _spk[1];
+      var _dsw = useState(null);
+      var dragSrcWidget = _dsw[0]; var setDragSrcWidget = _dsw[1];
+
+      var widgetDefs = [
+        { id: "kpi-equipements", label: "KPI - Equipements", icon: "truck", w: 200,
+          render: function() { return h(KPICard, { icon: h(Icon, { name: "truck", size: 32, color: "#6d28d9" }), label: "Equipements", value: fmtNum(totalEquip), color: "#6d28d9", onClick: function() { onNavigate("equipements"); } }); } },
+        { id: "kpi-planifiees", label: "KPI - Planifiees", icon: "calendar", w: 200,
+          render: function() { return h(KPICard, { icon: h(Icon, { name: "calendar", size: 32, color: "#2563eb" }), label: "Planifiees", value: fmtNum(planifiees), color: "#2563eb", onClick: function() { onNavigate("interventions"); } }); } },
+        { id: "kpi-en-cours", label: "KPI - En cours", icon: "clock", w: 200,
+          render: function() { return h(KPICard, { icon: h(Icon, { name: "clock", size: 32, color: "#d97706" }), label: "En cours", value: fmtNum(enCours), color: "#d97706" }); } },
+        { id: "kpi-maint-preventive", label: "KPI - Maintenance preventive", icon: "bell-ring", w: 200,
+          render: function() { return h(KPICard, { icon: h(Icon, { name: "bell-ring", size: 32, color: visitesADeclencher > 0 ? "#dc2626" : "#16a34a" }), label: "Maintenance preventive", value: fmtNum(visitesADeclencher), color: visitesADeclencher > 0 ? "#dc2626" : "#16a34a", onClick: function() { onNavigate("equipements"); } }); } },
+        { id: "kpi-maint-proches", label: "KPI - Maintenances proches", icon: "clock", w: 200,
+          render: function() { return h(KPICard, { icon: h(Icon, { name: "clock", size: 32, color: nbAlertesAnticipees > 0 ? "#d97706" : "#16a34a" }), label: "Maintenances proches", value: fmtNum(nbAlertesAnticipees), color: nbAlertesAnticipees > 0 ? "#d97706" : "#16a34a" }); } },
+        { id: "kpi-pieces-faibles", label: "KPI - Pieces faibles", icon: "alert-triangle", w: 200,
+          render: function() { return h(KPICard, { icon: h(Icon, { name: "alert-triangle", size: 32, color: "#dc2626" }), label: "Pieces faibles", value: fmtNum(piecesFaibles), color: "#dc2626", onClick: function() { onNavigate("pieces"); } }); } },
+        { id: "kpi-conformite", label: "KPI - Conformite", icon: "bar-chart-2", w: 200,
+          render: function() { return h(KPICard, { icon: h(Icon, { name: "bar-chart-2", size: 32, color: tauxConf >= 80 ? "#16a34a" : "#dc2626" }), label: "Conformite", value: tauxConf + "%", color: tauxConf >= 80 ? "#16a34a" : "#dc2626" }); } },
+        { id: "panel-alertes-urgentes", label: "Alertes urgentes", icon: "alert-triangle", w: "calc(50% - 10px)",
+          render: function() {
+            return h(Card, null,
+              h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, h(IconText, { icon: "alert-triangle", size: 16, color: "#dc2626" }, "Alertes urgentes")),
+              urgents.length === 0 && detailOverdue.length === 0 ? h("p", { style: { color: "#9ca3af", textAlign: "center", padding: 20 } }, "Aucune alerte") :
+                h("div", { style: { display: "flex", flexDirection: "column", gap: 8, maxHeight: 280, overflowY: "auto" } },
+                  sortByField(urgents, "Title").map(function(u) { return h("div", { key: u.Id, onClick: function() { onNavigate("interventions", u); }, style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "#fef2f2", borderRadius: 8, borderLeft: "4px solid #dc2626", cursor: "pointer" } },
+                    h("div", null,
+                      h("div", { style: { fontWeight: 600, fontSize: 14 } }, u.Title),
+                      h("div", { style: { fontSize: 12, color: "#6b7280" } }, u.Equipement + " — " + u.Technicien)),
+                    h(StatusBadge, { status: u.Statut_Intervention })); }),
+                  detailOverdue.map(function(v, idx) { return h("div", { key: "overdue-" + idx, onClick: function() { onNavigate("fiche-equipement", v.eqObj); }, style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "#fef2f2", borderRadius: 8, borderLeft: "4px solid #dc2626", cursor: "pointer" } },
+                    h("div", null,
+                      h("div", { style: { fontWeight: 600, fontSize: 14 } }, v.equipement),
+                      h("div", { style: { fontSize: 12, color: "#6b7280" } }, v.infos.join(", "))),
+                    h("span", { style: { background: "#fee2e2", color: "#991b1b", padding: "4px 10px", borderRadius: 20, fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" } }, "En retard")); })
+                )
+            );
+          } },
+        { id: "panel-travaux", label: "Travaux non termines", icon: "wrench", w: "calc(50% - 10px)",
+          render: function() {
+            var nonTermines = interventions.filter(function(i) { return i.Statut_Intervention === "Planifiee" || i.Statut_Intervention === "En cours" || i.Statut_Intervention === "Pas fait"; });
+            return h(Card, null,
+              h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, h(IconText, { icon: "wrench", size: 16, color: "#d97706" }, "Travaux non termines")),
+              nonTermines.length === 0 ? h("p", { style: { color: "#9ca3af", textAlign: "center", padding: 20 } }, "Tous les travaux sont termines") :
                 h("div", { style: { display: "flex", flexDirection: "column", gap: 8, maxHeight: 280, overflowY: "auto" } },
                   sortByField(nonTermines, "Title").map(function(i) {
                     var borderColor = i.Statut_Intervention === "Pas fait" ? "#dc2626" : i.Statut_Intervention === "En cours" ? "#d97706" : "#2563eb";
-                    return h("div", { key: i.Id, onClick: function() { onNavigate("interventions", i); }, style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "#f9fafb", borderRadius: 8, borderLeft: "4px solid " + borderColor, cursor: "pointer", transition: "all 0.15s" } },
+                    return h("div", { key: i.Id, onClick: function() { onNavigate("interventions", i); }, style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "#f9fafb", borderRadius: 8, borderLeft: "4px solid " + borderColor, cursor: "pointer" } },
                       h("div", null,
                         h("div", { style: { fontWeight: 600, fontSize: 14 } }, i.Title),
-                        h("div", { style: { fontSize: 12, color: "#6b7280" } }, i.Equipement + " \u2014 " + (i.Date_Intervention || "\u2014"))),
+                        h("div", { style: { fontSize: 12, color: "#6b7280" } }, i.Equipement + " — " + (i.Date_Intervention || "—"))),
                       h(StatusBadge, { status: i.Statut_Intervention }));
-                  }));
-            }()))),
-        detailVisitesDecl.length > 0 && h(Card, { style: { marginBottom: 20 } },
-          h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, h(IconText, { icon: "bell-ring", size: 16, color: "#dc2626" }, "Maintenance preventive")),
-          h("div", { style: { display: "flex", flexDirection: "column", gap: 8, maxHeight: 280, overflowY: "auto" } },
-            detailVisitesDecl.map(function(v, idx) {
-              return h("div", { key: idx, onClick: function() { onNavigate("fiche-equipement", v.eqObj); }, style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "#fef2f2", borderRadius: 8, borderLeft: "4px solid #dc2626", cursor: "pointer", transition: "all 0.15s" } },
-                h("div", null,
-                  h("div", { style: { fontWeight: 600, fontSize: 14 } }, v.equipement),
-                  h("div", { style: { fontSize: 12, color: "#6b7280" } }, v.infos.join(", "))),
-                h("span", { style: { background: "#fee2e2", color: "#991b1b", padding: "4px 10px", borderRadius: 20, fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" } }, "A faire"));
-            }))),
-        nbAlertesAnticipees > 0 && h(Card, { style: { marginBottom: 20 } },
-          h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, h(IconText, { icon: "clock", size: 16, color: "#d97706" }, "Maintenances a venir")),
-          h("div", { style: { display: "flex", flexDirection: "column", gap: 8, maxHeight: 280, overflowY: "auto" } },
-            toutesAlertesAnticipees.sort(function(a, b) { return a.reste - b.reste; }).map(function(a, idx) {
-              return h("div", { key: idx, onClick: function() { onNavigate("fiche-equipement", a.eqObj); }, style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "#fffbeb", borderRadius: 8, borderLeft: "4px solid #d97706", cursor: "pointer", transition: "all 0.15s" } },
-                h("div", null,
-                  h("div", { style: { fontWeight: 600, fontSize: 14 } }, a.equipement),
-                  h("div", { style: { fontSize: 12, color: "#6b7280" } }, a.plan + " \u2014 prochain a " + fmtNum(a.prochainSeuil) + a.unite)),
-                h("span", { style: { background: "#fef3c7", color: "#92400e", padding: "4px 10px", borderRadius: 20, fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" } }, a.reste + a.unite + (a.unite === "km" ? " restant" : " restantes")));
-            }))),
-        h(Card, null,
-          h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, h(IconText, { icon: "clock", size: 16, color: "#6d28d9" }, "Derniers equipements modifies")),
-          derniersEquips.length === 0 ? h("p", { style: { color: "#9ca3af", textAlign: "center", padding: 20 } }, "Aucun equipement") :
-            h("div", { style: { display: "flex", flexDirection: "column", gap: 8, maxHeight: 280, overflowY: "auto" } },
-              derniersEquips.map(function(eq) { return h("div", { key: eq.Id, style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px", background: "#f9fafb", borderRadius: 8, cursor: "pointer" }, onClick: function() { onNavigate("fiche-equipement", eq); } },
-                h("div", null,
-                  h("div", { style: { fontWeight: 600, fontSize: 14, color: "#6d28d9" } }, eq.Title),
-                  h("div", { style: { fontSize: 12, color: "#6b7280" } }, eq.Nom)),
-                h("div", { style: { display: "flex", gap: 12, alignItems: "center" } },
-                  h("div", { style: { fontSize: 12, textAlign: "right" } },
-                    h("div", { style: { fontWeight: 600, color: "#0f172a" } }, eq.Type),
-                    h("div", { style: { color: "#6b7280", fontSize: 11 } }, "H: " + fmtNum(eq.Horametre))),
-                  h(StatusBadge, { status: eq.Statut }))); }))),
-        h("div", { style: { display: "flex", gap: 12, marginTop: 24, flexWrap: "wrap" } },
-          h(Button, { onClick: () => onNavigate("interventions") }, h(IconText, { icon: "wrench", size: 14 }, "Nouvelle intervention")),
-          h(Button, { variant: "secondary", onClick: () => onNavigate("equipements") }, h(IconText, { icon: "settings", size: 14 }, "Equipements")),
-          h(Button, { variant: "secondary", onClick: () => onNavigate("plans") }, h(IconText, { icon: "clipboard-list", size: 14 }, "Plans")),
-          h(Button, { variant: "secondary", onClick: () => onNavigate("pieces") }, h(IconText, { icon: "package", size: 14 }, "Pieces"))));
+                  }))
+            );
+          } },
+        { id: "panel-maint-detail", label: "Maintenance preventive (detail)", icon: "bell-ring", w: "100%",
+          render: function() {
+            if (detailVisitesDecl.length === 0) return h(Card, null, h("h3", { style: { margin: "0 0 12px", fontSize: 16, fontWeight: 700 } }, h(IconText, { icon: "bell-ring", size: 16, color: "#dc2626" }, "Maintenance preventive")), h("p", { style: { color: "#9ca3af", textAlign: "center", padding: 12 } }, "Aucune maintenance preventive en attente"));
+            return h(Card, null,
+              h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, h(IconText, { icon: "bell-ring", size: 16, color: "#dc2626" }, "Maintenance preventive")),
+              h("div", { style: { display: "flex", flexDirection: "column", gap: 8, maxHeight: 280, overflowY: "auto" } },
+                detailVisitesDecl.map(function(v, idx) {
+                  return h("div", { key: idx, onClick: function() { onNavigate("fiche-equipement", v.eqObj); }, style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "#fef2f2", borderRadius: 8, borderLeft: "4px solid #dc2626", cursor: "pointer" } },
+                    h("div", null,
+                      h("div", { style: { fontWeight: 600, fontSize: 14 } }, v.equipement),
+                      h("div", { style: { fontSize: 12, color: "#6b7280" } }, v.infos.join(", "))),
+                    h("span", { style: { background: "#fee2e2", color: "#991b1b", padding: "4px 10px", borderRadius: 20, fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" } }, "A faire"));
+                }))
+            );
+          } },
+        { id: "panel-maint-a-venir", label: "Maintenances a venir", icon: "clock", w: "100%",
+          render: function() {
+            if (nbAlertesAnticipees === 0) return h(Card, null, h("h3", { style: { margin: "0 0 12px", fontSize: 16, fontWeight: 700 } }, h(IconText, { icon: "clock", size: 16, color: "#d97706" }, "Maintenances a venir")), h("p", { style: { color: "#9ca3af", textAlign: "center", padding: 12 } }, "Aucune maintenance approchante"));
+            return h(Card, null,
+              h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, h(IconText, { icon: "clock", size: 16, color: "#d97706" }, "Maintenances a venir")),
+              h("div", { style: { display: "flex", flexDirection: "column", gap: 8, maxHeight: 280, overflowY: "auto" } },
+                toutesAlertesAnticipees.slice().sort(function(a, b) { return a.reste - b.reste; }).map(function(a, idx) {
+                  return h("div", { key: idx, onClick: function() { onNavigate("fiche-equipement", a.eqObj); }, style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "#fffbeb", borderRadius: 8, borderLeft: "4px solid #d97706", cursor: "pointer" } },
+                    h("div", null,
+                      h("div", { style: { fontWeight: 600, fontSize: 14 } }, a.equipement),
+                      h("div", { style: { fontSize: 12, color: "#6b7280" } }, a.plan + " — prochain a " + fmtNum(a.prochainSeuil) + a.unite)),
+                    h("span", { style: { background: "#fef3c7", color: "#92400e", padding: "4px 10px", borderRadius: 20, fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" } }, a.reste + a.unite + (a.unite === "km" ? " restant" : " restantes")));
+                }))
+            );
+          } },
+        { id: "panel-derniers-equips", label: "Derniers equipements modifies", icon: "history", w: "100%",
+          render: function() {
+            return h(Card, null,
+              h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, h(IconText, { icon: "clock", size: 16, color: "#6d28d9" }, "Derniers equipements modifies")),
+              derniersEquips.length === 0 ? h("p", { style: { color: "#9ca3af", textAlign: "center", padding: 20 } }, "Aucun equipement") :
+                h("div", { style: { display: "flex", flexDirection: "column", gap: 8, maxHeight: 280, overflowY: "auto" } },
+                  derniersEquips.map(function(eq) { return h("div", { key: eq.Id, style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px", background: "#f9fafb", borderRadius: 8, cursor: "pointer" }, onClick: function() { onNavigate("fiche-equipement", eq); } },
+                    h("div", null,
+                      h("div", { style: { fontWeight: 600, fontSize: 14, color: "#6d28d9" } }, eq.Title),
+                      h("div", { style: { fontSize: 12, color: "#6b7280" } }, eq.Nom)),
+                    h("div", { style: { display: "flex", gap: 12, alignItems: "center" } },
+                      h("div", { style: { fontSize: 12, textAlign: "right" } },
+                        h("div", { style: { fontWeight: 600, color: "#0f172a" } }, eq.Type),
+                        h("div", { style: { color: "#6b7280", fontSize: 11 } }, "H: " + fmtNum(eq.Horametre))),
+                      h(StatusBadge, { status: eq.Statut }))); }))
+            );
+          } },
+        { id: "actions-rapides", label: "Actions rapides", icon: "zap", w: "100%",
+          render: function() {
+            return h(Card, null,
+              h("h3", { style: { margin: "0 0 12px", fontSize: 16, fontWeight: 700 } }, h(IconText, { icon: "zap", size: 16, color: "#7c3aed" }, "Actions rapides")),
+              h("div", { style: { display: "flex", gap: 12, flexWrap: "wrap" } },
+                h(Button, { onClick: function() { onNavigate("interventions"); } }, h(IconText, { icon: "wrench", size: 14 }, "Nouvelle intervention")),
+                h(Button, { variant: "secondary", onClick: function() { onNavigate("equipements"); } }, h(IconText, { icon: "settings", size: 14 }, "Equipements")),
+                h(Button, { variant: "secondary", onClick: function() { onNavigate("plans"); } }, h(IconText, { icon: "clipboard-list", size: 14 }, "Plans")),
+                h(Button, { variant: "secondary", onClick: function() { onNavigate("pieces"); } }, h(IconText, { icon: "package", size: 14 }, "Pieces"))
+              )
+            );
+          } }
+      ];
+
+      var widgetById = {};
+      widgetDefs.forEach(function(w) { widgetById[w.id] = w; });
+      var defaultLayout = widgetDefs.map(function(w) { return { id: w.id, visible: true }; });
+
+      var _layout = useState(function() {
+        try {
+          var saved = localStorage.getItem("dashboardLayout_v1");
+          if (saved) { var parsed = JSON.parse(saved); if (Array.isArray(parsed)) return parsed; }
+        } catch(e) {}
+        return defaultLayout;
+      });
+      var dashLayout = _layout[0]; var setDashLayout = _layout[1];
+
+      useEffect(function() {
+        try { localStorage.setItem("dashboardLayout_v1", JSON.stringify(dashLayout)); } catch(e) {}
+      }, [dashLayout]);
+
+      // Reconcilier le layout sauvegarde avec les widgets disponibles
+      useEffect(function() {
+        var missing = widgetDefs.filter(function(w) { return !dashLayout.some(function(l) { return l.id === w.id; }); });
+        if (missing.length > 0) {
+          setDashLayout(dashLayout.concat(missing.map(function(w) { return { id: w.id, visible: false }; })));
+        }
+      }, []);
+
+      function onWidgetDragStart(e, id) {
+        if (!dashEditMode) return;
+        setDragSrcWidget(id);
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/x-widget-id", id);
+      }
+      function onWidgetDragOver(e) { if (!dashEditMode) return; e.preventDefault(); e.dataTransfer.dropEffect = "move"; }
+      function onWidgetDrop(e, targetId) {
+        if (!dashEditMode) return;
+        e.preventDefault();
+        var src = dragSrcWidget || e.dataTransfer.getData("text/x-widget-id");
+        if (!src || src === targetId) { setDragSrcWidget(null); return; }
+        var newL = dashLayout.slice();
+        var srcIdx = -1, tgtIdx = -1;
+        for (var i = 0; i < newL.length; i++) {
+          if (newL[i].id === src) srcIdx = i;
+          if (newL[i].id === targetId) tgtIdx = i;
+        }
+        if (srcIdx < 0 || tgtIdx < 0) return;
+        var moved = newL.splice(srcIdx, 1)[0];
+        if (srcIdx < tgtIdx) tgtIdx--;
+        newL.splice(tgtIdx, 0, moved);
+        setDashLayout(newL);
+        setDragSrcWidget(null);
+      }
+      function hideWidget(id) {
+        setDashLayout(dashLayout.map(function(w) { return w.id === id ? Object.assign({}, w, { visible: false }) : w; }));
+      }
+      function showWidget(id) {
+        var exists = dashLayout.some(function(w) { return w.id === id; });
+        if (exists) {
+          setDashLayout(dashLayout.map(function(w) { return w.id === id ? Object.assign({}, w, { visible: true }) : w; }));
+        } else {
+          setDashLayout(dashLayout.concat({ id: id, visible: true }));
+        }
+        setShowAddPicker(false);
+      }
+      function resetDashboard() {
+        if (confirm("Reinitialiser le tableau de bord par defaut ?")) {
+          setDashLayout(defaultLayout);
+        }
+      }
+
+      var hiddenWidgets = widgetDefs.filter(function(w) {
+        var entry = dashLayout.find(function(l) { return l.id === w.id; });
+        return !entry || !entry.visible;
+      });
+
+      return h("div", null,
+        h(PageHeader, {
+          title: h(IconText, { icon: "home", size: 20 }, "Tableau de bord"),
+          subtitle: "Vue d'ensemble de la maintenance",
+          action: h("div", { style: { display: "flex", gap: 8 } },
+            dashEditMode && hiddenWidgets.length > 0 ? h(Button, { onClick: function() { setShowAddPicker(true); } }, h(IconText, { icon: "plus", size: 14 }, "Ajouter (" + hiddenWidgets.length + ")")) : null,
+            dashEditMode ? h(Button, { variant: "secondary", onClick: resetDashboard }, h(IconText, { icon: "rotate-ccw", size: 14 }, "Reinitialiser")) : null,
+            h(Button, { variant: dashEditMode ? "primary" : "secondary", onClick: function() { setDashEditMode(!dashEditMode); } },
+              h(IconText, { icon: dashEditMode ? "check" : "sliders-horizontal", size: 14 }, dashEditMode ? "Terminer" : "Personnaliser"))
+          )
+        }),
+        dashEditMode ? h("div", { style: { padding: "10px 14px", background: "#eef2ff", borderRadius: 8, marginBottom: 16, fontSize: 13, color: "#4338ca", display: "flex", alignItems: "center", gap: 8 } },
+          h(Icon, { name: "info", size: 14, color: "#4338ca" }),
+          "Mode personnalisation : glissez les widgets pour les reorganiser, X pour retirer, bouton Ajouter pour en remettre."
+        ) : null,
+        h("div", { style: { display: "flex", flexWrap: "wrap", gap: 16, marginBottom: 24, alignItems: "flex-start" } },
+          dashLayout.filter(function(l) { return l.visible; }).map(function(l) {
+            var w = widgetById[l.id];
+            if (!w) return null;
+            var rendered = w.render();
+            if (!rendered) return null;
+            var isDragging = dragSrcWidget === l.id;
+            return h("div", {
+              key: l.id,
+              draggable: dashEditMode,
+              onDragStart: function(e) { onWidgetDragStart(e, l.id); },
+              onDragOver: onWidgetDragOver,
+              onDrop: function(e) { onWidgetDrop(e, l.id); },
+              style: {
+                position: "relative",
+                width: typeof w.w === "number" ? w.w + "px" : w.w,
+                opacity: isDragging ? 0.35 : 1,
+                cursor: dashEditMode ? "grab" : "default",
+                outline: dashEditMode ? "2px dashed #cbd5e1" : "none",
+                outlineOffset: dashEditMode ? 3 : 0,
+                borderRadius: 8,
+                transition: "opacity 0.15s, outline-color 0.15s"
+              }
+            },
+              dashEditMode ? h("button", {
+                onClick: function() { hideWidget(l.id); },
+                style: { position: "absolute", top: -10, right: -10, width: 24, height: 24, borderRadius: 12, background: "#dc2626", color: "white", border: "2px solid white", cursor: "pointer", zIndex: 10, display: "flex", alignItems: "center", justifyContent: "center", padding: 0, boxShadow: "0 2px 6px rgba(0,0,0,0.25)" },
+                title: "Retirer ce widget"
+              }, h(Icon, { name: "x", size: 12, color: "white" })) : null,
+              dashEditMode ? h("div", {
+                style: { position: "absolute", top: -10, left: 8, background: "#7c3aed", color: "white", borderRadius: 12, padding: "2px 8px", fontSize: 10, fontWeight: 700, zIndex: 10, display: "inline-flex", alignItems: "center", gap: 4, boxShadow: "0 2px 6px rgba(0,0,0,0.2)", whiteSpace: "nowrap", pointerEvents: "none" }
+              }, h(Icon, { name: "grip-vertical", size: 10, color: "white" }), w.label) : null,
+              rendered
+            );
+          })
+        ),
+        showAddPicker ? h(Modal, { title: "Ajouter un widget au tableau de bord", onClose: function() { setShowAddPicker(false); } },
+          hiddenWidgets.length === 0
+            ? h("p", { style: { color: "#9ca3af", textAlign: "center", padding: 20 } }, "Tous les widgets sont deja visibles.")
+            : h("div", { style: { display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10, maxHeight: 420, overflowY: "auto" } },
+                hiddenWidgets.map(function(w) {
+                  return h("button", { key: w.id, onClick: function() { showWidget(w.id); },
+                    style: { display: "flex", alignItems: "center", gap: 12, padding: 14, border: "1px solid #e2e8f0", borderRadius: 8, background: "white", cursor: "pointer", textAlign: "left" } },
+                    h(Icon, { name: w.icon, size: 22, color: "#475569" }),
+                    h("div", { style: { flex: 1 } },
+                      h("div", { style: { fontWeight: 600, fontSize: 14, color: "#1e293b" } }, w.label)
+                    ),
+                    h(Icon, { name: "plus", size: 16, color: "#7c3aed" })
+                  );
+                })
+              )
+        ) : null
+      );
     }
 
     // ─── Formulaire Plan ────────────────────────────────────────────────
@@ -5508,6 +5757,7 @@
     // ─── App principale ─────────────────────────────────────────────────
     function App() {
       const [session, setSession] = useState(null);
+      const [recoveryMode, setRecoveryMode] = useState(false);
       const [authLoading, setAuthLoading] = useState(true);
       const [dataLoading, setDataLoading] = useState(false);
       const [currentPage, setCurrentPage] = useState("accueil");
@@ -5534,10 +5784,13 @@
         setTimeout(() => setToast({ message: "", type }), 3000);
       };
 
-      // Ecoute de la session (login/logout)
+      // Ecoute de la session (login/logout/password-recovery)
       useEffect(() => {
         supabase.auth.getSession().then(({ data }) => { setSession(data.session); setAuthLoading(false); });
-        const { data: sub } = supabase.auth.onAuthStateChange((_event, sess) => { setSession(sess); });
+        const { data: sub } = supabase.auth.onAuthStateChange((event, sess) => {
+          if (event === "PASSWORD_RECOVERY") setRecoveryMode(true);
+          setSession(sess);
+        });
         return () => sub.subscription.unsubscribe();
       }, []);
 
@@ -6132,6 +6385,7 @@
       };
 
       if (authLoading) return h("div", { style: { display: "flex", justifyContent: "center", alignItems: "center", minHeight: "100vh" } }, h("div", { className: "loader" }));
+      if (recoveryMode) return h(RecoveryPasswordScreen, { onDone: () => { setRecoveryMode(false); setSession(null); } });
       if (!session) return h(LoginScreen, { onLoggedIn: () => {} });
 
       const renderPage = () => {
