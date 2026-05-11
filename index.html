@@ -2339,7 +2339,24 @@
         return month.getFullYear() + "-" + (m < 10 ? "0" : "") + m + "-" + (day < 10 ? "0" : "") + day;
       }
 
-      // ── Couleur stable par engin (hash -> HSL) ──
+      // ── Couleur stable par engin (palette professionnelle curatee) ──
+      var ENGIN_PALETTE = [
+        { start: "#2563eb", end: "#1d4ed8" }, // blue
+        { start: "#4f46e5", end: "#4338ca" }, // indigo
+        { start: "#7c3aed", end: "#6d28d9" }, // violet
+        { start: "#c026d3", end: "#a21caf" }, // fuchsia
+        { start: "#db2777", end: "#be185d" }, // pink
+        { start: "#e11d48", end: "#be123c" }, // rose
+        { start: "#dc2626", end: "#b91c1c" }, // red
+        { start: "#ea580c", end: "#c2410c" }, // orange
+        { start: "#d97706", end: "#b45309" }, // amber
+        { start: "#65a30d", end: "#4d7c0f" }, // lime
+        { start: "#059669", end: "#047857" }, // emerald
+        { start: "#0d9488", end: "#0f766e" }, // teal
+        { start: "#0891b2", end: "#0e7490" }, // cyan
+        { start: "#0284c7", end: "#0369a1" }, // sky
+        { start: "#475569", end: "#334155" }  // slate
+      ];
       function colorForEngin(eq) {
         var str = ((eq && (eq.Id || eq.Title)) || "default") + "";
         var hash = 0;
@@ -2347,10 +2364,10 @@
           hash = ((hash << 5) - hash) + str.charCodeAt(i);
           hash = hash & hash;
         }
-        var hue = Math.abs(hash) % 360;
+        var c = ENGIN_PALETTE[Math.abs(hash) % ENGIN_PALETTE.length];
         return {
-          solid: "hsl(" + hue + ", 60%, 45%)",
-          gradient: "linear-gradient(135deg, hsl(" + hue + ", 65%, 55%), hsl(" + hue + ", 70%, 35%))"
+          solid: c.end,
+          gradient: "linear-gradient(135deg, " + c.start + ", " + c.end + ")"
         };
       }
 
