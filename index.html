@@ -982,7 +982,7 @@
 
     // ─── Ecran Interventions (Formulaire) ───────────────────────────────
     function EcranInterventions({ onNavigate, editItem }) {
-      const { equipements, addIntervention, updateIntervention, addReleve } = useAppData();
+      const { equipements, plans, addIntervention, updateIntervention, addReleve } = useAppData();
       const techniciens = useParams("technicien");
       const [f, setF] = useState(editItem || { Title: "", Equipement: "", Date_Intervention: new Date().toISOString().split("T")[0], Technicien: "", Statut_Intervention: "Planifiee", Travaux_Effectues: "", Temps_Arret: "", Cout: "", Plan: "", Horametre: "", KM: "", Type: "Preventive" });
       const [saved, setSaved] = useState(false);
@@ -1023,7 +1023,27 @@
             h(FormField, { label: "Cout (XPF)" }, h("input", { type: "number", style: inputStyle, value: f.Cout, onChange: (e) => upd("Cout", e.target.value), placeholder: "0" })),
             h(FormField, { label: "Horametre (h)" }, h("input", { type: "number", style: inputStyle, value: f.Horametre, onChange: (e) => upd("Horametre", e.target.value), placeholder: "0" })),
             h(FormField, { label: "Kilometrage (km)" }, h("input", { type: "number", style: inputStyle, value: f.KM, onChange: (e) => upd("KM", e.target.value), placeholder: "0" })),
-            h(FormField, { label: "Plan de maintenance" }, h("input", { style: inputStyle, value: f.Plan, onChange: (e) => upd("Plan", e.target.value), placeholder: "Ex: Plan mensuel" })),
+            h(FormField, { label: "Plan de maintenance" }, h("select", { style: selectStyle, value: f.Plan, onChange: (e) => upd("Plan", e.target.value) },
+              h("option", { value: "" }, "-- Aucun (intervention curative ou hors plan) --"),
+              (function() {
+                var sorted = (plans || []).slice().sort(function(a, b) { return (a.Title || "").localeCompare(b.Title || ""); });
+                var eqCodeSel = (f.Equipement || "").toLowerCase();
+                var applicable = sorted.filter(function(p) {
+                  if (!eqCodeSel) return false;
+                  var eqs = (p.Equipements || "").toLowerCase();
+                  return !eqs || eqs.indexOf(eqCodeSel) >= 0 || eqs.indexOf("tous") >= 0;
+                });
+                var others = sorted.filter(function(p) { return applicable.indexOf(p) < 0; });
+                var opts = [];
+                if (applicable.length > 0) {
+                  opts.push(h("optgroup", { key: "applicable", label: "Plans applicables a " + (f.Equipement || "cet equipement") }, applicable.map(function(p) { return h("option", { key: "a_" + p.Id, value: p.Title }, p.Title + (p.Frequence ? " (" + p.Frequence + ")" : "")); })));
+                }
+                if (others.length > 0) {
+                  opts.push(h("optgroup", { key: "others", label: applicable.length > 0 ? "Autres plans" : "Tous les plans" }, others.map(function(p) { return h("option", { key: "o_" + p.Id, value: p.Title }, p.Title + (p.Frequence ? " (" + p.Frequence + ")" : "")); })));
+                }
+                return opts;
+              }())
+            )),
             h("div", { style: { gridColumn: "1 / -1" } },
               h(FormField, { label: "Travaux effectues" }, h("textarea", { style: { ...inputStyle, minHeight: 80, resize: "vertical" }, value: f.Travaux_Effectues, onChange: (e) => upd("Travaux_Effectues", e.target.value), onBlur: () => upd("Travaux_Effectues", capitalizeFirst(f.Travaux_Effectues)), placeholder: "Decrivez les travaux..." })))),
           h("div", { style: { display: "flex", gap: 12, marginTop: 20, justifyContent: "flex-end" } },
