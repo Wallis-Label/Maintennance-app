@@ -102,7 +102,7 @@
 
     // ─── Icones SVG (Lucide) ─────────────────────────────────────────
     // Composant Icon : affiche une icone Lucide inline via la librairie globale.
-    // Usage : h(Icon, { name: "wrench", size: 16, color: "#6d28d9" })
+    // Usage : h(Icon, { name: "wrench", size: 16, color: "#a78bfa" })
     // Convertit kebab-case en PascalCase pour lucide.icons
     function toPascalCase(str) {
       return str.split("-").map(function(s) { return s.charAt(0).toUpperCase() + s.slice(1); }).join("");
@@ -2102,7 +2102,7 @@
           h(Button, { onClick: function() { setEditing(null); setShowModal(true); } }, h(IconText, { icon: "plus", size: 14 }, "Nouvel employe"))
         ) }),
         h("div", { style: { display: "flex", gap: 16, marginBottom: 16, flexWrap: "wrap" } },
-          h(KPICard, { icon: h(Icon, { name: "user-round", size: 32, color: "#6d28d9" }), label: "Effectif total", value: String(personnel.length), color: "#6d28d9" }),
+          h(KPICard, { icon: h(Icon, { name: "user-round", size: 32, color: "#a78bfa" }), label: "Effectif total", value: String(personnel.length), color: "#a78bfa" }),
           h(KPICard, { icon: h(Icon, { name: "map-pin", size: 32, color: "#059669" }), label: "Lieux de contrat", value: String(Array.from(new Set(personnel.map(function(e) { return e.lieuContrat; }).filter(Boolean))).length), color: "#059669" })
         ),
         h("div", { style: { marginBottom: 16 } }, h(SearchInput, { placeholder: "Rechercher un employe...", value: search, onChange: setSearch })),
@@ -2331,9 +2331,9 @@
       var freeEquips = equipements.filter(function(e) { return !assignedEquipIds[e.Id]; });
 
       var chipStyle = { display: "inline-flex", alignItems: "center", gap: 6, background: "rgba(255,255,255,0.05)", padding: "4px 10px", borderRadius: 20, fontSize: 12, border: "1px solid rgba(255,255,255,0.1)", color: "#e5e7eb" };
-      var chipDragStyle = Object.assign({}, chipStyle, { cursor: "grab", border: "1px solid #d1d5db" });
+      var chipDragStyle = Object.assign({}, chipStyle, { cursor: "grab", border: "1px solid rgba(255,255,255,0.12)" });
       var rmBtn = { background: "none", border: "none", color: "#71717a", cursor: "pointer", padding: 0, fontSize: 14, lineHeight: "1" };
-      var avatarStyle = { width: 20, height: 20, background: "#6d28d9", color: "white", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700 };
+      var avatarStyle = { width: 20, height: 20, background: "linear-gradient(135deg, #6366f1 0%, #818cf8 100%)", color: "white", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, boxShadow: "0 2px 6px rgba(99,102,241,0.3)" };
       var actionBtn = { background: "transparent", border: "none", cursor: "pointer", padding: 4, borderRadius: 4 };
 
       function renderGroup(g, gIdx) {
@@ -2361,7 +2361,7 @@
           h("div", { style: { fontSize: 11, color: "#a1a1aa", marginBottom: 6 } }, "Equipements"),
           h("div", { style: { display: "flex", flexWrap: "wrap", gap: 6, minHeight: 28 } },
             eList.length === 0 ? h("span", { style: { fontSize: 12, color: "#71717a" } }, "Glisser ici") :
-            eList.map(function(e) { return h("span", { key: e.Id, style: Object.assign({}, chipStyle, { background: "rgba(167,139,250,0.15)" }) }, e.Title, h("button", { onClick: function() { removeEquip(g.id, e.Id); }, style: Object.assign({}, rmBtn, { color: "#6d28d9" }) }, "\u00D7")); })
+            eList.map(function(e) { return h("span", { key: e.Id, style: Object.assign({}, chipStyle, { background: "rgba(167,139,250,0.15)" }) }, e.Title, h("button", { onClick: function() { removeEquip(g.id, e.Id); }, style: Object.assign({}, rmBtn, { color: "#a78bfa" }) }, "\u00D7")); })
           )
         );
       }
@@ -2372,7 +2372,7 @@
           // Left column
           h("div", { style: { display: "flex", flexDirection: "column", gap: 12 } },
             h(Card, null,
-              h("h3", { style: { margin: "0 0 12px", fontSize: 16, fontWeight: 700 } }, h(IconText, { icon: "users", size: 16, color: "#6d28d9" }, "Groupes de travail")),
+              h("h3", { style: { margin: "0 0 12px", fontSize: 16, fontWeight: 700 } }, h(IconText, { icon: "users", size: 16, color: "#a78bfa" }, "Groupes de travail")),
               groups.length === 0 ? h("p", { style: { color: "#71717a", textAlign: "center", padding: 20 } }, "Aucun groupe. Cliquez sur '+ Nouveau groupe'.") :
               h("div", { style: { display: "flex", flexDirection: "column", gap: 10 } },
                 groups.map(function(g, idx) { return renderGroup(g, idx); })
@@ -2380,7 +2380,7 @@
             ),
             h(Card, null,
               h("h4", { style: { margin: "0 0 8px", fontSize: 13, fontWeight: 700, color: "#e5e7eb" } }, h(IconText, { icon: "user-round", size: 13 }, "Membres disponibles")),
-              allMembers.length === 0 ? h("div", { style: { fontSize: 12, color: "#71717a", padding: "8px 0" } }, "Aucun employe. ", h("a", { href: "#", onClick: function(e) { e.preventDefault(); onNavigate("personnel"); }, style: { color: "#6d28d9", fontWeight: 600 } }, "Ajouter du personnel")) :
+              allMembers.length === 0 ? h("div", { style: { fontSize: 12, color: "#71717a", padding: "8px 0" } }, "Aucun employe. ", h("a", { href: "#", onClick: function(e) { e.preventDefault(); onNavigate("personnel"); }, style: { color: "#a78bfa", fontWeight: 600 } }, "Ajouter du personnel")) :
               h("div", { style: { display: "flex", flexWrap: "wrap", gap: 6, minHeight: 28 } },
                 freeMbrs.length === 0 ? h("span", { style: { fontSize: 12, color: "#71717a" } }, "Tous assignes") :
                 freeMbrs.map(function(m) { return h("span", { key: m.id, draggable: true, onDragStart: function(ev) { onDragStart(ev, m, "member"); }, style: chipDragStyle }, h("span", { style: avatarStyle }, m.avatar), m.name); })
@@ -2388,13 +2388,13 @@
               h("h4", { style: { margin: "16px 0 8px", fontSize: 13, fontWeight: 700, color: "#e5e7eb" } }, h(IconText, { icon: "truck", size: 13 }, "Equipements disponibles")),
               h("div", { style: { display: "flex", flexWrap: "wrap", gap: 6, minHeight: 28 } },
                 freeEquips.length === 0 ? h("span", { style: { fontSize: 12, color: "#71717a" } }, "Tous assignes") :
-                freeEquips.slice(0, 12).map(function(e) { return h("span", { key: e.Id, draggable: true, onDragStart: function(ev) { onDragStart(ev, e, "equip"); }, style: chipDragStyle }, h(Icon, { name: "truck", size: 12, color: "#6d28d9" }), e.Title); })
+                freeEquips.slice(0, 12).map(function(e) { return h("span", { key: e.Id, draggable: true, onDragStart: function(ev) { onDragStart(ev, e, "equip"); }, style: chipDragStyle }, h(Icon, { name: "truck", size: 12, color: "#a78bfa" }), e.Title); })
               )
             )
           ),
           // Right column - Map
           h(Card, { style: { height: "fit-content" } },
-            h("h3", { style: { margin: "0 0 12px", fontSize: 16, fontWeight: 700 } }, h(IconText, { icon: "map-pin", size: 16, color: "#6d28d9" }, "Carte des lieux de travail")),
+            h("h3", { style: { margin: "0 0 12px", fontSize: 16, fontWeight: 700 } }, h(IconText, { icon: "map-pin", size: 16, color: "#a78bfa" }, "Carte des lieux de travail")),
             h("div", { id: mapId, style: { width: "100%", height: 400, borderRadius: 8, background: "rgba(36, 40, 60, 0.45)", border: "1px solid rgba(255,255,255,0.07)" } }),
             h("div", { style: { marginTop: 12, fontSize: 12, color: "#a1a1aa" } },
               groups.filter(function(g) { return g.lat; }).length === 0 ?
@@ -3495,7 +3495,7 @@
       return h("div", null,
         h(PageHeader, { title: h(IconText, { icon: "calendar", size: 20 }, "Planning"), subtitle: "Declarations, Renouvellements et Chantiers", action: h(Button, { onClick: openNew }, h(IconText, { icon: "plus", size: 14 }, "Nouveau")) }),
         h("div", { style: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 24 } },
-          h(KPICard, { icon: h(Icon, { name: "wallet", size: 32, color: "#7c3aed" }), label: "A provisionner", value: fmtNum(totalAprovisionner), color: "#7c3aed" }),
+          h(KPICard, { icon: h(Icon, { name: "wallet", size: 32, color: "#a78bfa" }), label: "A provisionner", value: fmtNum(totalAprovisionner), color: "#a78bfa" }),
           h(KPICard, { icon: h(Icon, { name: "file-check", size: 32, color: "#059669" }), label: "Docs a renouveler", value: String(docsARenouveler), color: "#059669" }),
           h(KPICard, { icon: h(Icon, { name: "briefcase", size: 32, color: "#d97706" }), label: "CA Previsionnel", value: fmtNum(caChantiers), color: "#d97706" }),
           h(KPICard, { icon: h(Icon, { name: "trending-up", size: 32, color: "#2563eb" }), label: "Marge %", value: margeChantiers + "%", color: "#2563eb" })
@@ -3710,7 +3710,7 @@
             // ── Calendrier annuel avec swimlanes par chantier ──
             h("div", { style: { background: "rgba(36, 40, 60, 0.55)", backdropFilter: "blur(20px) saturate(180%)", WebkitBackdropFilter: "blur(20px) saturate(180%)", borderRadius: 12, border: "1px solid rgba(255,255,255,0.07)", overflow: "hidden", boxShadow: "0 8px 24px rgba(0,0,0,0.3)" } },
               // Header annee
-              h("div", { style: { display: "flex", borderBottom: "2px solid rgba(255,255,255,0.08)", background: "linear-gradient(180deg, #f8fafc, #f1f5f9)" } },
+              h("div", { style: { display: "flex", borderBottom: "2px solid rgba(255,255,255,0.08)", background: "linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02))" } },
                 h("div", { style: { width: 240, flexShrink: 0, padding: "10px 12px", fontSize: 15, fontWeight: 700, color: "#fafafa", borderRight: "1px solid rgba(255,255,255,0.06)", display: "flex", alignItems: "center", boxSizing: "border-box" } }, String(year)),
                 h("div", { style: { position: "relative", flex: 1, height: 38 } },
                   ["Jan","Fev","Mar","Avr","Mai","Jun","Jul","Aou","Sep","Oct","Nov","Dec"].map(function(nom, idx) {
@@ -3753,7 +3753,7 @@
                         chAssigns.length === 0
                           ? h("div", { style: { display: "flex", alignItems: "center", minHeight: 50 } },
                               h("div", { style: { width: 240, flexShrink: 0, padding: "12px", boxSizing: "border-box" } }, ""),
-                              h("div", { style: { flex: 1, margin: "12px", padding: "12px", border: "2px dashed #cbd5e1", borderRadius: 6, textAlign: "center", fontSize: 12, color: "#71717a", fontStyle: "italic" } }, "Glisser un engin du pool ici"))
+                              h("div", { style: { flex: 1, margin: "12px", padding: "12px", border: "2px dashed rgba(255,255,255,0.12)", borderRadius: 6, textAlign: "center", fontSize: 12, color: "#71717a", fontStyle: "italic" } }, "Glisser un engin du pool ici"))
                           : (function() {
                               var lanes = assignToLanes(chAssigns);
                               return lanes.map(function(laneItems, laneIdx) {
@@ -3948,7 +3948,7 @@
       var bgColor = isWeekend ? "rgba(255,255,255,0.04)" : isToday ? "rgba(99,102,241,0.10)" : isSpecial ? (TYPE_COLORS[typeJour] || "rgba(255,255,255,0.04)") + "20" : "rgba(255,255,255,0.02)";
       var inputBg = isSpecial ? TYPE_COLORS[typeJour] || "#f59e0b" : val ? "#2563eb" : isWeekend ? "rgba(255,255,255,0.04)" : "rgba(255,255,255,0.03)";
       var inputColor = isSpecial ? "white" : val ? "white" : "#e5e7eb";
-      var inputBorder = isSpecial ? "1px solid " + (TYPE_COLORS[typeJour] || "#f59e0b") : val ? "1px solid #2563eb" : isWeekend ? "1px solid #e5e7eb" : "1px solid #d1d5db";
+      var inputBorder = isSpecial ? "1px solid " + (TYPE_COLORS[typeJour] || "#f59e0b") : val ? "1px solid #60a5fa" : isWeekend ? "1px solid rgba(255,255,255,0.06)" : "1px solid rgba(255,255,255,0.1)";
 
       var _focused = useState(false);
       var isFocused = _focused[0];
@@ -3956,14 +3956,14 @@
 
       if (isFocused && !isWeekend) {
         inputBg = val ? "#1d4ed8" : "#eef2ff";
-        inputBorder = "2px solid #7c3aed";
+        inputBorder = "2px solid #818cf8";
       }
 
       return h("div", {
         onClick: activeBrush ? handleBrushClick : undefined,
         onMouseDown: activeBrush ? function(e) { e.preventDefault(); if (props.onPaintStart) props.onPaintStart(); handleBrushClick(); } : undefined,
         onMouseEnter: activeBrush && props.isPainting ? handleBrushClick : undefined,
-        style: { width: 48, flexShrink: 0, borderRight: "1px solid #e5e7eb", background: bgColor, textAlign: "center", cursor: activeBrush ? "pointer" : "default" }
+        style: { width: 48, flexShrink: 0, borderRight: "1px solid rgba(255,255,255,0.06)", background: bgColor, textAlign: "center", cursor: activeBrush ? "pointer" : "default" }
       },
         h("div", { style: { height: 20, fontSize: 9, fontWeight: 600, lineHeight: "20px", color: isWeekend ? "#71717a" : isToday ? "#7c3aed" : "#a1a1aa" } }, dayLetter),
         h("div", { style: { height: 18, fontSize: 11, fontWeight: 700, lineHeight: "18px", borderBottom: "1px solid rgba(255,255,255,0.07)", color: isToday ? "#7c3aed" : "#e5e7eb" } }, String(dayNum)),
@@ -4320,7 +4320,7 @@
           h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 } },
             h("h3", { style: { fontSize: 15, fontWeight: 700, margin: 0, color: "#e5e7eb" } }, h(IconText, { icon: "bar-chart-3", size: 16 }, "Progression globale - " + currentMonth.toLocaleDateString("fr-FR", { month: "long", year: "numeric" }))),
             h("div", { style: { display: "flex", gap: 16, fontSize: 12, fontWeight: 600 } },
-              h("span", { style: { color: "#7c3aed" } }, "Total : " + fmtNum(totalMoisMet) + " m"),
+              h("span", { style: { color: "#a78bfa" } }, "Total : " + fmtNum(totalMoisMet) + " m"),
               h("span", { style: { color: "#2563eb" } }, "CA : " + fmtNum(totalMoisCA) + " XPF")
             )
           ),
@@ -4387,7 +4387,7 @@
           action: h(Button, { onClick: openNewChantier }, h(IconText, { icon: "plus", size: 14, color: "white" }, "Nouveau chantier"))
         }),
         h("div", { style: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 24 } },
-          h(KPICard, { icon: h(Icon, { name: "briefcase", size: 32, color: "#7c3aed" }), label: "Chantiers actifs", value: String(activeChantiers.length), color: "#7c3aed" }),
+          h(KPICard, { icon: h(Icon, { name: "briefcase", size: 32, color: "#a78bfa" }), label: "Chantiers actifs", value: String(activeChantiers.length), color: "#a78bfa" }),
           h(KPICard, { icon: h(Icon, { name: "trending-up", size: 32, color: "#059669" }), label: "Avancement global", value: avancementGlobal + "%", color: "#059669" }),
           h(KPICard, { icon: h(Icon, { name: "move", size: 32, color: "#d97706" }), label: "Metrage realise", value: fmtNum(totalRealiseAll) + " m", color: "#d97706" }),
           h(KPICard, { icon: h(Icon, { name: "wallet", size: 32, color: "#2563eb" }), label: "CA realise", value: fmtNum(totalCARealisedAll), color: "#2563eb" })
@@ -4433,7 +4433,7 @@
                   ),
                   h(Icon, { name: isExpanded ? "chevron-up" : "chevron-down", size: 20, color: "#a1a1aa" })
                 ),
-                isExpanded && h("div", { style: { borderTop: "1px solid #e5e7eb", paddingTop: 16, marginTop: 12 } },
+                isExpanded && h("div", { style: { borderTop: "1px solid rgba(255,255,255,0.07)", paddingTop: 16, marginTop: 12 } },
                   h("div", { style: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 16, fontSize: 13 } },
                     h("div", { style: { background: "rgba(255,255,255,0.04)", padding: 10, borderRadius: 6 } },
                       h("div", { style: { color: "#a1a1aa", marginBottom: 4, fontSize: 11, fontWeight: 600 } }, "Prevu"),
@@ -4499,14 +4499,14 @@
                           onClick: function(e) { e.stopPropagation(); setChantierBrush(isActive ? null : evt.key); },
                           style: {
                             display: "flex", alignItems: "center", gap: 4, padding: "4px 10px",
-                            border: isActive ? "2px solid " + evt.color : "1px solid #e2e8f0",
+                            border: isActive ? "2px solid " + evt.color : "1px solid rgba(255,255,255,0.1)",
                             borderRadius: 6, cursor: "pointer", fontSize: 11, fontWeight: 600,
-                            background: isActive ? evt.color + "15" : "white",
-                            color: isActive ? evt.color : "#a1a1aa",
-                            boxShadow: isActive ? "0 0 0 2px " + evt.color + "30" : "none"
+                            background: isActive ? evt.color + "30" : "rgba(255,255,255,0.05)",
+                            color: isActive ? "#fafafa" : "#a1a1aa",
+                            boxShadow: isActive ? "0 0 0 2px " + evt.color + "40" : "none"
                           }
                         },
-                          h(Icon, { name: evt.icon, size: 12, color: isActive ? evt.color : "#71717a" }),
+                          h(Icon, { name: evt.icon, size: 12, color: isActive ? "#fafafa" : "#71717a" }),
                           evt.label
                         );
                       }),
@@ -4514,13 +4514,13 @@
                         onClick: function(e) { e.stopPropagation(); setChantierBrush(chantierBrush === "eraser-type" ? null : "eraser-type"); },
                         style: {
                           display: "flex", alignItems: "center", gap: 4, padding: "4px 10px",
-                          border: chantierBrush === "eraser-type" ? "2px solid #dc2626" : "1px solid #e2e8f0",
+                          border: chantierBrush === "eraser-type" ? "2px solid #f43f5e" : "1px solid rgba(255,255,255,0.1)",
                           borderRadius: 6, cursor: "pointer", fontSize: 11, fontWeight: 600,
-                          background: chantierBrush === "eraser-type" ? "rgba(244,63,94,0.15)" : "rgba(255,255,255,0.05)",
-                          color: chantierBrush === "eraser-type" ? "#dc2626" : "#a1a1aa",
-                          boxShadow: chantierBrush === "eraser-type" ? "0 0 0 2px #dc262630" : "none"
+                          background: chantierBrush === "eraser-type" ? "rgba(244,63,94,0.18)" : "rgba(255,255,255,0.05)",
+                          color: chantierBrush === "eraser-type" ? "#fda4af" : "#a1a1aa",
+                          boxShadow: chantierBrush === "eraser-type" ? "0 0 0 2px rgba(244,63,94,0.25)" : "none"
                         }
-                      }, h(Icon, { name: "eraser", size: 12, color: chantierBrush === "eraser-type" ? "#dc2626" : "#71717a" }), "Retirer statut")
+                      }, h(Icon, { name: "eraser", size: 12, color: chantierBrush === "eraser-type" ? "#fda4af" : "#71717a" }), "Retirer statut")
                     )
                   ),
                   h("div", { style: { background: "rgba(36, 40, 60, 0.45)", backdropFilter: "blur(12px)", borderRadius: 8, border: "1px solid rgba(255,255,255,0.07)", overflowX: "auto" } },
@@ -4805,7 +4805,7 @@
         }),
         // KPIs
         h("div", { style: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 24 } },
-          h(KPICard, { icon: h(Icon, { name: "users", size: 32, color: "#7c3aed" }), label: "Employes", value: String(personnel.length), color: "#7c3aed" }),
+          h(KPICard, { icon: h(Icon, { name: "users", size: 32, color: "#a78bfa" }), label: "Employes", value: String(personnel.length), color: "#a78bfa" }),
           h(KPICard, { icon: h(Icon, { name: "briefcase", size: 32, color: "#059669" }), label: "Chantiers actifs", value: String(activeChantiers.length), color: "#059669" }),
           h(KPICard, { icon: h(Icon, { name: "calendar-check", size: 32, color: "#d97706" }), label: "Affectations ce mois", value: String(totalAffectations), color: "#d97706" })
         ),
@@ -4822,11 +4822,11 @@
                 onClick: function() { setBrush(isActive ? null : ch.id); },
                 style: {
                   display: "flex", alignItems: "center", gap: 8, padding: "8px 14px",
-                  border: isActive ? "2px solid " + color : "1px solid #e2e8f0",
+                  border: isActive ? "2px solid " + color : "1px solid rgba(255,255,255,0.1)",
                   borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 600,
-                  background: isActive ? color + "15" : "white",
-                  color: isActive ? color : "#e5e7eb",
-                  boxShadow: isActive ? "0 0 0 3px " + color + "30" : "none",
+                  background: isActive ? color + "30" : "rgba(255,255,255,0.05)",
+                  color: isActive ? "#fafafa" : "#e5e7eb",
+                  boxShadow: isActive ? "0 0 0 3px " + color + "40" : "none",
                   transition: "all 0.15s"
                 }
               },
@@ -4835,7 +4835,7 @@
               );
             }),
             activeChantiers.filter(function(c) { return c.statut === "A venir"; }).length > 0 ? h("div", { style: { width: 1, height: 28, background: "rgba(99,102,241,0.25)", margin: "0 4px" } }) : null,
-            activeChantiers.filter(function(c) { return c.statut === "A venir"; }).length > 0 ? h("span", { style: { fontSize: 10, fontWeight: 700, color: "#6366f1", textTransform: "uppercase" } }, "A venir:") : null,
+            activeChantiers.filter(function(c) { return c.statut === "A venir"; }).length > 0 ? h("span", { style: { fontSize: 10, fontWeight: 700, color: "#a5b4fc", textTransform: "uppercase" } }, "A venir:") : null,
             activeChantiers.filter(function(c) { return c.statut === "A venir"; }).map(function(ch) {
               var idx = activeChantiers.indexOf(ch);
               var color = CHANTIER_COLORS[idx % CHANTIER_COLORS.length];
@@ -4845,11 +4845,11 @@
                 onClick: function() { setBrush(isActive ? null : ch.id); },
                 style: {
                   display: "flex", alignItems: "center", gap: 8, padding: "8px 14px",
-                  border: isActive ? "2px solid " + color : "1px solid #c7d2fe",
+                  border: isActive ? "2px solid " + color : "1px solid rgba(99,102,241,0.3)",
                   borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 600,
-                  background: isActive ? color + "15" : "rgba(99,102,241,0.06)",
-                  color: isActive ? color : "#e5e7eb",
-                  boxShadow: isActive ? "0 0 0 3px " + color + "30" : "none",
+                  background: isActive ? color + "30" : "rgba(99,102,241,0.08)",
+                  color: isActive ? "#fafafa" : "#e5e7eb",
+                  boxShadow: isActive ? "0 0 0 3px " + color + "40" : "none",
                   transition: "all 0.15s",
                   borderStyle: "dashed"
                 }
@@ -4866,11 +4866,11 @@
                 onClick: function() { setBrush(isActive ? null : evt.key); },
                 style: {
                   display: "flex", alignItems: "center", gap: 6, padding: "8px 12px",
-                  border: isActive ? "2px solid " + evt.color : "1px solid #e2e8f0",
+                  border: isActive ? "2px solid " + evt.color : "1px solid rgba(255,255,255,0.1)",
                   borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 600,
-                  background: isActive ? evt.color + "15" : "white",
-                  color: isActive ? evt.color : "#a1a1aa",
-                  boxShadow: isActive ? "0 0 0 3px " + evt.color + "30" : "none",
+                  background: isActive ? evt.color + "30" : "rgba(255,255,255,0.05)",
+                  color: isActive ? "#fafafa" : "#a1a1aa",
+                  boxShadow: isActive ? "0 0 0 3px " + evt.color + "40" : "none",
                   transition: "all 0.15s"
                 }
               },
@@ -4883,15 +4883,15 @@
               onClick: function() { setBrush(brush === "eraser" ? null : "eraser"); },
               style: {
                 display: "flex", alignItems: "center", gap: 6, padding: "8px 14px",
-                border: brush === "eraser" ? "2px solid #dc2626" : "1px solid #e2e8f0",
+                border: brush === "eraser" ? "2px solid #f43f5e" : "1px solid rgba(255,255,255,0.1)",
                 borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 600,
-                background: brush === "eraser" ? "rgba(244,63,94,0.15)" : "rgba(255,255,255,0.05)",
-                color: brush === "eraser" ? "#dc2626" : "#a1a1aa",
-                boxShadow: brush === "eraser" ? "0 0 0 3px #dc262630" : "none",
+                background: brush === "eraser" ? "rgba(244,63,94,0.18)" : "rgba(255,255,255,0.05)",
+                color: brush === "eraser" ? "#fda4af" : "#a1a1aa",
+                boxShadow: brush === "eraser" ? "0 0 0 3px rgba(244,63,94,0.25)" : "none",
                 transition: "all 0.15s"
               }
             },
-              h(Icon, { name: "eraser", size: 14, color: brush === "eraser" ? "#dc2626" : "#a1a1aa" }),
+              h(Icon, { name: "eraser", size: 14, color: brush === "eraser" ? "#fda4af" : "#a1a1aa" }),
               "Effacer"
             ),
             brush ? h("div", { style: { marginLeft: 8, fontSize: 12, color: "#a1a1aa", fontStyle: "italic" } },
@@ -4932,10 +4932,11 @@
             ),
             h("tbody", null,
               personnel.map(function(emp, empIdx) {
-                return h("tr", { key: emp.id, style: { background: empIdx % 2 === 0 ? "white" : "rgba(255,255,255,0.02)" } },
-                  h("td", { style: { padding: "8px 12px", fontWeight: 600, fontSize: 12, whiteSpace: "nowrap", borderBottom: "1px solid rgba(255,255,255,0.04)", position: "sticky", left: 0, background: empIdx % 2 === 0 ? "white" : "rgba(255,255,255,0.02)", zIndex: 1, borderRight: "1px solid rgba(255,255,255,0.06)" } },
+                var rowBg = empIdx % 2 === 0 ? "rgba(255,255,255,0.015)" : "rgba(255,255,255,0.035)";
+                return h("tr", { key: emp.id, style: { background: rowBg } },
+                  h("td", { style: { padding: "8px 12px", fontWeight: 600, fontSize: 12, color: "#fafafa", whiteSpace: "nowrap", borderBottom: "1px solid rgba(255,255,255,0.04)", position: "sticky", left: 0, background: "rgba(36, 40, 60, 0.92)", backdropFilter: "blur(12px)", zIndex: 1, borderRight: "1px solid rgba(255,255,255,0.06)" } },
                     h("div", { style: { display: "flex", alignItems: "center", gap: 8 } },
-                      h("div", { style: { width: 28, height: 28, borderRadius: "50%", background: "#7c3aed", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, flexShrink: 0 } },
+                      h("div", { style: { width: 28, height: 28, borderRadius: "50%", background: "linear-gradient(135deg, #6366f1 0%, #818cf8 100%)", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, flexShrink: 0, boxShadow: "0 4px 12px rgba(99,102,241,0.3)" } },
                         (emp.prenom ? emp.prenom.charAt(0) : "") + (emp.nom ? emp.nom.charAt(0) : "")
                       ),
                       (emp.prenom || "") + " " + (emp.nom || "")
@@ -4963,7 +4964,7 @@
                       style: {
                         padding: 2, borderBottom: "1px solid rgba(255,255,255,0.04)", textAlign: "center",
                         cursor: brush ? "pointer" : "default",
-                        background: isWeekend ? "#f5f5f5" : "transparent"
+                        background: isWeekend ? "rgba(255,255,255,0.03)" : "transparent"
                       }
                     },
                       h("div", { style: {
@@ -5200,7 +5201,7 @@
         ),
         // KPIs
         h("div", { style: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 24 } },
-          h(KPICard, { icon: h(Icon, { name: "wallet", size: 32, color: "#7c3aed" }), label: "Prime totale payable", value: fmtNum(Math.round(grandTotal)) + " XPF", color: "#7c3aed" }),
+          h(KPICard, { icon: h(Icon, { name: "wallet", size: 32, color: "#a78bfa" }), label: "Prime totale payable", value: fmtNum(Math.round(grandTotal)) + " XPF", color: "#a78bfa" }),
           h(KPICard, { icon: h(Icon, { name: "users", size: 32, color: "#059669" }), label: "Employes primes", value: String(recapList.length), color: "#059669" }),
           h(KPICard, { icon: h(Icon, { name: "calculator", size: 32, color: "#d97706" }), label: "Prime moyenne", value: fmtNum(Math.round(avgPrime)) + " XPF", color: "#d97706" }),
           h(KPICard, { icon: h(Icon, { name: "map-pin", size: 32, color: "#2563eb" }), label: "Sites actifs", value: String(Object.keys(chantiersBySite).length), color: "#2563eb" })
@@ -5228,37 +5229,37 @@
               h("thead", null,
                 h("tr", null,
                   h("th", { style: thStyle }, "Employe"),
-                  sitesEnCours.map(function(s) { return h("th", { key: s, style: Object.assign({}, thStyle, { textAlign: "right", color: "#059669", background: "rgba(34,197,94,0.12)" }) }, s); }),
-                  sitesAutres.map(function(s) { return h("th", { key: s, style: Object.assign({}, thStyle, { textAlign: "right", color: "#a1a1aa", background: "rgba(255,255,255,0.03)" }) }, s); }),
-                  h("th", { style: Object.assign({}, thStyle, { textAlign: "right", color: "#7c3aed" }) }, "Total")
+                  sitesEnCours.map(function(s) { return h("th", { key: s, style: Object.assign({}, thStyle, { textAlign: "right", color: "#86efac", background: "rgba(34,197,94,0.10)" }) }, s); }),
+                  sitesAutres.map(function(s) { return h("th", { key: s, style: Object.assign({}, thStyle, { textAlign: "right", color: "#a1a1aa", background: "rgba(255,255,255,0.04)" }) }, s); }),
+                  h("th", { style: Object.assign({}, thStyle, { textAlign: "right", color: "#a78bfa" }) }, "Total")
                 )
               ),
               h("tbody", null,
                 recapList.map(function(row, ri) {
-                  return h("tr", { key: ri, style: { background: ri % 2 === 0 ? "white" : "rgba(255,255,255,0.02)" } },
-                    h("td", { style: Object.assign({}, tdStyle, { fontWeight: 600 }) }, row.employe),
+                  return h("tr", { key: ri, style: { background: ri % 2 === 0 ? "rgba(255,255,255,0.015)" : "rgba(255,255,255,0.035)" } },
+                    h("td", { style: Object.assign({}, tdStyle, { fontWeight: 600, color: "#fafafa" }) }, row.employe),
                     sitesEnCours.map(function(s) {
                       var val = row.sites[s] || 0;
-                      return h("td", { key: s, style: Object.assign({}, tdStyle, { textAlign: "right", color: val > 0 ? "#059669" : "#71717a", background: "rgba(240,253,244,0.3)" }) }, val > 0 ? fmtNum(Math.round(val)) : "-");
+                      return h("td", { key: s, style: Object.assign({}, tdStyle, { textAlign: "right", color: val > 0 ? "#86efac" : "#71717a", background: "rgba(34,197,94,0.08)" }) }, val > 0 ? fmtNum(Math.round(val)) : "-");
                     }),
                     sitesAutres.map(function(s) {
                       var val = row.sites[s] || 0;
-                      return h("td", { key: s, style: Object.assign({}, tdStyle, { textAlign: "right", color: val > 0 ? "#a1a1aa" : "rgba(255,255,255,0.18)" }) }, val > 0 ? fmtNum(Math.round(val)) : "-");
+                      return h("td", { key: s, style: Object.assign({}, tdStyle, { textAlign: "right", color: val > 0 ? "#d4d4d8" : "#52525b" }) }, val > 0 ? fmtNum(Math.round(val)) : "-");
                     }),
-                    h("td", { style: Object.assign({}, tdStyle, { textAlign: "right", fontWeight: 700, color: "#7c3aed" }) }, fmtNum(Math.round(row.totalPrime)) + " XPF")
+                    h("td", { style: Object.assign({}, tdStyle, { textAlign: "right", fontWeight: 700, color: "#a78bfa" }) }, fmtNum(Math.round(row.totalPrime)) + " XPF")
                   );
                 }),
-                h("tr", { style: { background: "rgba(99,102,241,0.10)" } },
-                  h("td", { style: Object.assign({}, tdStyle, { fontWeight: 700, fontSize: 14, borderTop: "2px solid #7c3aed" }) }, "Total"),
+                h("tr", { style: { background: "rgba(99,102,241,0.15)" } },
+                  h("td", { style: Object.assign({}, tdStyle, { fontWeight: 700, fontSize: 14, borderTop: "2px solid #818cf8", color: "#fafafa" }) }, "Total"),
                   sitesEnCours.map(function(s) {
                     var sTotal = recapList.reduce(function(sum, r) { return sum + (r.sites[s] || 0); }, 0);
-                    return h("td", { key: s, style: Object.assign({}, tdStyle, { textAlign: "right", fontWeight: 700, borderTop: "2px solid #7c3aed", color: "#059669", background: "rgba(240,253,244,0.3)" }) }, fmtNum(Math.round(sTotal)));
+                    return h("td", { key: s, style: Object.assign({}, tdStyle, { textAlign: "right", fontWeight: 700, borderTop: "2px solid #818cf8", color: "#86efac", background: "rgba(34,197,94,0.10)" }) }, fmtNum(Math.round(sTotal)));
                   }),
                   sitesAutres.map(function(s) {
                     var sTotal = recapList.reduce(function(sum, r) { return sum + (r.sites[s] || 0); }, 0);
-                    return h("td", { key: s, style: Object.assign({}, tdStyle, { textAlign: "right", fontWeight: 700, borderTop: "2px solid #7c3aed", color: "#a1a1aa" }) }, fmtNum(Math.round(sTotal)));
+                    return h("td", { key: s, style: Object.assign({}, tdStyle, { textAlign: "right", fontWeight: 700, borderTop: "2px solid #818cf8", color: "#a1a1aa" }) }, fmtNum(Math.round(sTotal)));
                   }),
-                  h("td", { style: Object.assign({}, tdStyle, { textAlign: "right", fontWeight: 800, fontSize: 14, color: "#7c3aed", borderTop: "2px solid #7c3aed" }) }, fmtNum(Math.round(grandTotal)) + " XPF")
+                  h("td", { style: Object.assign({}, tdStyle, { textAlign: "right", fontWeight: 800, fontSize: 14, color: "#a78bfa", borderTop: "2px solid #818cf8" }) }, fmtNum(Math.round(grandTotal)) + " XPF")
                 )
               )
             )
@@ -5311,17 +5312,17 @@
                     idx === 0 ? h("td", { style: Object.assign({}, tdStyle, { fontWeight: 600, verticalAlign: "top" }), rowSpan: row.details.length }, row.employe) : null,
                     h("td", { style: Object.assign({}, tdStyle, { textAlign: "center" }) }, det.chantier),
                     h("td", { style: Object.assign({}, tdStyle, { textAlign: "center" }) }, String(det.jours)),
-                    h("td", { style: Object.assign({}, tdStyle, { textAlign: "center", fontWeight: 600, color: det.mhRealise > det.objectif ? "#059669" : "#dc2626" }) }, (det.mhRealise || 0).toFixed(2)),
+                    h("td", { style: Object.assign({}, tdStyle, { textAlign: "center", fontWeight: 600, color: det.mhRealise > det.objectif ? "#86efac" : "#fda4af" }) }, (det.mhRealise || 0).toFixed(2)),
                     h("td", { style: Object.assign({}, tdStyle, { textAlign: "center", color: "#a1a1aa" }) }, (det.objectif || 0).toFixed(2)),
-                    h("td", { style: Object.assign({}, tdStyle, { textAlign: "center" }) }, fmtNum(det.coef)),
-                    h("td", { style: Object.assign({}, tdStyle, { textAlign: "right", fontWeight: 600, color: det.prime > 0 ? "#059669" : "#71717a" }) }, fmtNum(Math.round(det.prime)))
+                    h("td", { style: Object.assign({}, tdStyle, { textAlign: "center", color: "#d4d4d8" }) }, fmtNum(det.coef)),
+                    h("td", { style: Object.assign({}, tdStyle, { textAlign: "right", fontWeight: 600, color: det.prime > 0 ? "#86efac" : "#71717a" }) }, fmtNum(Math.round(det.prime)))
                   ));
                 });
                 return lines;
               }).reduce(function(acc, cur) { return acc.concat(cur); }, []),
-              h("tr", { style: { background: "rgba(34,197,94,0.12)" } },
-                h("td", { colSpan: 6, style: Object.assign({}, tdStyle, { fontWeight: 700, borderTop: "2px solid #059669" }) }, "Total " + displaySite),
-                h("td", { style: Object.assign({}, tdStyle, { textAlign: "right", fontWeight: 700, color: "#059669", borderTop: "2px solid #059669" }) }, fmtNum(Math.round(totalPrimeSite)) + " XPF")
+              h("tr", { style: { background: "rgba(34,197,94,0.15)" } },
+                h("td", { colSpan: 6, style: Object.assign({}, tdStyle, { fontWeight: 700, borderTop: "2px solid #22c55e", color: "#fafafa" }) }, "Total " + displaySite),
+                h("td", { style: Object.assign({}, tdStyle, { textAlign: "right", fontWeight: 700, color: "#86efac", borderTop: "2px solid #22c55e" }) }, fmtNum(Math.round(totalPrimeSite)) + " XPF")
               )
             )
           )
@@ -5354,8 +5355,8 @@
                       }));
                     });
                   },
-                  style: { width: 70, padding: "4px 8px", border: "1px solid #d1d5db", borderRadius: 4, fontSize: 13, fontWeight: 700, textAlign: "center", color: "#7c3aed" }
-                }) : h("span", { style: { fontWeight: 700, color: "#7c3aed" } }, getObjectifForSite(paliers, displaySite)),
+                  style: { width: 70, padding: "4px 8px", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 4, fontSize: 13, fontWeight: 700, textAlign: "center", color: "#a78bfa", background: "rgba(255,255,255,0.04)" }
+                }) : h("span", { style: { fontWeight: 700, color: "#a78bfa" } }, getObjectifForSite(paliers, displaySite)),
                 h("span", { style: { fontSize: 11, color: "#a1a1aa" } }, "m/h")
               ),
               h("div", { style: { display: "flex", alignItems: "center", gap: 8, fontSize: 13 } },
@@ -5374,8 +5375,8 @@
                       }));
                     });
                   },
-                  style: { width: 70, padding: "4px 8px", border: "1px solid #d1d5db", borderRadius: 4, fontSize: 13, fontWeight: 700, textAlign: "center", color: "#7c3aed" }
-                }) : h("span", { style: { fontWeight: 700, color: "#7c3aed" } }, getMoyenneForSite(paliers, displaySite)),
+                  style: { width: 70, padding: "4px 8px", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 4, fontSize: 13, fontWeight: 700, textAlign: "center", color: "#a78bfa", background: "rgba(255,255,255,0.04)" }
+                }) : h("span", { style: { fontWeight: 700, color: "#a78bfa" } }, getMoyenneForSite(paliers, displaySite)),
                 h("span", { style: { fontSize: 11, color: "#a1a1aa" } }, "m/jour")
               )
             ),
@@ -5399,7 +5400,7 @@
                             if (res.error) { alert("Erreur: " + res.error.message); return; }
                             ctx.setDbPaliers(paliers.map(function(pp) { return pp.id === p.id ? Object.assign({}, pp, { seuilMh: newVal }) : pp; }));
                           });
-                        }, style: { width: 80, padding: "4px 8px", border: "1px solid #d1d5db", borderRadius: 4, fontSize: 13, fontWeight: 600, textAlign: "center" } }),
+                        }, style: { width: 80, padding: "4px 8px", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 4, fontSize: 13, fontWeight: 600, textAlign: "center" } }),
                         h("span", { style: { color: "#a1a1aa", fontSize: 12 } }, "m/h")
                       ) : h("span", null, ">= " + p.seuilMh + " m/h")
                     ),
@@ -5410,7 +5411,7 @@
                           if (res.error) { alert("Erreur: " + res.error.message); return; }
                           ctx.setDbPaliers(paliers.map(function(pp) { return pp.id === p.id ? Object.assign({}, pp, { coefficient: newVal }) : pp; }));
                         });
-                      }, style: { width: 100, padding: "4px 8px", border: "1px solid #d1d5db", borderRadius: 4, fontSize: 13, fontWeight: 600, textAlign: "right" } }) : h("span", { style: { fontWeight: 600 } }, fmtNum(p.coefficient))
+                      }, style: { width: 100, padding: "4px 8px", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 4, fontSize: 13, fontWeight: 600, textAlign: "right" } }) : h("span", { style: { fontWeight: 600 } }, fmtNum(p.coefficient))
                     ),
                     isAdmin ? h("td", { style: Object.assign({}, tdStyle, { textAlign: "center" }) },
                       h("button", { onClick: function() {
@@ -5424,7 +5425,7 @@
                 })
               )
             ),
-            isAdmin ? h("div", { style: { padding: "12px 16px", borderTop: "1px solid #e5e7eb" } },
+            isAdmin ? h("div", { style: { padding: "12px 16px", borderTop: "1px solid rgba(255,255,255,0.07)" } },
               h("button", { onClick: function() {
                 var objVal = getObjectifForSite(paliers, displaySite);
                 var moyVal = getMoyenneForSite(paliers, displaySite);
@@ -5432,8 +5433,8 @@
                   if (res.error) { alert("Erreur: " + res.error.message); return; }
                   ctx.setDbPaliers(paliers.concat(palierFromDb(res.data)));
                 });
-              }, style: { background: "none", border: "1px dashed #a5b4fc", color: "#4f46e5", padding: "6px 14px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 } },
-                h(Icon, { name: "plus", size: 14, color: "#4f46e5" }),
+              }, style: { background: "rgba(99,102,241,0.10)", border: "1px dashed rgba(129,140,248,0.5)", color: "#a5b4fc", padding: "6px 14px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 } },
+                h(Icon, { name: "plus", size: 14, color: "#a5b4fc" }),
                 "Ajouter un palier"
               )
             ) : null
@@ -5625,7 +5626,7 @@
         }),
         // KPIs
         h("div", { style: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 24 } },
-          h(KPICard, { icon: h(Icon, { name: "users", size: 32, color: "#7c3aed" }), label: "Total utilisateurs", value: String(users.length), color: "#7c3aed" }),
+          h(KPICard, { icon: h(Icon, { name: "users", size: 32, color: "#a78bfa" }), label: "Total utilisateurs", value: String(users.length), color: "#a78bfa" }),
           h(KPICard, { icon: h(Icon, { name: "user-check", size: 32, color: "#059669" }), label: "Actifs", value: String(users.filter(function(u) { return u.statut === "Actif"; }).length), color: "#059669" }),
           h(KPICard, { icon: h(Icon, { name: "user-x", size: 32, color: "#dc2626" }), label: "Inactifs / Suspendus", value: String(users.filter(function(u) { return u.statut !== "Actif"; }).length), color: "#dc2626" })
         ),
