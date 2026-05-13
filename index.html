@@ -1076,12 +1076,11 @@
         toDelete && h(ConfirmDialog, { title: "Supprimer le plan ?", message: "Confirmer la suppression du plan \"" + toDelete.Title + "\" ?", onConfirm: handleConfirmDelete, onCancel: () => setToDelete(null) }));
     }
 
-    // ─── Ecran Interventions (Formulaire) ───────────────────────────────
-    function EcranInterventions({ onNavigate, editItem }) {
+    // ─── Formulaire Intervention (utilise dans un modal) ────────────────
+    function InterventionForm({ editItem, onDone }) {
       const { equipements, plans, addIntervention, updateIntervention, addReleve } = useAppData();
       const techniciens = useParams("technicien");
       const [f, setF] = useState(editItem || { Title: "", Equipement: "", Date_Intervention: new Date().toISOString().split("T")[0], Technicien: "", Statut_Intervention: "Planifiee", Travaux_Effectues: "", Temps_Arret: "", Cout: "", Plan: "", Horametre: "", KM: "", Type: "Preventive" });
-      const [saved, setSaved] = useState(false);
       const [saving, setSaving] = useState(false);
       const upd = (k, v) => setF((p) => ({ ...p, [k]: v }));
       const submit = async () => {
@@ -1092,16 +1091,11 @@
           if (f.Horametre || f.KM) {
             await addReleve({ Equipement: f.Equipement, Date: f.Date_Intervention, Horametre: f.Horametre || "0", KM: f.KM || "0", Technicien: f.Technicien || "" });
           }
-          setSaved(true);
-          var blankForm = { Title: "", Equipement: "", Date_Intervention: new Date().toISOString().split("T")[0], Technicien: "", Statut_Intervention: "Planifiee", Travaux_Effectues: "", Temps_Arret: "", Cout: "", Plan: "", Horametre: "", KM: "", Type: "Preventive" };
-          setTimeout(() => { setSaved(false); if (editItem) { onNavigate("historique"); } else { setF(blankForm); } }, 1500);
+          if (onDone) onDone();
         } catch (err) { alert("Erreur : " + err.message); }
         finally { setSaving(false); }
       };
       return h("div", null,
-        h(PageHeader, { title: editItem ? h(IconText, { icon: "pencil", size: 20 }, "Modifier l'intervention") : h(IconText, { icon: "wrench", size: 20 }, "Nouvelle intervention"), subtitle: "Saisir les informations" }),
-        saved && h("div", { style: { background: "rgba(34, 197, 94, 0.12)", border: "1px solid rgba(34, 197, 94, 0.3)", borderRadius: 10, padding: "12px 16px", marginBottom: 16, color: "#86efac", fontWeight: 600 } }, h(IconText, { icon: "check-circle", size: 16, color: "#86efac" }, "Intervention enregistree !")),
-        h(Card, null,
           h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 } },
             h(FormField, { label: "Titre / Description" }, h("input", { style: inputStyle, value: f.Title, onChange: (e) => upd("Title", e.target.value), onBlur: () => upd("Title", capitalizeFirst(f.Title)), placeholder: "Ex: Vidange D36" })),
             h(FormField, { label: "Equipement" }, h("select", { style: selectStyle, value: f.Equipement, onChange: (e) => upd("Equipement", e.target.value) },
@@ -1141,10 +1135,10 @@
               }())
             )),
             h("div", { style: { gridColumn: "1 / -1" } },
-              h(FormField, { label: "Travaux effectues" }, h("textarea", { style: { ...inputStyle, minHeight: 80, resize: "vertical" }, value: f.Travaux_Effectues, onChange: (e) => upd("Travaux_Effectues", e.target.value), onBlur: () => upd("Travaux_Effectues", capitalizeFirst(f.Travaux_Effectues)), placeholder: "Decrivez les travaux..." })))),
+              h(FormField, { label: "Travaux effectues" }, h("textarea", { style: { ...inputStyle, minHeight: 80, resize: "vertical" }, value: f.Travaux_Effectues, onChange: (e) => upd("Travaux_Effectues", e.target.value), onBlur: () => upd("Travaux_Effectues", capitalizeFirst(f.Travaux_Effectues)), placeholder: "Decrivez les travaux..." }))),
           h("div", { style: { display: "flex", gap: 12, marginTop: 20, justifyContent: "flex-end" } },
-            h(Button, { variant: "secondary", onClick: () => { if (editItem) { onNavigate("historique"); } else { setF({ Title: "", Equipement: "", Date_Intervention: new Date().toISOString().split("T")[0], Technicien: "", Statut_Intervention: "Planifiee", Travaux_Effectues: "", Temps_Arret: "", Cout: "", Plan: "", Horametre: "", KM: "", Type: "Preventive" }); } }, disabled: saving }, "Annuler"),
-            h(Button, { onClick: submit, disabled: saving }, saving ? "Enregistrement..." : (editItem ? h(IconText, { icon: "save", size: 14 }, "Modifier") : h(IconText, { icon: "save", size: 14 }, "Enregistrer"))))));
+            h(Button, { variant: "secondary", onClick: () => { if (onDone) onDone(); }, disabled: saving }, "Annuler"),
+            h(Button, { onClick: submit, disabled: saving }, saving ? "Enregistrement..." : (editItem ? h(IconText, { icon: "save", size: 14 }, "Modifier") : h(IconText, { icon: "save", size: 14 }, "Enregistrer")))));
     }
 
     // ─── Formulaire Equipement ──────────────────────────────────────────
@@ -1430,11 +1424,20 @@
         }));
     }
 
-    // ─── Ecran Historique ───────────────────────────────────────────────
-    function EcranHistorique({ onNavigate }) {
+    // ─── Ecran Interventions (Liste + modal de saisie) ──────────────────
+    function EcranInterventions({ onNavigate, editItem }) {
       const { interventions, deleteIntervention } = useAppData();
       const [sT, setST] = useState(""); const [sM, setSM] = useState(""); const [sD, setSD] = useState(""); const [sI, setSI] = useState(""); const [sS, setSS] = useState("");
       const [toDelete, setToDelete] = useState(null);
+      const [showForm, setShowForm] = useState(false);
+      const [editing, setEditing] = useState(null);
+      // Si on arrive avec un editItem depuis une autre page, ouvrir le modal directement
+      React.useEffect(function() {
+        if (editItem) { setEditing(editItem); setShowForm(true); }
+      }, [editItem]);
+      const openNew = () => { setEditing(null); setShowForm(true); };
+      const openEdit = (item) => { setEditing(item); setShowForm(true); };
+      const closeForm = () => { setShowForm(false); setEditing(null); };
       const filtered = interventions.filter((i) => {
         const mt = !sT || (i.Title || "").toLowerCase().includes(sT.toLowerCase()) || (i.Travaux_Effectues || "").toLowerCase().includes(sT.toLowerCase());
         const mm = !sM || (i.Equipement || "").toLowerCase().includes(sM.toLowerCase());
@@ -1444,7 +1447,7 @@
         return mt && mm && md && mi && ms;
       });
       return h("div", null,
-        h(PageHeader, { title: h(IconText, { icon: "scroll-text", size: 20 }, "Historique des interventions"), subtitle: interventions.length + " interventions", action: h(Button, { onClick: () => onNavigate("interventions") }, "+ Nouvelle intervention") }),
+        h(PageHeader, { title: h(IconText, { icon: "wrench", size: 20 }, "Interventions"), subtitle: interventions.length + " interventions", action: h(Button, { onClick: openNew }, h(IconText, { icon: "plus", size: 14 }, "Nouvelle intervention")) }),
         h(Card, { style: { marginBottom: 16 } },
           h("div", { style: { display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12 } },
             h(SearchInput, { placeholder: "Titre...", value: sT, onChange: setST }),
@@ -1456,7 +1459,7 @@
           filtered.length === 0 ? h(Card, null, h("p", { style: { textAlign: "center", color: "#71717a", padding: 20 } }, "Aucune intervention trouvee")) :
             sortByField(filtered, "Title").map((item) => h(Card, { key: item.Id, style: { padding: 14 } },
               h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 } },
-                h("div", { style: { flex: 1, cursor: "pointer" }, onClick: () => onNavigate("interventions", item) },
+                h("div", { style: { flex: 1, cursor: "pointer" }, onClick: () => openEdit(item) },
                   h("div", { style: { fontWeight: 700, fontSize: 14, marginBottom: 4, color: "#fafafa" } }, item.Title || item.Travaux_Effectues),
                   h("div", { style: { display: "flex", gap: 16, fontSize: 13, color: "#a1a1aa", flexWrap: "wrap" } },
                     h("span", null, h(IconText, { icon: "hard-hat", size: 12, color: "#a1a1aa" }, item.Equipement)),
@@ -1466,8 +1469,10 @@
                     item.Type && h("span", null, h(IconText, { icon: item.Type === "Preventive" ? "shield-check" : "flame", size: 12, color: item.Type === "Preventive" ? "#60a5fa" : "#f43f5e" }, item.Type)))),
                 h("div", { style: { display: "flex", gap: 6, alignItems: "center" } },
                   h(StatusBadge, { status: item.Statut_Intervention }),
-                  h("button", { onClick: () => onNavigate("interventions", item), style: { background: "transparent", border: "none", cursor: "pointer", fontSize: 16, padding: 4, color: "#a1a1aa" }, title: "Modifier" }, h(Icon, { name: "pencil", size: 15, color: "#a1a1aa" })),
+                  h("button", { onClick: () => openEdit(item), style: { background: "transparent", border: "none", cursor: "pointer", fontSize: 16, padding: 4, color: "#a1a1aa" }, title: "Modifier" }, h(Icon, { name: "pencil", size: 15, color: "#a1a1aa" })),
                   h("button", { onClick: () => setToDelete(item), style: { background: "transparent", border: "none", cursor: "pointer", fontSize: 16, padding: 4, color: "#f43f5e" }, title: "Supprimer" }, h(Icon, { name: "trash-2", size: 15, color: "#f43f5e" }))))))),
+        showForm && h(Modal, { title: editing ? "Modifier l'intervention" : "Nouvelle intervention", onClose: closeForm, size: 760 },
+          h(InterventionForm, { editItem: editing, onDone: closeForm })),
         toDelete && h(ConfirmDialog, { title: "Supprimer l'intervention ?", message: "Confirmer la suppression de \"" + (toDelete.Title || toDelete.Travaux_Effectues || "intervention") + "\" ?", onConfirm: async () => { await deleteIntervention(toDelete.Id); setToDelete(null); }, onCancel: () => setToDelete(null) }));
     }
 
@@ -2097,10 +2102,7 @@
       }
 
       return h("div", null,
-        h(PageHeader, { title: h(IconText, { icon: "user-round", size: 20 }, "Personnel"), subtitle: saving ? "Sauvegarde en cours..." : personnel.length + " employe" + (personnel.length > 1 ? "s" : "") + " enregistre" + (personnel.length > 1 ? "s" : ""), action: h("div", { style: { display: "flex", gap: 10 } },
-          h(Button, { variant: "secondary", onClick: function() { onNavigate("organisation"); } }, h(IconText, { icon: "users", size: 14 }, "Organisation")),
-          h(Button, { onClick: function() { setEditing(null); setShowModal(true); } }, h(IconText, { icon: "plus", size: 14 }, "Nouvel employe"))
-        ) }),
+        h(PageHeader, { title: h(IconText, { icon: "user-round", size: 20 }, "Personnel"), subtitle: saving ? "Sauvegarde en cours..." : personnel.length + " employe" + (personnel.length > 1 ? "s" : "") + " enregistre" + (personnel.length > 1 ? "s" : ""), action: h(Button, { onClick: function() { setEditing(null); setShowModal(true); } }, h(IconText, { icon: "plus", size: 14 }, "Nouvel employe")) }),
         h("div", { style: { display: "flex", gap: 16, marginBottom: 16, flexWrap: "wrap" } },
           h(KPICard, { icon: h(Icon, { name: "user-round", size: 32, color: "#a78bfa" }), label: "Effectif total", value: String(personnel.length), color: "#a78bfa" }),
           h(KPICard, { icon: h(Icon, { name: "map-pin", size: 32, color: "#059669" }), label: "Lieux de contrat", value: String(Array.from(new Set(personnel.map(function(e) { return e.lieuContrat; }).filter(Boolean))).length), color: "#059669" })
@@ -2147,22 +2149,8 @@
 
     // Palette de couleurs pour les groupes sur la carte
     var GROUP_COLORS = ["#7c3aed", "#059669", "#dc2626", "#d97706", "#2563eb", "#db2777", "#0891b2", "#65a30d", "#9333ea", "#ea580c"];
-    function getGroupColor(idx) { return GROUP_COLORS[idx % GROUP_COLORS.length]; }
-
-    // Cree un marqueur Leaflet colore (cercle SVG)
-    function coloredMarkerIcon(color) {
-      return window.L.divIcon({
-        className: "",
-        iconSize: [28, 28],
-        iconAnchor: [14, 28],
-        popupAnchor: [0, -28],
-        html: '<svg width="28" height="28" viewBox="0 0 28 28"><path d="M14 2C8.48 2 4 6.48 4 12c0 7 10 14 10 14s10-7 10-14c0-5.52-4.48-10-10-10z" fill="' + color + '" stroke="#fff" stroke-width="2"/><circle cx="14" cy="12" r="4" fill="#fff"/></svg>'
-      });
-    }
-
-    var ORG_STORAGE_KEY = "org_groupes";
-
-    function EcranOrganisation({ onNavigate }) {
+    // EcranOrganisation supprime - fonctionnalite retiree
+    function _EcranOrganisationRemoved({ onNavigate }) {
       var ctx = useAppData();
       var equipements = ctx.equipements;
       var parametres = ctx.parametres;
@@ -5447,20 +5435,16 @@
     function EcranAdminUtilisateurs() {
       var ALL_PAGES = [
         { key: "accueil", label: "Accueil", icon: "home" },
+        { key: "equipements", label: "Equipements", icon: "settings" },
         { key: "plans", label: "Plans", icon: "clipboard-list" },
         { key: "interventions", label: "Interventions", icon: "wrench" },
-        { key: "planning", label: "Planning", icon: "calendar" },
+        { key: "pieces", label: "Pieces detachees", icon: "package" },
+        { key: "planning", label: "Calendrier", icon: "calendar" },
         { key: "avancement", label: "Avancement", icon: "hard-hat" },
         { key: "planning-employes", label: "Planning Employes", icon: "users" },
         { key: "primes", label: "Primes", icon: "trophy" },
-        { key: "equipements", label: "Equipements", icon: "settings" },
         { key: "personnel", label: "Personnel", icon: "user-round" },
-        { key: "organisation", label: "Organisation", icon: "users" },
-        { key: "pieces", label: "Pieces detachees", icon: "package" },
-        { key: "historique", label: "Historique", icon: "scroll-text" },
-        { key: "parametres", label: "Parametres", icon: "sliders-horizontal" },
-        { key: "validations", label: "Validations", icon: "shield-check" },
-        { key: "admin-utilisateurs", label: "Admin Utilisateurs", icon: "user-cog" }
+        { key: "administration", label: "Administration", icon: "user-cog", adminOnly: true }
       ];
 
       var allPageKeys = ALL_PAGES.map(function(p) { return p.key; });
@@ -5525,7 +5509,7 @@
       var selectAllPages = function() {
         if (!editing) return;
         var pages = ALL_PAGES.filter(function(p) {
-          if (editing.role !== "Administrateur" && (p.key === "validations" || p.key === "admin-utilisateurs")) return false;
+          if (editing.role !== "Administrateur" && p.key === "administration") return false;
           return true;
         }).map(function(p) { return p.key; });
         setEditing(Object.assign({}, editing, { pagesAutorisees: pages }));
@@ -5568,7 +5552,7 @@
                 upd("role", e.target.value);
                 // Si on passe en Utilisateur, retirer les pages admin
                 if (e.target.value !== "Administrateur") {
-                  var cleaned = (f.pagesAutorisees || []).filter(function(k) { return k !== "validations" && k !== "admin-utilisateurs"; });
+                  var cleaned = (f.pagesAutorisees || []).filter(function(k) { return k !== "administration"; });
                   setEditing(Object.assign({}, f, { role: e.target.value, pagesAutorisees: cleaned }));
                 }
               } },
@@ -5590,7 +5574,7 @@
               h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 } },
                 ALL_PAGES.filter(function(page) {
                   // Hide admin-only pages for non-admin roles
-                  if (f.role !== "Administrateur" && (page.key === "validations" || page.key === "admin-utilisateurs")) return false;
+                  if (f.role !== "Administrateur" && page.key === "administration") return false;
                   return true;
                 }).map(function(page) {
                   var checked = (f.pagesAutorisees || []).indexOf(page.key) >= 0;
@@ -5700,6 +5684,50 @@
       );
     }
 
+    // ─── Ecran Administration (Parametres / Validations / Utilisateurs) ──
+    function EcranAdministration({ onNavigate, pendingCount }) {
+      const ctx = useAppData();
+      const isAdmin = ctx.isAdmin;
+      const [tab, setTab] = useState("parametres");
+      const tabs = [
+        { key: "parametres", label: "Parametres", icon: "sliders-horizontal", adminOnly: false },
+        { key: "validations", label: "Validations", icon: "shield-check", adminOnly: true, badge: pendingCount },
+        { key: "utilisateurs", label: "Utilisateurs", icon: "user-cog", adminOnly: true },
+      ];
+      const visibleTabs = tabs.filter(function(t) { return !t.adminOnly || isAdmin; });
+      // Si l'onglet actif n'est pas accessible, retomber sur le premier visible
+      React.useEffect(function() {
+        if (!visibleTabs.find(function(t) { return t.key === tab; })) {
+          if (visibleTabs.length > 0) setTab(visibleTabs[0].key);
+        }
+      }, [isAdmin]);
+      const tabButtonStyle = (active) => ({
+        display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 18px",
+        background: active ? "linear-gradient(135deg, #6366f1 0%, #818cf8 100%)" : "rgba(255,255,255,0.05)",
+        color: active ? "#ffffff" : "#a78bfa",
+        border: "1px solid " + (active ? "rgba(129,140,248,0.5)" : "rgba(255,255,255,0.08)"),
+        borderRadius: 10, fontWeight: 600, fontSize: 14, cursor: "pointer",
+        boxShadow: active ? "0 8px 20px rgba(99,102,241,0.3), inset 0 1px 0 rgba(255,255,255,0.1)" : "none",
+        transition: "all 0.2s", fontFamily: "inherit"
+      });
+      return h("div", null,
+        h(PageHeader, { title: h(IconText, { icon: "user-cog", size: 20 }, "Administration"), subtitle: "Parametres, validations et utilisateurs" }),
+        h("div", { style: { display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" } },
+          visibleTabs.map(function(t) {
+            const active = tab === t.key;
+            return h("button", { key: t.key, onClick: function() { setTab(t.key); }, style: tabButtonStyle(active) },
+              h(Icon, { name: t.icon, size: 14, color: active ? "#ffffff" : "#a78bfa" }),
+              t.label,
+              t.badge > 0 ? h("span", { style: { marginLeft: 4, background: active ? "rgba(255,255,255,0.25)" : "linear-gradient(135deg, #f43f5e, #e11d48)", color: "#ffffff", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 999, minWidth: 20, textAlign: "center" } }, t.badge) : null
+            );
+          })
+        ),
+        tab === "parametres" ? h(EcranParametres, null) : null,
+        tab === "validations" && isAdmin ? h(EcranValidations, { onNavigate: onNavigate }) : null,
+        tab === "utilisateurs" && isAdmin ? h(EcranAdminUtilisateurs, null) : null
+      );
+    }
+
     // ─── Sidebar ────────────────────────────────────────────────────────
     function Sidebar({ currentPage, onNavigate, userEmail, onLogout, isAdmin, pendingCount, allowedPages }) {
       const sections = [
@@ -5708,27 +5736,21 @@
         ]},
         { name: "Maintenance", pages: [
           { key: "equipements", label: "Equipements", lucide: "settings" },
-          { key: "interventions", label: "Interventions", lucide: "wrench" },
           { key: "plans", label: "Plans", lucide: "clipboard-list" },
+          { key: "interventions", label: "Interventions", lucide: "wrench" },
           { key: "pieces", label: "Pieces detachees", lucide: "package" },
-          { key: "historique", label: "Historique", lucide: "scroll-text" },
         ]},
         { name: "Chantiers", pages: [
+          { key: "planning", label: "Calendrier", lucide: "calendar" },
           { key: "avancement", label: "Avancement", lucide: "hard-hat" },
           { key: "planning-employes", label: "Planning Employes", lucide: "users" },
           { key: "primes", label: "Primes", lucide: "trophy" },
         ]},
-        { name: "Planification", pages: [
-          { key: "planning", label: "Calendrier", lucide: "calendar" },
-        ]},
         { name: "Equipe", pages: [
           { key: "personnel", label: "Personnel", lucide: "user-round" },
-          { key: "organisation", label: "Organisation", lucide: "users" },
         ]},
         { name: "Administration", pages: [
-          { key: "parametres", label: "Parametres", lucide: "sliders-horizontal" },
-          { key: "validations", label: "Validations", lucide: "shield-check", adminOnly: true },
-          { key: "admin-utilisateurs", label: "Utilisateurs", lucide: "user-cog", adminOnly: true },
+          { key: "administration", label: "Administration", lucide: "user-cog" },
         ]},
       ];
       return h("div", { style: { width: 256, background: "rgba(30, 33, 50, 0.6)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderRight: "1px solid rgba(255,255,255,0.06)", color: "#fafafa", minHeight: "100vh", display: "flex", flexDirection: "column", flexShrink: 0 } },
@@ -5760,7 +5782,7 @@
                 onMouseLeave: (e) => { if (!isActive) e.currentTarget.style.background = "transparent"; }
               },
                 h(Icon, { name: p.lucide, size: 16, color: isActive ? "#a5b4fc" : "#71717a" }), p.label,
-                p.key === "validations" && pendingCount > 0 ? h("span", { style: { marginLeft: "auto", background: "linear-gradient(135deg, #f43f5e, #e11d48)", color: "#fff", fontSize: 10.5, fontWeight: 700, padding: "2px 7px", borderRadius: 999, minWidth: 20, textAlign: "center", boxShadow: "0 2px 8px rgba(244, 63, 94, 0.4)" } }, pendingCount) : null
+                p.key === "administration" && isAdmin && pendingCount > 0 ? h("span", { style: { marginLeft: "auto", background: "linear-gradient(135deg, #f43f5e, #e11d48)", color: "#fff", fontSize: 10.5, fontWeight: 700, padding: "2px 7px", borderRadius: 999, minWidth: 20, textAlign: "center", boxShadow: "0 2px 8px rgba(244, 63, 94, 0.4)" } }, pendingCount) : null
               );
             })))),
         h("div", { style: { padding: "12px 16px", borderTop: "1px solid rgba(255,255,255,0.06)" } },
@@ -6413,16 +6435,12 @@
         if (currentPage === "equipements") return h(EcranEquipements, { onNavigate: navigate });
         if (currentPage === "fiche-equipement") return h(EcranFicheEquipement, { onNavigate: navigate, equipement: pageData });
         if (currentPage === "personnel") return h(EcranPersonnel, { onNavigate: navigate });
-        if (currentPage === "organisation") return h(EcranOrganisation, { onNavigate: navigate });
-        if (currentPage === "validations") return isAdmin ? h(EcranValidations, { onNavigate: navigate }) : h(EcranAccueil, { onNavigate: navigate });
-        if (currentPage === "historique") return h(EcranHistorique, { onNavigate: navigate });
         if (currentPage === "pieces") return h(EcranPieces, null);
-        if (currentPage === "parametres") return h(EcranParametres, null);
         if (currentPage === "planning") return h(EcranPlanning, null);
         if (currentPage === "avancement") return h(EcranAvancement, null);
         if (currentPage === "planning-employes") return h(EcranPlanningEmployes, null);
         if (currentPage === "primes") return h(EcranPrimes, null);
-        if (currentPage === "admin-utilisateurs") return isAdmin ? h(EcranAdminUtilisateurs, null) : h(EcranAccueil, { onNavigate: navigate });
+        if (currentPage === "administration") return h(EcranAdministration, { onNavigate: navigate, pendingCount: pendingValidations.length });
         return h(EcranAccueil, { onNavigate: navigate });
       };
 
