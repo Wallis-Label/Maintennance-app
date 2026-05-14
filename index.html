@@ -2,7 +2,8 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#1a1d2e" />
   <title>Wallis-Label - Gestion & Suivi</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236d28d9' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z'/></svg>" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
@@ -92,6 +93,35 @@
     .gantt-resize-handle.right { right: 0; border-radius: 0 4px 4px 0; }
     input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
     input[type=number] { -moz-appearance: textfield; }
+
+    /* ─── Responsive : tablette (640-1023) ─── */
+    @media (max-width: 1023px) {
+      ::-webkit-scrollbar { width: 6px; height: 6px; }
+      body { font-size: 14px; }
+    }
+
+    /* ─── Responsive : mobile (<640) ─── */
+    @media (max-width: 639px) {
+      ::-webkit-scrollbar { width: 4px; height: 4px; }
+      body { font-size: 13px; }
+      /* Hint scroll horizontal sur tables */
+      .scrollable-x::after { content: "← Faites glisser →"; display: block; text-align: center; font-size: 10px; color: rgba(255,255,255,0.35); padding: 4px 0; }
+      /* Reset des grilles 2 colonnes vers 1 colonne sur mobile via une classe utilitaire */
+      .grid-2-col-mobile { grid-template-columns: 1fr !important; }
+      /* Sidebar overlay quand drawer ouvert */
+      .sidebar-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.55); backdrop-filter: blur(4px); z-index: 998; }
+    }
+
+    /* Animation drawer */
+    .sidebar-drawer { transition: transform 0.25s ease-out; }
+    .sidebar-drawer.open { transform: translateX(0); }
+    .sidebar-drawer.closed { transform: translateX(-100%); }
+
+    /* Tap targets minimum sur mobile */
+    @media (max-width: 639px) {
+      button, input, select, textarea, [role="button"] { min-height: 36px; }
+      input[type="checkbox"] { min-height: 18px; }
+    }
   </style>
 </head>
 <body>
@@ -168,6 +198,28 @@
     }
     function sortByField(arr, field) {
       return arr.slice().sort(function(a, b) { return naturalSort(a[field], b[field]); });
+    }
+
+    // ─── Breakpoint (responsive) ────────────────────────────────────────
+    // Retourne "mobile" (<640), "tablet" (640-1023), ou "desktop" (>=1024).
+    // Helpers : isMobile, isTablet, isCompact (mobile OU tablet).
+    function getBreakpoint() {
+      if (typeof window === "undefined") return "desktop";
+      var w = window.innerWidth;
+      if (w < 640) return "mobile";
+      if (w < 1024) return "tablet";
+      return "desktop";
+    }
+    function useBreakpoint() {
+      var _bp = useState(function() { return getBreakpoint(); });
+      var bp = _bp[0]; var setBp = _bp[1];
+      useEffect(function() {
+        function onResize() { var next = getBreakpoint(); setBp(function(prev) { return prev === next ? prev : next; }); }
+        window.addEventListener("resize", onResize);
+        window.addEventListener("orientationchange", onResize);
+        return function() { window.removeEventListener("resize", onResize); window.removeEventListener("orientationchange", onResize); };
+      }, []);
+      return { bp: bp, isMobile: bp === "mobile", isTablet: bp === "tablet", isCompact: bp !== "desktop" };
     }
 
     // ─── Formateurs (nombres + devise) ──────────────────────────────────
@@ -638,13 +690,14 @@
 
     function Card({ children, style, onClick }) {
       const [hovered, setHovered] = useState(false);
+      const bp = useBreakpoint();
       return h("div", { onClick, onMouseEnter: () => setHovered(true), onMouseLeave: () => setHovered(false),
         style: {
           background: "rgba(36, 40, 60, 0.55)",
           backdropFilter: "blur(20px) saturate(180%)",
           WebkitBackdropFilter: "blur(20px) saturate(180%)",
-          borderRadius: 16,
-          padding: 20,
+          borderRadius: bp.isMobile ? 12 : 16,
+          padding: bp.isMobile ? 14 : 20,
           boxShadow: hovered && onClick ? "0 8px 24px rgba(0,0,0,0.35)" : "0 4px 12px rgba(0,0,0,0.2)",
           border: "1px solid " + (hovered && onClick ? "rgba(255,255,255,0.14)" : "rgba(255,255,255,0.07)"),
           color: "#fafafa",
@@ -669,22 +722,24 @@
       }
       var iconBg = hexToRgba(accent, 0.14);
       var iconRing = hexToRgba(accent, 0.28);
-      return h(Card, { onClick, style: { minWidth: 160, flex: 1, position: "relative", overflow: "hidden" } },
+      var bp = useBreakpoint();
+      return h(Card, { onClick, style: { minWidth: bp.isMobile ? 140 : 160, flex: 1, position: "relative", overflow: "hidden" } },
         h("div", { style: { position: "absolute", top: 0, left: 0, right: 0, height: 1, background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.18), transparent)" } }),
-        h("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 } },
-          h("div", { style: { fontSize: 12, color: "#71717a", fontWeight: 500 } }, label),
-          h("div", { style: { width: 32, height: 32, borderRadius: 10, background: iconBg, boxShadow: "inset 0 0 0 1px " + iconRing, display: "flex", alignItems: "center", justifyContent: "center" } }, icon)
+        h("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: bp.isMobile ? 10 : 16 } },
+          h("div", { style: { fontSize: bp.isMobile ? 11 : 12, color: "#71717a", fontWeight: 500 } }, label),
+          h("div", { style: { width: bp.isMobile ? 28 : 32, height: bp.isMobile ? 28 : 32, borderRadius: 10, background: iconBg, boxShadow: "inset 0 0 0 1px " + iconRing, display: "flex", alignItems: "center", justifyContent: "center" } }, icon)
         ),
-        h("div", { style: { fontSize: 30, fontWeight: 700, letterSpacing: "-0.02em", lineHeight: 1, color: "#fafafa" } }, value)
+        h("div", { style: { fontSize: bp.isMobile ? 24 : 30, fontWeight: 700, letterSpacing: "-0.02em", lineHeight: 1, color: "#fafafa" } }, value)
       );
     }
 
     function PageHeader({ title, subtitle, action }) {
-      return h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 32, flexWrap: "wrap", gap: 12 } },
-        h("div", null,
-          h("h1", { style: { fontSize: 28, fontWeight: 700, letterSpacing: "-0.03em", margin: 0, background: "linear-gradient(135deg, #fafafa, #a1a1aa)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" } }, title),
-          subtitle && h("p", { style: { color: "#71717a", margin: "6px 0 0", fontSize: 14 } }, subtitle)),
-        action);
+      var bp = useBreakpoint();
+      return h("div", { style: { display: "flex", flexDirection: bp.isMobile ? "column" : "row", justifyContent: "space-between", alignItems: bp.isMobile ? "stretch" : "flex-end", marginBottom: bp.isMobile ? 20 : 32, flexWrap: "wrap", gap: 12 } },
+        h("div", { style: { minWidth: 0 } },
+          h("h1", { style: { fontSize: bp.isMobile ? 22 : bp.isTablet ? 24 : 28, fontWeight: 700, letterSpacing: "-0.03em", margin: 0, background: "linear-gradient(135deg, #fafafa, #a1a1aa)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" } }, title),
+          subtitle && h("p", { style: { color: "#71717a", margin: "6px 0 0", fontSize: bp.isMobile ? 12 : 14 } }, subtitle)),
+        action ? h("div", { style: { display: "flex", gap: 8, flexShrink: 0, flexWrap: "wrap" } }, action) : null);
     }
 
     function Button({ children, onClick, variant = "primary", style: s, disabled }) {
@@ -736,11 +791,15 @@
     const selectStyle = { ...inputStyle, background: "rgba(255,255,255,0.05)" };
 
     function Modal({ title, onClose, children, size = 600 }) {
-      return h("div", { onClick: onClose, style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 20 } },
-        h("div", { onClick: (e) => e.stopPropagation(), style: { background: "rgba(36, 40, 60, 0.85)", backdropFilter: "blur(24px) saturate(180%)", WebkitBackdropFilter: "blur(24px) saturate(180%)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 16, padding: 24, maxWidth: size, width: "100%", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.5)", color: "#fafafa" } },
-          h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, paddingBottom: 16, borderBottom: "1px solid rgba(255,255,255,0.08)" } },
-            h("h2", { style: { fontSize: 18, fontWeight: 700, color: "#fafafa", margin: 0, letterSpacing: "-0.01em" } }, title),
-            h("button", { onClick: onClose, style: { background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)", fontSize: 18, cursor: "pointer", color: "#cbd5e1", padding: 0, width: 30, height: 30, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center" } }, "\u00D7")),
+      var bp = useBreakpoint();
+      var pad = bp.isMobile ? 12 : 20;
+      var modalPad = bp.isMobile ? 16 : 24;
+      var modalWidth = bp.isMobile ? "100%" : "min(" + size + "px, 95vw)";
+      return h("div", { onClick: onClose, style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", display: "flex", alignItems: bp.isMobile ? "flex-end" : "center", justifyContent: "center", zIndex: 100, padding: pad } },
+        h("div", { onClick: (e) => e.stopPropagation(), style: { background: "rgba(36, 40, 60, 0.85)", backdropFilter: "blur(24px) saturate(180%)", WebkitBackdropFilter: "blur(24px) saturate(180%)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: bp.isMobile ? "16px 16px 0 0" : 16, padding: modalPad, maxWidth: bp.isMobile ? "100%" : size, width: modalWidth, maxHeight: bp.isMobile ? "92vh" : "90vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.5)", color: "#fafafa" } },
+          h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: bp.isMobile ? 14 : 20, paddingBottom: bp.isMobile ? 12 : 16, borderBottom: "1px solid rgba(255,255,255,0.08)", position: "sticky", top: -modalPad, background: "rgba(36, 40, 60, 0.95)", marginLeft: -modalPad, marginRight: -modalPad, marginTop: -modalPad, padding: modalPad + "px " + modalPad + "px " + (bp.isMobile ? 12 : 16) + "px", zIndex: 2 } },
+            h("h2", { style: { fontSize: bp.isMobile ? 16 : 18, fontWeight: 700, color: "#fafafa", margin: 0, letterSpacing: "-0.01em" } }, title),
+            h("button", { onClick: onClose, "aria-label": "Fermer", style: { background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)", fontSize: 18, cursor: "pointer", color: "#cbd5e1", padding: 0, width: bp.isMobile ? 36 : 30, height: bp.isMobile ? 36 : 30, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } }, "\u00D7")),
           children));
     }
 
@@ -1040,7 +1099,7 @@
           h(KPICard, { icon: h(Icon, { name: "clock", size: 22, color: "#ffffff" }), label: "Maintenances proches", value: fmtNum(nbAlertesAnticipees), color: nbAlertesAnticipees > 0 ? "#fbbf24" : "#22c55e" }),
           h(KPICard, { icon: h(Icon, { name: "alert-triangle", size: 22, color: "#ffffff" }), label: "Pieces faibles", value: fmtNum(piecesFaibles), color: "#f43f5e", onClick: () => onNavigate("pieces") }),
           h(KPICard, { icon: h(Icon, { name: "bar-chart-2", size: 22, color: "#ffffff" }), label: "Conformite", value: tauxConf + "%", color: tauxConf >= 80 ? "#22c55e" : "#f43f5e" })),
-        h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 20 } },
+        h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 20, marginBottom: 20 } },
           h(Card, null,
             h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700, color: "#fafafa" } }, h(IconText, { icon: "alert-triangle", size: 16, color: "#f43f5e" }, "Alertes urgentes")),
             urgents.length === 0 && detailOverdue.length === 0 ? h("p", { style: { color: "#71717a", textAlign: "center", padding: 20 } }, "Aucune alerte") :
@@ -1140,7 +1199,7 @@
       };
       return h("div", null,
         h(FormField, { label: "Titre du plan" }, h("input", { style: inputStyle, value: f.Title, onChange: (e) => upd("Title", e.target.value), onBlur: () => upd("Title", capitalizeFirst(f.Title)), placeholder: "Ex: Plan mensuel" })),
-        h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
+        h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12 } },
           h(FormField, { label: "Frequence" }, h("select", { style: selectStyle, value: f.Frequence, onChange: (e) => upd("Frequence", e.target.value) },
             freqs.length === 0 ? h("option", { value: "" }, "(aucun, ajoutez dans Parametres)") : freqs.map((x) => h("option", { key: x, value: x }, x)))),
           h(FormField, { label: "Statut" }, h("select", { style: selectStyle, value: f.Statut, onChange: (e) => upd("Statut", e.target.value) },
@@ -1183,7 +1242,7 @@
       return h("div", null,
         h(PageHeader, { title: h(IconText, { icon: "clipboard-list", size: 20 }, "Plans de maintenance"), subtitle: plans.length + " plans au total", action: h(Button, { onClick: openNew }, "+ Nouveau plan") }),
         h("div", { style: { marginBottom: 16 } }, h(SearchInput, { placeholder: "Rechercher un plan...", value: search, onChange: setSearch })),
-        h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: 12 } },
+        h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12 } },
           filtered.length === 0 ? h(Card, null, h("p", { style: { textAlign: "center", color: "#71717a", padding: 20 } }, "Aucun plan trouve")) :
             sortByField(filtered, "Title").map((p) => h(Card, { key: p.Id },
               h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 } },
@@ -1246,7 +1305,7 @@
         finally { setSaving(false); }
       };
       return h("div", null,
-          h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 } },
+          h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 16 } },
             h(FormField, { label: "Titre / Description" }, h("input", { style: inputStyle, value: f.Title, onChange: (e) => upd("Title", e.target.value), onBlur: () => upd("Title", capitalizeFirst(f.Title)), placeholder: "Ex: Vidange D36" })),
             h(FormField, { label: "Equipement" }, h("select", { style: selectStyle, value: f.Equipement, onChange: (e) => upd("Equipement", e.target.value) },
               h("option", { value: "" }, "-- Selectionner --"),
@@ -1324,7 +1383,7 @@
       const typesDispos = f.Categorie === "Vehicule" ? typesVL : typesEngin;
       const lockedInput = { ...inputStyle, background: "rgba(255,255,255,0.03)", color: "#71717a", cursor: "not-allowed", opacity: 0.7 };
       return h("div", null,
-        h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
+        h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12 } },
           h(FormField, { label: "Categorie" }, h("select", { style: selectStyle, value: f.Categorie, onChange: (e) => { const c = e.target.value; upd("Categorie", c); const newList = c === "Vehicule" ? typesVL : typesEngin; upd("Type", newList[0] || ""); } },
             ["Engin", "Vehicule"].map((x) => h("option", { key: x, value: x }, x)))),
           h(FormField, { label: "Code / Immatriculation" }, h("input", { style: inputStyle, value: f.Title, onChange: (e) => upd("Title", e.target.value), onBlur: () => upd("Title", formatImmatNC(f.Title)), placeholder: "Ex: 427 686 NC" })),
@@ -1387,7 +1446,7 @@
                   h("h3", { style: { margin: 0, fontSize: 16, fontWeight: 700, color: "#fafafa" } }, typeName),
                   h("span", { style: { background: "rgba(129,140,248,0.15)", color: "#a78bfa", padding: "2px 10px", borderRadius: 12, fontSize: 12, fontWeight: 600, border: "1px solid rgba(129,140,248,0.25)" } }, eqs.length + " equipement" + (eqs.length > 1 ? "s" : "")),
                   h("div", { style: { flex: 1, height: 1, background: "rgba(255,255,255,0.08)" } })),
-                h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 12 } },
+                h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 12 } },
                   eqs.map(function(eq) {
                     var visitesDues = computeVisitesADeclencher(eq, plans, interventions);
                     var alertesAnticipees = computeAlertesAnticipees(eq, plans, interventions);
@@ -1474,10 +1533,10 @@
             alertesAnticipees.map(function(a, idx) {
               return h("div", { key: idx, style: { fontSize: 14 } }, a.plan + " : " + a.reste + a.unite + (a.unite === "km" ? " restant" : " restantes") + " (prochain a " + fmtNum(a.prochainSeuil) + a.unite + ")");
             }))),
-        h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 24 } },
+        h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 20, marginBottom: 24 } },
           h(Card, null,
             h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700, color: "#fafafa" } }, "Informations generales"),
-            h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
+            h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12 } },
               [["Code", eq.Title], ["Categorie", eq.Categorie || "Engin"], ["Type", eq.Type], ["Localisation", eq.Localisation || "\u2014"], ["Horametre", fmtNum(hmActuel) + " h"], ["KM", fmtNum(kmActuel) + " km"], ["Dernier entretien H", eq.DernierEntretienH ? fmtNum(eq.DernierEntretienH) + " h" : "\u2014"], ["Dernier entretien KM", eq.DernierEntretienKM ? fmtNum(eq.DernierEntretienKM) + " km" : "\u2014"], ["Mise en service", eq.DateMiseEnService || "\u2014"]].map(([label, val]) =>
                 h("div", { key: label },
                   h("div", { style: { fontSize: 11, color: "#71717a", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" } }, label),
@@ -1485,7 +1544,7 @@
             h("div", { style: { marginTop: 16 } }, h(StatusBadge, { status: eq.Statut }))),
           h(Card, null,
             h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700, color: "#fafafa" } }, "Statistiques"),
-            h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, textAlign: "center" } },
+            h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12, textAlign: "center" } },
               [["#a78bfa", "rgba(167,139,250,0.10)", "rgba(167,139,250,0.20)", fmtNum(eqInterventions.length), "Interventions"], ["#60a5fa", "rgba(96,165,250,0.10)", "rgba(96,165,250,0.20)", fmtNum(preventives.length), "Preventives"], ["#f43f5e", "rgba(244,63,94,0.10)", "rgba(244,63,94,0.20)", fmtNum(curatives.length), "Curatives"], ["#22c55e", "rgba(34,197,94,0.10)", "rgba(34,197,94,0.20)", fmtMoney(coutTotal), "Cout total"]].map(([c, bg, br, v, l]) =>
                 h("div", { key: l, style: { padding: 16, background: bg, borderRadius: 12, border: "1px solid " + br } },
                   h("div", { style: { fontSize: 22, fontWeight: 700, color: c } }, v),
@@ -1559,7 +1618,7 @@
                     h("td", { style: { padding: "10px 12px", color: "#d4d4d8" } }, i.Cout ? fmtMoney(i.Cout) : "\u2014"),
                     h("td", { style: { padding: "10px 12px" } }, h(StatusBadge, { status: computeIntervStatus(i) })))))))),
         showReleveModal && h(Modal, { title: "Nouveau releve pour " + eq.Title, onClose: () => setShowReleveModal(false), size: 500 },
-          h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
+          h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12 } },
             h(FormField, { label: "Date" }, h("input", { type: "date", style: inputStyle, value: newReleve.Date, onChange: (e) => setNewReleve((p) => ({ ...p, Date: e.target.value })) })),
             h(FormField, { label: "Technicien" }, h("input", { style: inputStyle, value: newReleve.Technicien, onChange: (e) => setNewReleve((p) => ({ ...p, Technicien: e.target.value })), placeholder: "Nom" })),
             h(FormField, { label: "Horametre (h)" }, h("input", { type: "number", style: inputStyle, value: newReleve.Horametre, onChange: (e) => setNewReleve((p) => ({ ...p, Horametre: e.target.value })), placeholder: "Ex: 8300" })),
@@ -1614,7 +1673,7 @@
       return h("div", null,
         h(PageHeader, { title: h(IconText, { icon: "wrench", size: 20 }, "Interventions"), subtitle: interventions.length + " interventions", action: h(Button, { onClick: openNew }, h(IconText, { icon: "plus", size: 14 }, "Nouvelle intervention")) }),
         h(Card, { style: { marginBottom: 16 } },
-          h("div", { style: { display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12 } },
+          h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 } },
             h(SearchInput, { placeholder: "Titre...", value: sT, onChange: setST }),
             h(SearchInput, { placeholder: "Machine...", value: sM, onChange: setSM }),
             h(SearchInput, { placeholder: "Date...", value: sD, onChange: setSD }),
@@ -1658,7 +1717,7 @@
         try { await onSave(f); } finally { setSaving(false); }
       };
       return h("div", null,
-        h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
+        h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12 } },
           h(FormField, { label: "Reference" }, h("input", { style: inputStyle, value: f.Reference, onChange: (e) => upd("Reference", e.target.value), onBlur: () => upd("Reference", f.Reference ? f.Reference.toUpperCase() : ""), placeholder: "Ex: FIL-003" })),
           h(FormField, { label: "Designation" }, h("input", { style: inputStyle, value: f.Designation, onChange: (e) => upd("Designation", e.target.value), onBlur: () => upd("Designation", capitalizeFirst(f.Designation)), placeholder: "Ex: Filtre hydraulique" })),
           h(FormField, { label: "Categorie" }, h("select", { style: selectStyle, value: f.Categorie, onChange: (e) => upd("Categorie", e.target.value) },
@@ -1899,7 +1958,7 @@
                 h("div", { style: { fontWeight: 700, fontSize: 14 } }, entityLabel + " : " + (item.data.Title || item.data.Reference || "")),
                 h("span", { style: { fontSize: 11, color: "#71717a" } }, new Date(item.submittedAt).toLocaleDateString("fr-FR"))
               ),
-              isEditing ? h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 } },
+              isEditing ? h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 10, marginBottom: 10 } },
                 keys.map(function(key) {
                   return h("div", { key: key },
                     h("label", { style: { fontSize: 11, fontWeight: 600, color: "#a1a1aa", display: "block", marginBottom: 4 } }, keyLabels[key] || key),
@@ -2148,7 +2207,7 @@
       }
 
       return h("div", null,
-        h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 } },
+        h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 16 } },
           h(FormField, { label: "Nom" }, h("input", { style: inputStyle, value: _nom[0], onChange: function(e) { _nom[1](e.target.value); }, placeholder: "Nom de famille" })),
           h(FormField, { label: "Prenom" }, h("input", { style: inputStyle, value: _prenom[0], onChange: function(e) { _prenom[1](e.target.value); }, placeholder: "Prenom" })),
           h(FormField, { label: "Date de naissance" }, h("input", { type: "date", style: inputStyle, value: _dateNaissance[0], onChange: function(e) { _dateNaissance[1](e.target.value); } })),
@@ -2246,7 +2305,7 @@
             h("h3", { style: { fontSize: 20, fontWeight: 700, margin: 0 } }, emp.prenom + " " + emp.nom),
             emp.lieuContrat ? h("span", { style: { fontSize: 13, color: "#a1a1aa", marginTop: 4 } }, h(Icon, { name: "map-pin", size: 12, color: "#a1a1aa" }), " " + emp.lieuContrat) : null
           ),
-          h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 } },
+          h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 16 } },
             h("div", { style: { background: "rgba(255,255,255,0.04)", borderRadius: 8, padding: 14 } },
               h("div", { style: { fontSize: 11, color: "#a1a1aa", marginBottom: 4 } }, "Date de naissance"),
               h("div", { style: { fontSize: 14, fontWeight: 600 } }, formatDate(emp.dateNaissance))
@@ -2526,7 +2585,7 @@
 
       return h("div", null,
         h(PageHeader, { title: h(IconText, { icon: "users", size: 20 }, "Organisation"), subtitle: saving ? "Sauvegarde en cours..." : "Groupes de travail et localisation", action: h("div", { style: { display: "flex", gap: 10 } }, h(Button, { variant: "secondary", onClick: function() { onNavigate("personnel"); } }, h(IconText, { icon: "user-round", size: 14 }, "Personnel")), h(Button, { onClick: addGroup }, h(IconText, { icon: "plus", size: 14 }, "Nouveau groupe"))) }),
-        h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 } },
+        h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 20 } },
           // Left column
           h("div", { style: { display: "flex", flexDirection: "column", gap: 12 } },
             h(Card, null,
@@ -3573,17 +3632,17 @@
         if (f._type === "decl") {
           return h(Modal, { title: f.id ? "Modifier la declaration" : "Nouvelle declaration", onClose: closeModal },
             h(FormField, { label: "Titre" }, h("input", { style: inputStyle, value: f.titre, onChange: function(e) { upd("titre", e.target.value); } })),
-            h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
+            h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12 } },
               h(FormField, { label: "Montant (XPF)" }, h("input", { type: "number", style: inputStyle, value: f.montant, onChange: function(e) { upd("montant", parseInt(e.target.value) || 0); } })),
               h(FormField, { label: "Recurrence" }, h("select", { style: selectStyle, value: f.recurrence, onChange: function(e) { upd("recurrence", e.target.value); } },
                 ["Mensuel", "Trimestriel", "Semestriel", "Annuel"].map(function(x) { return h("option", { key: x, value: x }, x); })
               ))
             ),
-            h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
+            h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12 } },
               h(FormField, { label: "Debut periode" }, h("input", { type: "date", style: inputStyle, value: f.dateDebutPeriode || "", onChange: function(e) { upd("dateDebutPeriode", e.target.value); } })),
               h(FormField, { label: "Fin periode" }, h("input", { type: "date", style: inputStyle, value: f.dateFinPeriode || "", onChange: function(e) { upd("dateFinPeriode", e.target.value); } }))
             ),
-            h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
+            h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12 } },
               h(FormField, { label: "Statut" }, h("select", { style: selectStyle, value: f.status, onChange: function(e) { upd("status", e.target.value); } },
                 ["A venir", "Fait"].map(function(x) { return h("option", { key: x, value: x }, x); })
               ))
@@ -3598,7 +3657,7 @@
         if (f._type === "ren") {
           return h(Modal, { title: f.id ? "Modifier le renouvellement" : "Nouveau renouvellement", onClose: closeModal },
             h(FormField, { label: "Titre" }, h("input", { style: inputStyle, value: f.titre, onChange: function(e) { upd("titre", e.target.value); } })),
-            h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
+            h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12 } },
               h(FormField, { label: "Date expiration" }, h("input", { type: "date", style: inputStyle, value: f.dateExpiration || "", onChange: function(e) { upd("dateExpiration", e.target.value); } })),
               h(FormField, { label: "Delai alerte (jours)" }, h("input", { type: "number", style: inputStyle, value: f.delaiAlerte, onChange: function(e) { upd("delaiAlerte", parseInt(e.target.value) || 0); } }))
             ),
@@ -3613,15 +3672,15 @@
           var caPreview = (f.metrage || 0) * (f.prixMetre || 0);
           return h(Modal, { title: f.id ? "Modifier le chantier" : "Nouveau chantier", onClose: closeModal, size: 650 },
             h(FormField, { label: "Titre" }, h("input", { style: inputStyle, value: f.titre, onChange: function(e) { upd("titre", e.target.value); } })),
-            h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
+            h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12 } },
               h(FormField, { label: "Date debut" }, h("input", { type: "date", style: inputStyle, value: f.dateDebut || "", onChange: function(e) { upd("dateDebut", e.target.value); } })),
               h(FormField, { label: "Date fin" }, h("input", { type: "date", style: inputStyle, value: f.dateFin || "", onChange: function(e) { upd("dateFin", e.target.value); } }))
             ),
-            h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
+            h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12 } },
               h(FormField, { label: "Metrage (m)" }, h("input", { type: "number", style: inputStyle, value: f.metrage, onChange: function(e) { upd("metrage", parseInt(e.target.value) || 0); } })),
               h(FormField, { label: "Prix au metre (XPF)" }, h("input", { type: "number", style: inputStyle, value: f.prixMetre, onChange: function(e) { upd("prixMetre", parseInt(e.target.value) || 0); } }))
             ),
-            h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
+            h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12 } },
               h(FormField, { label: "Depenses prevues (XPF)" }, h("input", { type: "number", style: inputStyle, value: f.depensesPrevues, onChange: function(e) { upd("depensesPrevues", parseInt(e.target.value) || 0); } })),
               h(FormField, { label: "Statut" }, h("select", { style: selectStyle, value: f.statut, onChange: function(e) { upd("statut", e.target.value); } },
                 ["A venir", "En cours", "Termine"].map(function(x) { return h("option", { key: x, value: x }, x); })
@@ -3652,7 +3711,7 @@
 
       return h("div", null,
         h(PageHeader, { title: h(IconText, { icon: "calendar", size: 20 }, "Planning"), subtitle: "Declarations, Renouvellements et Chantiers", action: h(Button, { onClick: openNew }, h(IconText, { icon: "plus", size: 14 }, "Nouveau")) }),
-        h("div", { style: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 24 } },
+        h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16, marginBottom: 24 } },
           h(KPICard, { icon: h(Icon, { name: "wallet", size: 32, color: "#a78bfa" }), label: "A provisionner", value: fmtNum(totalAprovisionner), color: "#a78bfa" }),
           h(KPICard, { icon: h(Icon, { name: "file-check", size: 32, color: "#059669" }), label: "Docs a renouveler", value: String(docsARenouveler), color: "#059669" }),
           h(KPICard, { icon: h(Icon, { name: "briefcase", size: 32, color: "#d97706" }), label: "CA Previsionnel", value: fmtNum(caChantiers), color: "#d97706" }),
@@ -3677,7 +3736,7 @@
           h(Card, { style: { marginBottom: 16, background: "rgba(251, 191, 36, 0.10)", borderLeft: "4px solid #fbbf24", padding: 16 } },
             h("div", { style: { fontSize: 13, fontWeight: 600, color: "#92400e" } }, "Cumul annuel declarations : " + fmtMoney(decCumul))
           ),
-          viewMode === "liste" ? h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 16 } },
+          viewMode === "liste" ? h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 16 } },
             declarations.map(function(decl) {
               return h(Card, { key: decl.id, style: { borderLeft: "4px solid " + (decl.status === "Fait" ? "#059669" : "#d97706") } },
                 h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "start", marginBottom: 12 } },
@@ -3698,7 +3757,7 @@
           ) : renderAnnuel()
         ),
         activeTab === "renouvellements" && h("div", null,
-          viewMode === "liste" ? h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 16 } },
+          viewMode === "liste" ? h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 16 } },
             renouvellements.map(function(renewal) {
               var status = computeRenouvellementStatus(renewal);
               var statusColor = status === "Valide" ? "#059669" : status === "Expire bientot" ? "#d97706" : "#dc2626";
@@ -3718,7 +3777,7 @@
           ) : renderAnnuel()
         ),
         activeTab === "chantiers" && h("div", null,
-          viewMode === "liste" ? h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(350px, 1fr))", gap: 16 } },
+          viewMode === "liste" ? h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 } },
             chantiers.map(function(chantier) {
               var ca = chantier.metrage * chantier.prixMetre;
               var marge = ca - (chantier.depensesPrevues || 0);
@@ -3732,7 +3791,7 @@
                     h("button", { onClick: function() { setToDelete({ type: "chant", id: chantier.id, titre: chantier.titre }); }, style: actionBtnStyle, title: "Supprimer" }, h(Icon, { name: "trash-2", size: 14, color: "#dc2626" }))
                   )
                 ),
-                h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12, fontSize: 13 } },
+                h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12, marginBottom: 12, fontSize: 13 } },
                   h("div", { style: { background: "rgba(255,255,255,0.04)", padding: 10, borderRadius: 6 } },
                     h("div", { style: { color: "#a1a1aa", marginBottom: 4 } }, "Metrage"),
                     h("div", { style: { fontWeight: 700, fontSize: 14 } }, fmtNum(chantier.metrage) + " m")
@@ -4509,7 +4568,7 @@
         return h(Modal, { onClose: closeModalAv, title: f.id ? "Modifier le chantier" : "Nouveau chantier" },
           h("div", { style: { display: "grid", gap: 12 } },
             h(FormField, { label: "Titre" }, h("input", { style: inputStyle, value: f.titre, onChange: function(e) { upd("titre", e.target.value); } })),
-            h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
+            h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12 } },
               h(FormField, { label: "Date debut" }, h("input", { type: "date", style: inputStyle, value: f.dateDebut, onChange: function(e) { upd("dateDebut", e.target.value); } })),
               h(FormField, { label: "Date fin" }, h("input", { type: "date", style: inputStyle, value: f.dateFin, onChange: function(e) { upd("dateFin", e.target.value); } }))
             ),
@@ -4544,7 +4603,7 @@
           subtitle: "Suivi des chantiers actifs",
           action: h(Button, { onClick: openNewChantier }, h(IconText, { icon: "plus", size: 14, color: "white" }, "Nouveau chantier"))
         }),
-        h("div", { style: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 24 } },
+        h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16, marginBottom: 24 } },
           h(KPICard, { icon: h(Icon, { name: "briefcase", size: 32, color: "#a78bfa" }), label: "Chantiers actifs", value: String(activeChantiers.length), color: "#a78bfa" }),
           h(KPICard, { icon: h(Icon, { name: "trending-up", size: 32, color: "#059669" }), label: "Avancement global", value: avancementGlobal + "%", color: "#059669" }),
           h(KPICard, { icon: h(Icon, { name: "move", size: 32, color: "#d97706" }), label: "Metrage realise", value: fmtNum(totalRealiseAll) + " m", color: "#d97706" }),
@@ -4592,7 +4651,7 @@
                   h(Icon, { name: isExpanded ? "chevron-up" : "chevron-down", size: 20, color: "#a1a1aa" })
                 ),
                 isExpanded && h("div", { style: { borderTop: "1px solid rgba(255,255,255,0.07)", paddingTop: 16, marginTop: 12 } },
-                  h("div", { style: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 16, fontSize: 13 } },
+                  h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12, marginBottom: 16, fontSize: 13 } },
                     h("div", { style: { background: "rgba(255,255,255,0.04)", padding: 10, borderRadius: 6 } },
                       h("div", { style: { color: "#a1a1aa", marginBottom: 4, fontSize: 11, fontWeight: 600 } }, "Prevu"),
                       h("div", { style: { fontWeight: 700, fontSize: 14 } }, fmtNum(chantier.metrage) + " m")
@@ -4962,7 +5021,7 @@
           subtitle: "Selectionnez un chantier puis peignez le calendrier"
         }),
         // KPIs
-        h("div", { style: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 24 } },
+        h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16, marginBottom: 24 } },
           h(KPICard, { icon: h(Icon, { name: "users", size: 32, color: "#a78bfa" }), label: "Employes", value: String(personnel.length), color: "#a78bfa" }),
           h(KPICard, { icon: h(Icon, { name: "briefcase", size: 32, color: "#059669" }), label: "Chantiers actifs", value: String(activeChantiers.length), color: "#059669" }),
           h(KPICard, { icon: h(Icon, { name: "calendar-check", size: 32, color: "#d97706" }), label: "Affectations ce mois", value: String(totalAffectations), color: "#d97706" })
@@ -5358,7 +5417,7 @@
             h("button", { onClick: function() { setSelectedMonth(new Date()); }, style: { background: "rgba(129,140,248,0.10)", color: "#a78bfa", border: "1px solid rgba(129,140,248,0.4)", padding: "6px 14px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 600 } }, "Mois actuel") : null
         ),
         // KPIs
-        h("div", { style: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 24 } },
+        h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16, marginBottom: 24 } },
           h(KPICard, { icon: h(Icon, { name: "wallet", size: 32, color: "#a78bfa" }), label: "Prime totale payable", value: fmtNum(Math.round(grandTotal)) + " XPF", color: "#a78bfa" }),
           h(KPICard, { icon: h(Icon, { name: "users", size: 32, color: "#059669" }), label: "Employes primes", value: String(recapList.length), color: "#059669" }),
           h(KPICard, { icon: h(Icon, { name: "calculator", size: 32, color: "#d97706" }), label: "Prime moyenne", value: fmtNum(Math.round(avgPrime)) + " XPF", color: "#d97706" }),
@@ -5713,11 +5772,11 @@
 
         return h(Modal, { onClose: closeModal, title: f.id ? "Modifier l'utilisateur" : "Nouvel utilisateur" },
           h("div", { style: { display: "grid", gap: 12 } },
-            h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
+            h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12 } },
               h(FormField, { label: "Nom complet" }, h("input", { style: inputStyle, value: f.nom, onChange: function(e) { upd("nom", e.target.value); } })),
               h(FormField, { label: "Email" }, h("input", { type: "email", style: inputStyle, value: f.email, onChange: function(e) { upd("email", e.target.value); } }))
             ),
-            h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
+            h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12 } },
               h(FormField, { label: "Role" }, h("select", { style: selectStyle, value: f.role, onChange: function(e) {
                 upd("role", e.target.value);
                 // Si on passe en Utilisateur, retirer les pages admin
@@ -5741,7 +5800,7 @@
                   h("button", { onClick: deselectAllPages, style: { fontSize: 11, fontWeight: 600, color: "#a1a1aa", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" } }, "Tout deselectionner")
                 )
               ),
-              h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 } },
+              h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 6 } },
                 ALL_PAGES.filter(function(page) {
                   // Hide admin-only pages for non-admin roles
                   if (f.role !== "Administrateur" && page.key === "administration") return false;
@@ -5779,7 +5838,7 @@
           action: h(Button, { onClick: openNew }, h(IconText, { icon: "plus", size: 14, color: "white" }, "Nouvel utilisateur"))
         }),
         // KPIs
-        h("div", { style: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 24 } },
+        h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16, marginBottom: 24 } },
           h(KPICard, { icon: h(Icon, { name: "users", size: 32, color: "#a78bfa" }), label: "Total utilisateurs", value: String(users.length), color: "#a78bfa" }),
           h(KPICard, { icon: h(Icon, { name: "user-check", size: 32, color: "#059669" }), label: "Actifs", value: String(users.filter(function(u) { return u.statut === "Actif"; }).length), color: "#059669" }),
           h(KPICard, { icon: h(Icon, { name: "user-x", size: 32, color: "#dc2626" }), label: "Inactifs / Suspendus", value: String(users.filter(function(u) { return u.statut !== "Actif"; }).length), color: "#dc2626" })
@@ -5899,7 +5958,7 @@
     }
 
     // ─── Sidebar ────────────────────────────────────────────────────────
-    function Sidebar({ currentPage, onNavigate, userEmail, onLogout, isAdmin, pendingCount, allowedPages }) {
+    function Sidebar({ currentPage, onNavigate, userEmail, onLogout, isAdmin, pendingCount, allowedPages, isMobile, isOpen, onClose }) {
       const sections = [
         { name: "Tableau de bord", pages: [
           { key: "accueil", label: "Accueil", lucide: "home" },
@@ -5923,7 +5982,12 @@
           { key: "administration", label: "Administration", lucide: "user-cog" },
         ]},
       ];
-      return h("div", { style: { width: 256, background: "rgba(30, 33, 50, 0.6)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderRight: "1px solid rgba(255,255,255,0.06)", color: "#fafafa", minHeight: "100vh", display: "flex", flexDirection: "column", flexShrink: 0 } },
+      // Style adaptatif : drawer flottant sur mobile, fixe sur desktop/tablette
+      var sidebarStyle = isMobile
+        ? { position: "fixed", left: 0, top: 0, bottom: 0, width: 260, maxWidth: "85vw", background: "rgba(20, 22, 35, 0.96)", backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)", borderRight: "1px solid rgba(255,255,255,0.08)", color: "#fafafa", display: "flex", flexDirection: "column", zIndex: 999, transform: isOpen ? "translateX(0)" : "translateX(-100%)", transition: "transform 0.25s ease-out", boxShadow: isOpen ? "8px 0 32px rgba(0,0,0,0.5)" : "none" }
+        : { width: 256, background: "rgba(30, 33, 50, 0.6)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderRight: "1px solid rgba(255,255,255,0.06)", color: "#fafafa", minHeight: "100vh", display: "flex", flexDirection: "column", flexShrink: 0 };
+      var navigateThenClose = function(key) { onNavigate(key); if (isMobile && onClose) onClose(); };
+      return h("div", { style: sidebarStyle },
         h("div", { style: { padding: "20px 16px" } },
           h("div", { style: { display: "flex", alignItems: "center", gap: 12 } },
             h("div", { style: { width: 36, height: 36, borderRadius: 10, background: "linear-gradient(135deg, #818cf8, #c084fc)", display: "flex", alignItems: "center", justifyContent: "center", color: "#ffffff", fontWeight: 800, fontSize: 16, boxShadow: "0 4px 16px rgba(129, 140, 248, 0.4)" } }, "W"),
@@ -5938,7 +6002,7 @@
             h("div", { style: { fontSize: 10.5, fontWeight: 600, color: "#a1a1aa", textTransform: "uppercase", letterSpacing: 0.6, padding: "16px 14px 8px" } }, section.name),
             section.pages.filter(function(p) { if (p.adminOnly && !isAdmin) return false; if (!isAdmin && allowedPages && allowedPages.indexOf(p.key) < 0) return false; return true; }).map((p) => {
               var isActive = currentPage === p.key;
-              return h("button", { key: p.key, onClick: () => onNavigate(p.key),
+              return h("button", { key: p.key, onClick: () => navigateThenClose(p.key),
                 style: {
                   display: "flex", alignItems: "center", gap: 12, width: "100%", padding: "9px 14px",
                   border: "none", borderRadius: 8, marginBottom: 2, cursor: "pointer", fontSize: 13.5,
@@ -6622,11 +6686,29 @@
         return h(EcranAccueil, { onNavigate: navigate });
       };
 
+      // Responsive : sidebar en drawer sur mobile
+      var bpInfo = useBreakpoint();
+      var _sidebarOpen = useState(false);
+      var sidebarOpen = _sidebarOpen[0]; var setSidebarOpen = _sidebarOpen[1];
+      // Ferme le drawer chaque fois qu'on quitte le mode mobile
+      useEffect(function() {
+        if (!bpInfo.isMobile && sidebarOpen) setSidebarOpen(false);
+      }, [bpInfo.isMobile]);
+
+      // Padding adaptatif
+      var mainPadding = bpInfo.isMobile ? "16px 12px 80px" : bpInfo.isTablet ? "20px 20px" : "24px 32px";
+
       return h(AppContext.Provider, { value: contextValue },
         h("div", { style: { display: "flex", minHeight: "100vh", background: "var(--bg)", fontFamily: "'Inter', system-ui, -apple-system, sans-serif" } },
-          h(Sidebar, { currentPage, onNavigate: navigate, userEmail: session.user && session.user.email, onLogout: logout, isAdmin, pendingCount: pendingValidations.length, allowedPages: allowedPages }),
-          h("div", { style: { flex: 1, padding: "24px 32px", overflowY: "auto", maxHeight: "100vh", position: "relative" } },
-            dataLoading && h("div", { style: { position: "absolute", top: 20, right: 20, display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#a1a1aa" } }, h("div", { className: "loader", style: { width: 20, height: 20, borderWidth: 2 } }), "Chargement..."),
+          // Overlay derriere le drawer mobile (clic ferme)
+          bpInfo.isMobile && sidebarOpen ? h("div", { onClick: function() { setSidebarOpen(false); }, style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)", zIndex: 998 } }) : null,
+          h(Sidebar, { currentPage, onNavigate: navigate, userEmail: session.user && session.user.email, onLogout: logout, isAdmin, pendingCount: pendingValidations.length, allowedPages: allowedPages, isMobile: bpInfo.isMobile, isOpen: sidebarOpen, onClose: function() { setSidebarOpen(false); } }),
+          h("div", { style: { flex: 1, padding: mainPadding, overflowY: "auto", maxHeight: "100vh", position: "relative", width: "100%", minWidth: 0 } },
+            // Bouton hamburger sur mobile (en haut a gauche, fixed)
+            bpInfo.isMobile ? h("button", { onClick: function() { setSidebarOpen(true); }, "aria-label": "Ouvrir le menu", style: { position: "fixed", top: 12, left: 12, width: 40, height: 40, padding: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(36, 40, 60, 0.85)", backdropFilter: "blur(12px)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#fafafa", cursor: "pointer", zIndex: 997, boxShadow: "0 4px 12px rgba(0,0,0,0.4)" } }, h(Icon, { name: "menu", size: 20, color: "#fafafa" })) : null,
+            // Decalage sous le bouton hamburger sur mobile
+            bpInfo.isMobile ? h("div", { style: { height: 44 } }) : null,
+            dataLoading && h("div", { style: { position: "absolute", top: bpInfo.isMobile ? 60 : 20, right: 20, display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#a1a1aa" } }, h("div", { className: "loader", style: { width: 20, height: 20, borderWidth: 2 } }), "Chargement..."),
             !isAdmin && (pendingValidations.filter(function(p) { return p.submittedBy === userEmail; }).length > 0 || validationLog.filter(function(l) { return l.submittedBy === userEmail; }).length > 0) && h(PendingBannerUser, { pendingValidations: pendingValidations, userEmail: userEmail, updatePendingItem: contextValue.updatePendingItem, deletePendingItem: contextValue.deletePendingItem }),
             renderPage()),
           h(Toast, { message: toast.message, type: toast.type })));
