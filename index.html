@@ -6041,18 +6041,8 @@
         try {
           var payload = Object.assign({}, f);
           if (submit) {
-            var nowIso = new Date().toISOString();
-            payload.dateSoumission = nowIso;
-            if (ctx.isAdmin) {
-              // Bypass : un admin qui soumet sa propre demande l'auto-approuve
-              payload.statut = "approuvee";
-              payload.montantApprouve = parseFloat(payload.montantDemande) || 0;
-              payload.decideurEmail = currentUserEmail;
-              payload.dateDecision = nowIso;
-              if (!payload.commentaireDecideur) payload.commentaireDecideur = "Auto-approuvee (admin)";
-            } else {
-              payload.statut = "soumise";
-            }
+            payload.statut = "soumise";
+            payload.dateSoumission = new Date().toISOString();
           }
           if (f.id) await ctx.updateDemandeFin(f.id, payload); else await ctx.addDemandeFin(payload);
           if (onDone) onDone();
@@ -6096,7 +6086,7 @@
         h("div", { style: { display: "flex", gap: 12, marginTop: 20, justifyContent: "flex-end", flexWrap: "wrap" } },
           h(Button, { variant: "secondary", onClick: () => { if (onDone) onDone(); }, disabled: saving }, "Annuler"),
           h(Button, { variant: "secondary", onClick: () => save(false), disabled: saving || !canSubmit }, h(IconText, { icon: "save", size: 14 }, "Enregistrer brouillon")),
-          h(Button, { onClick: () => save(true), disabled: saving || !canSubmit }, h(IconText, { icon: ctx.isAdmin ? "check-circle" : "send", size: 14 }, saving ? "..." : (ctx.isAdmin ? "Enregistrer (auto-approuve)" : f.statut === "info_demandee" ? "Re-soumettre" : "Soumettre"))))
+          h(Button, { onClick: () => save(true), disabled: saving || !canSubmit }, h(IconText, { icon: "send", size: 14 }, saving ? "..." : (f.statut === "info_demandee" ? "Re-soumettre" : "Soumettre"))))
       );
     }
 
@@ -6187,6 +6177,10 @@
         counts[k] = demandes.filter(function(d) { return d.statut === k && (isAdmin || d.demandeurEmail === userEmail); }).length;
       });
       var totalApprouve = demandes.filter(function(d) { return d.statut === "approuvee"; }).reduce(function(s, d) { return s + (d.montantApprouve || d.montantDemande || 0); }, 0);
+      var montantEnAttente = demandes.filter(function(d) {
+        if (!isAdmin && d.demandeurEmail !== userEmail) return false;
+        return d.statut === "soumise" || d.statut === "info_demandee";
+      }).reduce(function(s, d) { return s + (parseFloat(d.montantDemande) || 0); }, 0);
       var enAttente = (counts.soumise || 0) + (counts.info_demandee || 0);
 
       const openNew = () => { setEditing(null); setShowForm(true); };
@@ -6251,6 +6245,7 @@
         // KPIs
         h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, marginBottom: 20 } },
           h(KPICard, { icon: h(Icon, { name: "send", size: 22, color: "#ffffff" }), label: "En attente", value: String(enAttente), color: enAttente > 0 ? "#fbbf24" : "#22c55e" }),
+          h(KPICard, { icon: h(Icon, { name: "hourglass", size: 22, color: "#ffffff" }), label: "Montant en attente", value: fmtMoney(montantEnAttente), color: montantEnAttente > 0 ? "#fbbf24" : "#22c55e" }),
           h(KPICard, { icon: h(Icon, { name: "check-circle", size: 22, color: "#ffffff" }), label: "Approuvees", value: String(counts.approuvee), color: "#22c55e" }),
           h(KPICard, { icon: h(Icon, { name: "wallet", size: 22, color: "#ffffff" }), label: "Total approuve", value: fmtMoney(totalApprouve), color: "#818cf8" })
         ),
