@@ -4565,10 +4565,11 @@
       }
       return null;
     }
-    // Auto-detection chantier via Planning Engins (chantier_equipements) :
-    // si la sondeuse est affectee a un chantier dans la periode, on prend ce chantier.
-    // Retourne { chantier, source, ambigu? } ou null.
-    function matchChantierAuto(dateStr, equipementId, chantiers, chantierEquipements, siteNomFallback) {
+    // Auto-detection chantier - 3 strategies en cascade :
+    // 1. Planning Engins (chantier_equipements) : affectation precise par dates
+    // 2. Titre chantier contient le code sondeuse + site match (ex: titre="D36", site="Tiebaghi")
+    // 3. Fallback nom de site STRICT (1 seul match accepte)
+    function matchChantierAuto(dateStr, equipementId, chantiers, chantierEquipements, siteNomFallback, sondeuseCodeFallback) {
       // Strategie 1 : croiser equipement + date avec chantier_equipements
       if (equipementId && dateStr && chantierEquipements && chantierEquipements.length > 0) {
         for (var i = 0; i < chantierEquipements.length; i++) {
@@ -4582,10 +4583,28 @@
           }
         }
       }
-      // Strategie 2 : fallback par nom de site STRICT
-      // - 0 match → null
-      // - 1 match → on prend
-      // - 2+ matches → ambigu, ne PAS deviner (force l'utilisateur a creer l'affectation Planning Engins)
+      // Strategie 2 : titre du chantier contient le code sondeuse, et site correspond
+      // Ex : titre = "D36" + site = "Tiebaghi" → match unique
+      if (sondeuseCodeFallback) {
+        var sCode = sondeuseCodeFallback.toUpperCase().trim();
+        var siteFilter = (siteNomFallback || "").toUpperCase().trim();
+        var byCode = chantiers.filter(function(c) {
+          var t = (c.titre || "").toUpperCase();
+          if (t.indexOf(sCode) < 0) return false;
+          if (siteFilter) {
+            var s = (c.site || "").toUpperCase();
+            // Le chantier doit etre sur ce site (soit son site soit son titre matche)
+            if (s.indexOf(siteFilter) < 0 && t.indexOf(siteFilter) < 0) return false;
+          }
+          return true;
+        });
+        if (byCode.length === 1) return { chantier: byCode[0], source: "code-sondeuse" };
+        if (byCode.length > 1) {
+          // Plusieurs chantiers ont le code sondeuse dans leur titre, prendre le 1er (rare)
+          return { chantier: byCode[0], source: "code-sondeuse" };
+        }
+      }
+      // Strategie 3 : fallback par nom de site STRICT
       if (siteNomFallback) {
         var n = siteNomFallback.toUpperCase().trim();
         var matches = chantiers.filter(function(c) {
@@ -4665,8 +4684,8 @@
             var eq = matchEquipement(r.sondeuseCode, equipements);
             r.personnelId = emp ? emp.id : null;
             r.equipementId = eq ? eq.Id : null;
-            // Auto-detection chantier : Planning Engins en priorite, fallback site
-            var chMatch = matchChantierAuto(r.dateReleve, r.equipementId, chantiers, chantierEquipements, r.siteNom);
+            // Auto-detection chantier : 3 strategies (Planning Engins / titre=sondeuse / site)
+            var chMatch = matchChantierAuto(r.dateReleve, r.equipementId, chantiers, chantierEquipements, r.siteNom, r.sondeuseCode);
             r.chantierId = (chMatch && chMatch.chantier) ? chMatch.chantier.id : null;
             r.chantierTitre = (chMatch && chMatch.chantier) ? chMatch.chantier.titre : "";
             r.chantierSource = chMatch ? chMatch.source : null; // "planning", "site" ou "ambigu"
@@ -4762,8 +4781,8 @@
             h("tbody", null,
               rows.map(function(r, i) {
                 var bg = r.statut === "alerte" ? "rgba(251,191,36,0.06)" : (i % 2 === 0 ? "rgba(255,255,255,0.015)" : "rgba(255,255,255,0.035)");
-                var chSrcLabel = r.chantierSource === "planning" ? "via Planning Engins" : r.chantierSource === "site" ? "via nom de site (unique)" : r.chantierSource === "manuel" ? "choix manuel" : r.chantierSource === "ambigu" ? (r.chantierAmbiguCount + " chantiers " + r.siteNom + " trouves") : "non détecté";
-                var chSrcColor = r.chantierSource === "planning" ? "#86efac" : r.chantierSource === "site" ? "#fde68a" : r.chantierSource === "manuel" ? "#a5b4fc" : "#fcd34d";
+                var chSrcLabel = r.chantierSource === "planning" ? "via Planning Engins" : r.chantierSource === "code-sondeuse" ? "via code sondeuse (titre chantier)" : r.chantierSource === "site" ? "via nom de site (unique)" : r.chantierSource === "manuel" ? "choix manuel" : r.chantierSource === "ambigu" ? (r.chantierAmbiguCount + " chantiers " + r.siteNom + " trouves") : "non détecté";
+                var chSrcColor = r.chantierSource === "planning" ? "#86efac" : r.chantierSource === "code-sondeuse" ? "#86efac" : r.chantierSource === "site" ? "#fde68a" : r.chantierSource === "manuel" ? "#a5b4fc" : "#fcd34d";
                 // Liste des chantiers pour selection manuelle : prefere ceux qui matchent le site
                 var sitePrefix = (r.siteNom || "").toUpperCase().trim();
                 var chCandidats = sitePrefix ? chantiers.filter(function(c) {
@@ -6000,8 +6019,14 @@
               totalPrime += prime;
               var eqLabel = b.sondeuseCode || (b.equipementId ? (equipementsList.find(function(e) { return e.Id === b.equipementId; }) || {}).Title : "");
               var chRef = siteCh.find(function(c) { return c.id === b.chantierId; });
+              var chTitre = chRef ? chRef.titre : site;
+              // Eviter la duplication si chantier.titre contient deja le code sondeuse (nouveau modele : chantier = machine)
+              var displayName = chTitre;
+              if (eqLabel && chTitre.toUpperCase().indexOf(eqLabel.toUpperCase()) < 0) {
+                displayName = chTitre + " · " + eqLabel;
+              }
               details.push({
-                chantier: (chRef ? chRef.titre : site) + (eqLabel ? " · " + eqLabel : ""),
+                chantier: displayName,
                 jours: b.jours,
                 mhRealise: mhRealise,
                 objectif: objectif,
