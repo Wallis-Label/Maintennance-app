@@ -4681,7 +4681,9 @@
           return (c.site || "").toUpperCase().trim() === n;
         });
         if (exactSite.length === 1) return { chantier: exactSite[0], source: "site" };
-        if (exactSite.length > 1) return { chantier: null, source: "ambigu", ambiguCount: exactSite.length };
+        if (exactSite.length > 1) {
+          return { chantier: null, source: "ambigu", ambiguCount: exactSite.length, ambiguList: exactSite.map(function(c) { return c.titre || ("Chantier #" + c.id); }) };
+        }
         // 3b : si pas de match exact sur site, fallback sur "contient" (titre OU site)
         var partial = chantiers.filter(function(c) {
           var t = (c.titre || "").toUpperCase();
@@ -4689,7 +4691,9 @@
           return t.indexOf(n) >= 0 || s.indexOf(n) >= 0;
         });
         if (partial.length === 1) return { chantier: partial[0], source: "site" };
-        if (partial.length > 1) return { chantier: null, source: "ambigu", ambiguCount: partial.length };
+        if (partial.length > 1) {
+          return { chantier: null, source: "ambigu", ambiguCount: partial.length, ambiguList: partial.map(function(c) { return c.titre || ("Chantier #" + c.id); }) };
+        }
       }
       return null;
     }
@@ -4772,6 +4776,7 @@
             r.chantierTitre = (chMatch && chMatch.chantier) ? chMatch.chantier.titre : "";
             r.chantierSource = chMatch ? chMatch.source : null; // "planning", "site" ou "ambigu"
             r.chantierAmbiguCount = (chMatch && chMatch.source === "ambigu") ? chMatch.ambiguCount : 0;
+            r.chantierAmbiguList = (chMatch && chMatch.source === "ambigu") ? (chMatch.ambiguList || []) : [];
             r.empOk = !!emp;
             r.eqOk = !!r.sondeuseCode && !!eq;
             r.chOk = !!r.chantierId;
@@ -4863,7 +4868,8 @@
             h("tbody", null,
               rows.map(function(r, i) {
                 var bg = r.statut === "alerte" ? "rgba(251,191,36,0.06)" : (i % 2 === 0 ? "rgba(255,255,255,0.015)" : "rgba(255,255,255,0.035)");
-                var chSrcLabel = r.chantierSource === "planning" ? "via Planning Engins" : r.chantierSource === "memoire" ? "via memoire (choix precedent)" : r.chantierSource === "code-sondeuse" ? "via code sondeuse (titre chantier)" : r.chantierSource === "site" ? "via nom de site (unique)" : r.chantierSource === "manuel" ? "choix manuel (memorise)" : r.chantierSource === "ambigu" ? (r.chantierAmbiguCount + " chantiers " + r.siteNom + " trouves") : "non détecté";
+                var ambiguDetail = r.chantierAmbiguList && r.chantierAmbiguList.length > 0 ? " : " + r.chantierAmbiguList.join(", ") : "";
+                var chSrcLabel = r.chantierSource === "planning" ? "via Planning Engins" : r.chantierSource === "memoire" ? "via memoire (choix precedent)" : r.chantierSource === "code-sondeuse" ? "via code sondeuse (titre chantier)" : r.chantierSource === "site" ? "via nom de site (unique)" : r.chantierSource === "manuel" ? "choix manuel (memorise)" : r.chantierSource === "ambigu" ? (r.chantierAmbiguCount + " chantiers trouves" + ambiguDetail) : "non détecté";
                 var chSrcColor = r.chantierSource === "planning" ? "#86efac" : r.chantierSource === "memoire" ? "#86efac" : r.chantierSource === "code-sondeuse" ? "#86efac" : r.chantierSource === "site" ? "#fde68a" : r.chantierSource === "manuel" ? "#a5b4fc" : "#fcd34d";
                 // Liste des chantiers pour selection manuelle : prefere ceux qui matchent le site
                 var sitePrefix = (r.siteNom || "").toUpperCase().trim();
