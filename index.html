@@ -8304,8 +8304,8 @@
           var sondLabel = r.sondeuse_code || equipementLabel(r.equipement_id) || "-";
           return h(React.Fragment, { key: "r-" + r.id },
             rowHeader({
-              avatarName: sondeurName,
-              name: sondeurName + " - " + sondLabel,
+              avatarName: sondLabel,
+              name: sondLabel + " - " + sondeurName,
               sub: (r.client ? r.client + (r.lieu ? " / " + r.lieu : "") + " - " : "") + (r.total_metres || 0) + " m / " + (r.total_heures || 0) + " h" + (sondages.length ? " - " + sondages.length + " sondage" + (sondages.length > 1 ? "s" : "") : "") + " - Quart " + (r.quart || "?"),
               right: fmtDate(r.date_rapport),
               statut: r.statut,
