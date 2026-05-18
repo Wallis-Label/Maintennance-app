@@ -7736,14 +7736,14 @@
         en_attente: "En attente", approuvee: "Approuvee", refusee: "Refusee",
         soumis: "Soumis", traite: "Traite", refuse: "Refuse", envoye_fournisseur: "Envoye fournisseur",
         planifiee: "Planifiee", en_cours: "En cours", terminee: "Terminee",
-        signe_client: "Signe par client", valide_admin: "Valide"
+        envoye: "Envoye pour signature", signe_client: "Signe par client", valide_admin: "Valide"
       };
       var statutStyle = function(s) {
         var base = { display: "inline-block", fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 999, textTransform: "uppercase", letterSpacing: 0.3, border: "1px solid rgba(255,255,255,0.1)" };
         if (s === "en_attente" || s === "soumis") return Object.assign(base, { background: "rgba(251,191,36,0.15)", color: "#fde68a", borderColor: "rgba(251,191,36,0.35)" });
         if (s === "approuvee" || s === "terminee" || s === "valide_admin" || s === "traite" || s === "envoye_fournisseur") return Object.assign(base, { background: "rgba(34,197,94,0.15)", color: "#86efac", borderColor: "rgba(34,197,94,0.35)" });
         if (s === "refusee" || s === "refuse") return Object.assign(base, { background: "rgba(220,38,38,0.15)", color: "#fda4af", borderColor: "rgba(220,38,38,0.35)" });
-        if (s === "planifiee" || s === "en_cours") return Object.assign(base, { background: "rgba(99,102,241,0.15)", color: "#c7d2fe", borderColor: "rgba(99,102,241,0.35)" });
+        if (s === "planifiee" || s === "en_cours" || s === "envoye") return Object.assign(base, { background: "rgba(99,102,241,0.15)", color: "#c7d2fe", borderColor: "rgba(99,102,241,0.35)" });
         if (s === "signe_client") return Object.assign(base, { background: "rgba(167,139,250,0.15)", color: "#c4b5fd", borderColor: "rgba(167,139,250,0.35)" });
         return Object.assign(base, { background: "rgba(148,163,184,0.15)", color: "#cbd5e1" });
       };
@@ -7786,7 +7786,7 @@
         soumissions_conges:        ["tous", "en_attente", "approuvee", "refusee"],
         soumissions_commandes:     ["tous", "soumis", "traite", "envoye_fournisseur", "refuse"],
         soumissions_interventions: ["tous", "soumis", "planifiee", "en_cours", "terminee", "refusee"],
-        soumissions_rapports:      ["tous", "soumis", "signe_client", "valide_admin"]
+        soumissions_rapports:      ["tous", "soumis", "envoye", "signe_client", "valide_admin"]
       };
 
       var applyFilter = function(list) {
