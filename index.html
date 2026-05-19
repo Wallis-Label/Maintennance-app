@@ -8050,7 +8050,7 @@
             kpiCard("amber", "zap", productivite.toFixed(1) + " m/h", "Productivite foration")
           ),
           // Evolution + Activites
-          h("div", { style: { display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 16, marginBottom: 16 } },
+          h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 } },
             h("div", { style: sectionStyle },
               h("h3", { style: sectionTitleStyle }, h(Icon, { name: "trending-up", size: 16, color: "#a78bfa" }), "Evolution metrage journalier"),
               dayData.length === 0 ? h("div", { style: { color: "#a1a1aa", textAlign: "center", padding: 30, fontSize: 12 } }, "Pas assez de donnees") :
@@ -8158,7 +8158,7 @@
             )
           ),
           // Top consommables + Top sondeurs
-          h("div", { style: { display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 16, marginBottom: 16 } },
+          h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 } },
             h("div", { style: sectionStyle },
               h("h3", { style: sectionTitleStyle }, h(Icon, { name: "package-x", size: 16, color: "#a78bfa" }), "Top consommables utilises"),
               topConsos.length === 0 ? h("div", { style: { color: "#a1a1aa", textAlign: "center", padding: 30, fontSize: 12 } }, "Aucun consommable") :
