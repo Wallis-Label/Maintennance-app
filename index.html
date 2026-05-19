@@ -7695,7 +7695,7 @@
       var equipements = ctx.equipements || [];
       var parametres = ctx.parametres || [];
 
-      var _period = useState("6mois");
+      var _period = useState("mois");
       var period = _period[0]; var setPeriod = _period[1];
       var _chantierF = useState("all");
       var chantierF = _chantierF[0]; var setChantierF = _chantierF[1];
@@ -7777,14 +7777,19 @@
       // ── Application des filtres ──
       var now = new Date();
       var periodStart = null;
-      if (period === "30j") periodStart = new Date(now.getTime() - 30 * 86400000);
-      else if (period === "3mois") periodStart = new Date(now.getFullYear(), now.getMonth() - 3, now.getDate());
+      var periodEnd = null; // null = jusqu'a aujourd'hui
+      if (period === "mois") {
+        // Mois en cours uniquement (du 1er au dernier jour du mois)
+        periodStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        periodEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+      } else if (period === "3mois") periodStart = new Date(now.getFullYear(), now.getMonth() - 3, now.getDate());
       else if (period === "6mois") periodStart = new Date(now.getFullYear(), now.getMonth() - 6, now.getDate());
       else if (period === "1an") periodStart = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
-      // "all" => null
+      // "all" => null (tout l'historique)
 
       var filtered = (rapports || []).filter(function(r) {
         if (periodStart && r.date_rapport && new Date(r.date_rapport) < periodStart) return false;
+        if (periodEnd && r.date_rapport && new Date(r.date_rapport) > periodEnd) return false;
         if (chantierF !== "all" && String(r.chantier_id || "") !== chantierF) return false;
         if (sondeuseF !== "all" && (r.sondeuse_code || "") !== sondeuseF) return false;
         if (sondeurF !== "all") {
@@ -7851,34 +7856,80 @@
       });
       var productivite = minutesForation > 0 ? (totalMetres / (minutesForation / 60)) : 0;
 
-      // ── Evolution journaliere (au lieu de mensuelle) ──
-      var dayMap = {}; // "YYYY-MM-DD" -> metres
-      filtered.forEach(function(r) {
-        if (!r.date_rapport) return;
-        var key = String(r.date_rapport).substring(0, 10);
-        dayMap[key] = (dayMap[key] || 0) + (parseFloat(r.total_metres) || 0);
-      });
-      // Genere la plage de dates selon la periode active
-      var endDate = new Date();
-      var startDate;
-      if (period === "30j") startDate = new Date(endDate.getTime() - 30 * 86400000);
-      else if (period === "3mois") startDate = new Date(endDate.getTime() - 90 * 86400000);
-      else if (period === "6mois") startDate = new Date(endDate.getTime() - 180 * 86400000);
-      else if (period === "1an") startDate = new Date(endDate.getTime() - 365 * 86400000);
-      else {
-        // "all" : du plus ancien rapport a aujourd'hui
-        var dates = Object.keys(dayMap).sort();
-        startDate = dates.length > 0 ? new Date(dates[0]) : new Date(endDate.getTime() - 30 * 86400000);
+      // ── Donnees du graphique evolution : journalier ou mensuel selon la periode ──
+      // Mois / 3 mois : barres journalieres
+      // 6 mois / 1 an / Tout : barres mensuelles
+      var isMonthlyView = (period === "6mois" || period === "1an" || period === "all");
+      var chartData = []; // [{ label, value, jsDate, isWE }]
+
+      if (isMonthlyView) {
+        // Agregation par mois
+        var monthMap = {};
+        filtered.forEach(function(r) {
+          if (!r.date_rapport) return;
+          var d = new Date(r.date_rapport);
+          if (isNaN(d.getTime())) return;
+          var key = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+          monthMap[key] = (monthMap[key] || 0) + (parseFloat(r.total_metres) || 0);
+        });
+        // Genere la plage de mois selon la periode
+        var nbMois;
+        if (period === "6mois") nbMois = 6;
+        else if (period === "1an") nbMois = 12;
+        else {
+          // "all" : du plus ancien mois a maintenant
+          var keys = Object.keys(monthMap).sort();
+          if (keys.length === 0) { nbMois = 0; }
+          else {
+            var first = keys[0].split("-");
+            var firstD = new Date(parseInt(first[0]), parseInt(first[1]) - 1, 1);
+            nbMois = (now.getFullYear() - firstD.getFullYear()) * 12 + (now.getMonth() - firstD.getMonth()) + 1;
+            nbMois = Math.max(1, Math.min(nbMois, 24)); // borne a 24 mois max
+          }
+        }
+        var monthLabels = ["Janv","Fev","Mars","Avr","Mai","Juin","Juil","Aout","Sept","Oct","Nov","Dec"];
+        for (var mi = nbMois - 1; mi >= 0; mi--) {
+          var dd = new Date(now.getFullYear(), now.getMonth() - mi, 1);
+          var k = dd.getFullYear() + "-" + String(dd.getMonth() + 1).padStart(2, "0");
+          chartData.push({
+            label: monthLabels[dd.getMonth()] + " " + String(dd.getFullYear()).substring(2),
+            value: monthMap[k] || 0,
+            jsDate: dd,
+            isWE: false
+          });
+        }
+      } else {
+        // Vue journaliere : Mois en cours ou 3 mois
+        var dayMap = {};
+        filtered.forEach(function(r) {
+          if (!r.date_rapport) return;
+          var key = String(r.date_rapport).substring(0, 10);
+          dayMap[key] = (dayMap[key] || 0) + (parseFloat(r.total_metres) || 0);
+        });
+        var startDate, endDate;
+        if (period === "mois") {
+          startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+          endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0); // dernier jour du mois
+        } else {
+          // 3 mois
+          startDate = new Date(now.getTime() - 90 * 86400000);
+          endDate = new Date(now);
+        }
+        var cur = new Date(startDate);
+        cur.setHours(0, 0, 0, 0);
+        while (cur <= endDate) {
+          var dStr = cur.getFullYear() + "-" + String(cur.getMonth() + 1).padStart(2, "0") + "-" + String(cur.getDate()).padStart(2, "0");
+          var dow = cur.getDay();
+          chartData.push({
+            label: String(cur.getDate()),
+            value: dayMap[dStr] || 0,
+            jsDate: new Date(cur),
+            isWE: (dow === 0 || dow === 6)
+          });
+          cur.setDate(cur.getDate() + 1);
+        }
       }
-      var dayData = [];
-      var cur = new Date(startDate);
-      cur.setHours(0, 0, 0, 0);
-      while (cur <= endDate) {
-        var dStr = cur.getFullYear() + "-" + String(cur.getMonth() + 1).padStart(2, "0") + "-" + String(cur.getDate()).padStart(2, "0");
-        dayData.push({ date: dStr, value: dayMap[dStr] || 0, jsDate: new Date(cur) });
-        cur.setDate(cur.getDate() + 1);
-      }
-      var maxDay = Math.max.apply(null, dayData.map(function(d) { return d.value; }).concat(1));
+      var maxDay = Math.max.apply(null, chartData.map(function(d) { return d.value; }).concat(1));
 
       // ── Top consommables ──
       var topConsos = Object.keys(consoMap).map(function(k) {
@@ -8013,7 +8064,7 @@
         h("div", { style: { display: "flex", gap: 10, marginBottom: 24, flexWrap: "wrap", alignItems: "center" } },
           h("span", { style: lblStyle }, "Periode"),
           h("select", { value: period, onChange: function(e) { setPeriod(e.target.value); }, style: ddStyle },
-            h("option", { value: "30j" }, "30 derniers jours"),
+            h("option", { value: "mois" }, "Mois en cours"),
             h("option", { value: "3mois" }, "3 mois"),
             h("option", { value: "6mois" }, "6 mois"),
             h("option", { value: "1an" }, "1 an"),
@@ -8052,73 +8103,72 @@
           // Evolution + Activites
           h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 } },
             h("div", { style: sectionStyle },
-              h("h3", { style: sectionTitleStyle }, h(Icon, { name: "trending-up", size: 16, color: "#a78bfa" }), "Evolution metrage journalier"),
-              dayData.length === 0 ? h("div", { style: { color: "#a1a1aa", textAlign: "center", padding: 30, fontSize: 12 } }, "Pas assez de donnees") :
+              h("h3", { style: sectionTitleStyle }, h(Icon, { name: "trending-up", size: 16, color: "#a78bfa" }), isMonthlyView ? "Evolution metrage mensuel" : "Evolution metrage journalier"),
+              chartData.length === 0 ? h("div", { style: { color: "#a1a1aa", textAlign: "center", padding: 30, fontSize: 12 } }, "Pas assez de donnees") :
               (function() {
-                // Style identique a Avancement : SVG, barres jour, labels semaines, scrollable
-                var n = dayData.length;
-                // Largeur de barre : plus large quand peu de jours (30j), plus serre quand beaucoup
-                var barW = Math.max(Math.floor(800 / n) - 2, 6);
+                // SVG responsive : viewBox 100% width, pas de scroll horizontal.
+                // Le nombre de barres et leur largeur s'adaptent a la card.
+                var n = chartData.length;
                 var chartH = 140;
-                var topPad = 26; // place pour les pills "Sem"
-                var svgW = n * (barW + 2) + 40;
+                var topPad = isMonthlyView ? 8 : 26; // place pour pills "Sem" en vue journaliere
+                // ViewBox fixe : la SVG remplit la card et le browser scale
+                var totalW = 600;
+                var paddingLR = 16;
+                var gap = 2;
+                var barW = Math.max((totalW - paddingLR * 2 - (n - 1) * gap) / n, 2);
 
-                // Construit les semaines (lundi -> dimanche) pour les bandes de fond + total semaine
+                // Pills "Sem" pour vue journaliere uniquement (regroupe par semaine lundi->dimanche)
                 var weeks = [];
-                var curW = null;
-                for (var wj = 0; wj < n; wj++) {
-                  var dow = dayData[wj].jsDate.getDay(); // 0 dim, 1 lun...
-                  if (curW === null || dow === 1) {
-                    if (curW) weeks.push(curW);
-                    curW = { startIdx: wj, endIdx: wj, total: dayData[wj].value };
-                  } else {
-                    curW.endIdx = wj;
-                    curW.total += dayData[wj].value;
+                if (!isMonthlyView) {
+                  var curW = null;
+                  for (var wj = 0; wj < n; wj++) {
+                    var dow = chartData[wj].jsDate.getDay();
+                    if (curW === null || dow === 1) {
+                      if (curW) weeks.push(curW);
+                      curW = { startIdx: wj, endIdx: wj, total: chartData[wj].value };
+                    } else {
+                      curW.endIdx = wj;
+                      curW.total += chartData[wj].value;
+                    }
                   }
+                  if (curW) weeks.push(curW);
                 }
-                if (curW) weeks.push(curW);
 
-                return h("div", { style: { overflowX: "auto" } },
-                  h("svg", { viewBox: "0 0 " + svgW + " " + (chartH + topPad + 30), style: { width: "100%", minWidth: svgW + "px", maxHeight: 200 } },
-                    // Bandes de fond par semaine (alternance)
-                    weeks.map(function(w, wi) {
-                      var x1 = 20 + w.startIdx * (barW + 2) - 1;
-                      var x2 = 20 + w.endIdx * (barW + 2) + barW + 1;
-                      return h("rect", { key: "wbg" + wi, x: x1, y: topPad, width: x2 - x1, height: chartH - topPad, fill: wi % 2 === 0 ? "rgba(99,102,241,0.04)" : "rgba(99,102,241,0.10)" });
-                    }),
-                    // Pills total semaine (en haut)
-                    weeks.map(function(w, wi) {
-                      if (w.total <= 0) return null;
-                      var x1 = 20 + w.startIdx * (barW + 2);
-                      var x2 = 20 + w.endIdx * (barW + 2) + barW;
-                      var cx = (x1 + x2) / 2;
-                      var pillW = Math.min(x2 - x1 - 2, 90);
-                      return h("g", { key: "wca" + wi },
-                        h("rect", { x: cx - pillW / 2, y: 4, width: pillW, height: 18, rx: 9, fill: "rgba(167,139,250,0.15)", stroke: "rgba(167,139,250,0.45)", strokeWidth: 1 }),
-                        h("text", { x: cx, y: 16, textAnchor: "middle", fontSize: 9, fill: "#c4b5fd", fontWeight: 700 }, "Sem : " + Math.round(w.total) + " m")
-                      );
-                    }),
-                    // Barres journalieres
-                    dayData.map(function(d, idx) {
-                      var barH = maxDay > 0 ? (d.value / maxDay) * (chartH - topPad) : 0;
-                      var x = 20 + idx * (barW + 2);
-                      var dow = d.jsDate.getDay();
-                      var isWE = dow === 0 || dow === 6;
-                      var barColor = isWE ? "#c4b5fd" : "#7c3aed";
-                      // Label du jour : seulement le numero, sauf pour les longs intervalles ou on met juste les "1er du mois"
-                      var dayLabel = String(d.jsDate.getDate());
-                      var showLabel = n <= 60 || d.jsDate.getDate() === 1 || idx === 0 || idx === n - 1;
-                      return h("g", { key: "b" + idx },
-                        h("rect", { x: x, y: chartH - barH, width: barW, height: Math.max(barH, 0), rx: 2, fill: barColor, opacity: d.value > 0 ? 1 : 0.15 }),
-                        d.value > 0 && barH > 14 ? h("text", { x: x + barW / 2, y: chartH - barH + 11, textAnchor: "middle", fontSize: 8, fill: "white", fontWeight: 700 }, Math.round(d.value)) : null,
-                        showLabel ? h("text", { x: x + barW / 2, y: chartH + 14, textAnchor: "middle", fontSize: 8, fill: isWE ? "#a78bfa" : "#a1a1aa" }, dayLabel) : null,
-                        // Pour les longs intervalles, afficher le mois au 1er
-                        (n > 60 && d.jsDate.getDate() === 1) ? h("text", { x: x + barW / 2, y: chartH + 26, textAnchor: "middle", fontSize: 9, fill: "#c4b5fd", fontWeight: 700 }, ["Jan","Fev","Mar","Avr","Mai","Jun","Jul","Aou","Sep","Oct","Nov","Dec"][d.jsDate.getMonth()]) : null
-                      );
-                    }),
-                    // Ligne de base
-                    h("line", { x1: 18, x2: svgW - 2, y1: chartH, y2: chartH, stroke: "rgba(255,255,255,0.1)", strokeWidth: 1 })
-                  )
+                return h("svg", { viewBox: "0 0 " + totalW + " " + (chartH + topPad + 28), preserveAspectRatio: "none", style: { width: "100%", height: 180, display: "block" } },
+                  // Bandes de fond par semaine (vue jour seulement)
+                  !isMonthlyView ? weeks.map(function(w, wi) {
+                    var x1 = paddingLR + w.startIdx * (barW + gap) - 1;
+                    var x2 = paddingLR + w.endIdx * (barW + gap) + barW + 1;
+                    return h("rect", { key: "wbg" + wi, x: x1, y: topPad, width: x2 - x1, height: chartH - topPad, fill: wi % 2 === 0 ? "rgba(99,102,241,0.04)" : "rgba(99,102,241,0.10)" });
+                  }) : null,
+                  // Pills "Sem" en haut (jour uniquement)
+                  !isMonthlyView ? weeks.map(function(w, wi) {
+                    if (w.total <= 0) return null;
+                    var x1 = paddingLR + w.startIdx * (barW + gap);
+                    var x2 = paddingLR + w.endIdx * (barW + gap) + barW;
+                    var cx = (x1 + x2) / 2;
+                    var pillW = Math.min(x2 - x1 - 2, 80);
+                    if (pillW < 24) return null; // trop petit pour afficher
+                    return h("g", { key: "wca" + wi },
+                      h("rect", { x: cx - pillW / 2, y: 2, width: pillW, height: 16, rx: 8, fill: "rgba(167,139,250,0.15)", stroke: "rgba(167,139,250,0.45)", strokeWidth: 1 }),
+                      h("text", { x: cx, y: 13, textAnchor: "middle", fontSize: 8, fill: "#c4b5fd", fontWeight: 700 }, "Sem " + Math.round(w.total))
+                    );
+                  }) : null,
+                  // Barres
+                  chartData.map(function(d, idx) {
+                    var barH = maxDay > 0 ? (d.value / maxDay) * (chartH - topPad) : 0;
+                    var x = paddingLR + idx * (barW + gap);
+                    var barColor = isMonthlyView ? "#7c3aed" : (d.isWE ? "#c4b5fd" : "#7c3aed");
+                    // Label sous la barre : tous les jours en vue mois courant (n=30), 1er du mois en vue 3 mois (n=90),
+                    // toujours en vue mensuelle (n=6-24)
+                    var showLabel = isMonthlyView || n <= 31 || d.jsDate.getDate() === 1 || idx === 0 || idx === n - 1;
+                    return h("g", { key: "b" + idx },
+                      h("rect", { x: x, y: chartH - barH, width: Math.max(barW, 1), height: Math.max(barH, 0), rx: 1.5, fill: barColor, opacity: d.value > 0 ? 1 : 0.15 }),
+                      d.value > 0 && barH > 12 && barW > 18 ? h("text", { x: x + barW / 2, y: chartH - barH + 10, textAnchor: "middle", fontSize: 7, fill: "white", fontWeight: 700 }, Math.round(d.value)) : null,
+                      showLabel ? h("text", { x: x + barW / 2, y: chartH + 12, textAnchor: "middle", fontSize: 8, fill: (d.isWE ? "#a78bfa" : "#a1a1aa"), fontWeight: isMonthlyView ? 700 : 400 }, d.label) : null
+                    );
+                  }),
+                  h("line", { x1: paddingLR - 2, x2: totalW - paddingLR + 2, y1: chartH, y2: chartH, stroke: "rgba(255,255,255,0.1)", strokeWidth: 1 })
                 );
               }())
             ),
