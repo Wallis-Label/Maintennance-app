@@ -7872,7 +7872,6 @@
         prixMetreByChantier[String(c.id)] = prix;
         if (c.site && prix > 0) {
           var siteKey = String(c.site).toUpperCase().trim();
-          // Si plusieurs chantiers sur le meme site, garde celui avec le prix le plus recent (= dateDebut max)
           if (!prixMetreBySite[siteKey] || (c.dateDebut || "") > (prixMetreBySite[siteKey].dateDebut || "")) {
             prixMetreBySite[siteKey] = { prix: prix, dateDebut: c.dateDebut || "" };
           }
@@ -7884,10 +7883,21 @@
           var p = prixMetreByChantier[String(r.chantier_id)];
           if (p) return p;
         }
-        // 2. Fallback : match par site/lieu
+        // 2. Fallback : match exact par site/lieu
         if (r.lieu) {
-          var key = String(r.lieu).toUpperCase().trim();
-          if (prixMetreBySite[key]) return prixMetreBySite[key].prix;
+          var lk = String(r.lieu).toUpperCase().trim();
+          if (prixMetreBySite[lk]) return prixMetreBySite[lk].prix;
+          // 3. Match approximatif (ex: lieu="KOPETO" matche site="Kopeto K")
+          var best = 0; var bestLen = 0;
+          var keys = Object.keys(prixMetreBySite);
+          for (var i = 0; i < keys.length; i++) {
+            var sk = keys[i];
+            if (sk.indexOf(lk) >= 0 || lk.indexOf(sk) >= 0) {
+              var matchLen = Math.min(sk.length, lk.length);
+              if (matchLen > bestLen) { best = prixMetreBySite[sk].prix; bestLen = matchLen; }
+            }
+          }
+          return best;
         }
         return 0;
       };
@@ -8337,7 +8347,12 @@
     }
 
     // ─── Vue d'edition complete d'un rapport de forage ─────────────────
-    function RapportEditView({ rapport, personnelMap, dbChantiers, equipements, onClose, onSaved, showToast }) {
+    // Constantes types (identiques a l'app Employes)
+    var RF_TYPES_SONDAGE = ["AIRCORE", "RC", "DIAMOND", "CAROTTE", "AUTRE"];
+    var RF_TYPES_ACTIVITE = ["TRAJET","MAINTENANCE","FORATION","DEPLACEMENT","PCC","REMPLISSAGE RAPPORT TABLETTE","ATTENTE","PAUSE","AUTRE"];
+    var RF_ROLES = ["Sondeur", "Aide sondeur", "Chauffeur", "Mecanicien", "Atelier", "Bureau", "Autre"];
+
+    function RapportEditView({ rapport, personnelMap, dbChantiers, equipements, pieces, onClose, onSaved, showToast }) {
       var _form = useState(function() {
         // Copie profonde minimale pour eviter de muter la prop
         var deep = function(o) { try { return JSON.parse(JSON.stringify(o)); } catch(e) { return o; } };
@@ -8435,7 +8450,39 @@
         { value: "nuit", label: "Nuit" }
       ];
 
+      // Liste de personnel deduplique (nom complet -> role) pour datalist + auto-fill
+      var personnelOptions = (function() {
+        var seen = {};
+        var out = [];
+        Object.keys(personnelMap || {}).forEach(function(k) {
+          var p = personnelMap[k];
+          if (!p) return;
+          var nom = (p.nom || ((p.prenom || "") + " " + (p.nom || "")).trim() || "").trim();
+          if (!nom) return;
+          var key = nom.toLowerCase();
+          if (seen[key]) return;
+          seen[key] = true;
+          out.push({ nom: nom, role: p.role || "" });
+        });
+        out.sort(function(a, b) { return a.nom.localeCompare(b.nom); });
+        return out;
+      }());
+      var roleByNom = {};
+      personnelOptions.forEach(function(p) { roleByNom[p.nom.toLowerCase()] = p.role; });
+
       return h("div", null,
+        // Datalist pour l'autocomplete des pieces (consommables perdus)
+        h("datalist", { id: "rf-pieces-list" },
+          (pieces || []).map(function(p) {
+            return h("option", { key: p.Id || p.Reference || p.Designation, value: p.Designation || "" }, p.Reference || "");
+          })
+        ),
+        // Datalist pour l'autocomplete des membres d'equipe
+        h("datalist", { id: "rf-personnel-list" },
+          personnelOptions.map(function(p) {
+            return h("option", { key: p.nom, value: p.nom }, p.role || "");
+          })
+        ),
         // Header
         h("div", { style: { display: "flex", alignItems: "center", gap: 14, marginBottom: 18, paddingBottom: 14, borderBottom: "1px solid rgba(255,255,255,0.07)" } },
           h(Button, { onClick: onClose, variant: "secondary" }, h(IconText, { icon: "chevron-left", size: 14 }, "Retour")),
@@ -8479,8 +8526,24 @@
             var isSondeur = m.isSondeur || (m.role && String(m.role).toLowerCase() === "sondeur");
             return h("div", { key: "eq-" + idx, style: { display: "grid", gridTemplateColumns: "auto 1fr 1fr 90px auto", alignItems: "center", gap: 10, padding: 10, background: isSondeur ? "rgba(245,158,11,0.08)" : "rgba(99,102,241,0.06)", border: "1px solid " + (isSondeur ? "rgba(245,158,11,0.30)" : "rgba(129,140,248,0.30)"), borderRadius: 8, marginBottom: 6 } },
               h("div", { style: { width: 32, height: 32, borderRadius: "50%", background: isSondeur ? "linear-gradient(135deg,#f59e0b,#f97316)" : "linear-gradient(135deg, #6366f1, #8b5cf6)", display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontWeight: 800, fontSize: 11 } }, ((m.nom || "?").split(" ").map(function(w) { return w[0]; }).filter(Boolean).slice(0, 2).join("")).toUpperCase()),
-              h("input", { type: "text", value: m.nom || "", placeholder: "Nom", onChange: function(e) { updateList("equipe", idx, "nom", e.target.value); }, style: Object.assign({}, inputStyleEdit, { marginTop: 0, fontWeight: 700 }) }),
-              h("input", { type: "text", value: m.role || "", placeholder: "Role", onChange: function(e) { updateList("equipe", idx, "role", e.target.value); }, style: Object.assign({}, inputStyleEdit, { marginTop: 0 }) }),
+              h("input", { type: "text", list: "rf-personnel-list", value: m.nom || "", placeholder: "Nom", onChange: function(e) {
+                var v = e.target.value;
+                updateList("equipe", idx, "nom", v);
+                // Si le nom matche un employe connu et que le role est vide, on auto-remplit le role
+                var matchedRole = roleByNom[v.toLowerCase()];
+                if (matchedRole && !m.role) {
+                  updateList("equipe", idx, "role", matchedRole);
+                  updateList("equipe", idx, "isSondeur", String(matchedRole).toLowerCase() === "sondeur");
+                }
+              }, style: Object.assign({}, inputStyleEdit, { marginTop: 0, fontWeight: 700 }) }),
+              h("select", { value: m.role || "Aide sondeur", onChange: function(e) {
+                var v = e.target.value;
+                updateList("equipe", idx, "role", v);
+                updateList("equipe", idx, "isSondeur", String(v).toLowerCase() === "sondeur");
+              }, style: Object.assign({}, inputStyleEdit, { marginTop: 0 }) },
+                RF_ROLES.map(function(r) { return h("option", { key: r, value: r }, r); }),
+                m.role && RF_ROLES.indexOf(m.role) < 0 ? h("option", { key: "_custom", value: m.role }, m.role) : null
+              ),
               h("input", { type: "text", value: m.hours || "", placeholder: "00:00", onChange: function(e) { updateList("equipe", idx, "hours", e.target.value); }, style: Object.assign({}, inputStyleEdit, { marginTop: 0, fontFamily: "monospace", textAlign: "center" }) }),
               h("button", { onClick: function() { removeFromList("equipe", idx); }, style: { background: "rgba(244,63,94,0.10)", border: "1px solid rgba(244,63,94,0.30)", color: "#fda4af", width: 28, height: 28, borderRadius: 6, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" } },
                 h(Icon, { name: "x", size: 14, color: "#fda4af" }))
@@ -8504,7 +8567,11 @@
               h("div", { style: { display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: 8, marginBottom: 8 } },
                 h("label", { style: labelStyleEdit }, "No sondage", h("input", { type: "text", value: s.num || "", onChange: function(e) { updateList("sondages", idx, "num", e.target.value); }, style: inputStyleEdit })),
                 h("label", { style: labelStyleEdit }, "Angle", h("input", { type: "number", value: s.angle != null ? s.angle : "", onChange: function(e) { updateList("sondages", idx, "angle", e.target.value); }, style: inputStyleEdit })),
-                h("label", { style: labelStyleEdit }, "Type", h("input", { type: "text", value: s.type || "", onChange: function(e) { updateList("sondages", idx, "type", e.target.value); }, style: inputStyleEdit }))
+                h("label", { style: labelStyleEdit }, "Type", h("select", { value: s.type || "AIRCORE", onChange: function(e) { updateList("sondages", idx, "type", e.target.value); }, style: inputStyleEdit },
+                  RF_TYPES_SONDAGE.map(function(t) { return h("option", { key: t, value: t }, t); }),
+                  // Permet de garder une valeur non standard (ex: "Carotter" historique)
+                  s.type && RF_TYPES_SONDAGE.indexOf(s.type) < 0 ? h("option", { key: "_custom", value: s.type }, s.type) : null
+                ))
               ),
               h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 } },
                 h("label", { style: labelStyleEdit }, "De (m)", h("input", { type: "number", value: s.de != null ? s.de : "", onChange: function(e) { updateList("sondages", idx, "de", e.target.value); }, style: inputStyleEdit })),
@@ -8608,7 +8675,10 @@
           (form.activites || []).map(function(a, idx) {
             var total = computeMins(a.debut, a.fin);
             return h("div", { key: "ac-" + idx, style: { display: "grid", gridTemplateColumns: "2fr 1fr 1fr 80px auto", gap: 8, alignItems: "center", marginBottom: 6, padding: 8, background: "rgba(0,0,0,0.20)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 8 } },
-              h("input", { type: "text", value: a.libelle || "", placeholder: "Activite", onChange: function(e) { updateList("activites", idx, "libelle", e.target.value); }, style: Object.assign({}, inputStyleEdit, { marginTop: 0, fontWeight: 600 }) }),
+              h("select", { value: a.libelle || "FORATION", onChange: function(e) { updateList("activites", idx, "libelle", e.target.value); }, style: Object.assign({}, inputStyleEdit, { marginTop: 0, fontWeight: 600 }) },
+                RF_TYPES_ACTIVITE.map(function(t) { return h("option", { key: t, value: t }, t); }),
+                a.libelle && RF_TYPES_ACTIVITE.indexOf(a.libelle) < 0 ? h("option", { key: "_custom", value: a.libelle }, a.libelle) : null
+              ),
               h("input", { type: "text", value: a.debut || "", placeholder: "00:00", onChange: function(e) { updateList("activites", idx, "debut", e.target.value); }, style: Object.assign({}, inputStyleEdit, { marginTop: 0, fontFamily: "monospace", textAlign: "center" }) }),
               h("input", { type: "text", value: a.fin || "", placeholder: "00:00", onChange: function(e) { updateList("activites", idx, "fin", e.target.value); }, style: Object.assign({}, inputStyleEdit, { marginTop: 0, fontFamily: "monospace", textAlign: "center" }) }),
               h("input", { type: "text", value: minToTime(total), readOnly: true, style: Object.assign({}, inputStyleEdit, { marginTop: 0, fontFamily: "monospace", textAlign: "center", color: "#a78bfa" }) }),
@@ -8632,7 +8702,15 @@
           (form.consommables_perdus || []).length === 0 ? h("p", { style: { color: "#a1a1aa", fontStyle: "italic", fontSize: 12, marginBottom: 8 } }, "Aucun") :
           (form.consommables_perdus || []).map(function(c, idx) {
             return h("div", { key: "co-" + idx, style: { display: "grid", gridTemplateColumns: "2fr 1fr 80px auto", gap: 8, alignItems: "center", marginBottom: 6, padding: 8, background: "rgba(0,0,0,0.20)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 8 } },
-              h("input", { type: "text", value: c.designation || c.nom || "", placeholder: "Designation", onChange: function(e) { updateList("consommables_perdus", idx, "designation", e.target.value); }, style: Object.assign({}, inputStyleEdit, { marginTop: 0 }) }),
+              h("input", { type: "text", list: "rf-pieces-list", value: c.designation || c.nom || "", placeholder: "Designation", onChange: function(e) {
+                var v = e.target.value;
+                updateList("consommables_perdus", idx, "designation", v);
+                // Si la designation matche une piece, auto-remplir la reference
+                var match = (pieces || []).find(function(p) { return p.Designation === v; });
+                if (match && match.Reference && !c.ref) {
+                  updateList("consommables_perdus", idx, "ref", match.Reference);
+                }
+              }, style: Object.assign({}, inputStyleEdit, { marginTop: 0 }) }),
               h("input", { type: "text", value: c.ref || "", placeholder: "Reference", onChange: function(e) { updateList("consommables_perdus", idx, "ref", e.target.value); }, style: Object.assign({}, inputStyleEdit, { marginTop: 0, fontFamily: "monospace", fontSize: 11 }) }),
               h("input", { type: "number", value: c.qty != null ? c.qty : (c.quantite != null ? c.quantite : ""), placeholder: "Qte", onChange: function(e) { updateList("consommables_perdus", idx, "qty", e.target.value); }, style: Object.assign({}, inputStyleEdit, { marginTop: 0, textAlign: "center" }) }),
               h("button", { onClick: function() { removeFromList("consommables_perdus", idx); }, style: { background: "rgba(244,63,94,0.10)", border: "1px solid rgba(244,63,94,0.30)", color: "#fda4af", width: 28, height: 28, borderRadius: 6, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" } },
@@ -9497,6 +9575,7 @@
           personnelMap: personnelMap,
           dbChantiers: dbChantiers,
           equipements: equipements,
+          pieces: pieces,
           showToast: showToast,
           onClose: function() { setEditingRapportId(null); },
           onSaved: function(updated) {
@@ -10437,6 +10516,26 @@
             }
           }
         });
+        // Resolution chantier par lieu avec match approximatif (contains dans les 2 sens)
+        // Ex: lieu="KOPETO" matche site="Kopeto K" ou inverse.
+        function findChantierByLieu(lieu) {
+          if (!lieu) return null;
+          var lk = String(lieu).toUpperCase().trim();
+          // 1) Match exact
+          if (chantierBySite[lk]) return chantierBySite[lk];
+          // 2) Match approximatif : un contient l'autre (priorite au plus long contenu)
+          var best = null; var bestLen = 0;
+          var keys = Object.keys(chantierBySite);
+          for (var i = 0; i < keys.length; i++) {
+            var sk = keys[i];
+            // sk contient lk (ex: "KOPETO K" contient "KOPETO") OU lk contient sk (ex: "KOPETO NORD" contient "KOPETO")
+            if (sk.indexOf(lk) >= 0 || lk.indexOf(sk) >= 0) {
+              var matchLen = Math.min(sk.length, lk.length);
+              if (matchLen > bestLen) { best = chantierBySite[sk]; bestLen = matchLen; }
+            }
+          }
+          return best;
+        }
         // Map equipement_id -> equipement, et map code (immatriculation) -> equipement_id
         // pour normaliser les rapports importes en SQL (qui n'ont que sondeuse_code) avec
         // ceux soumis via l'app (qui ont equipement_id rempli). Cle de regroupement coherente.
@@ -10459,11 +10558,11 @@
           if (!r.date_rapport) return;
           var date = String(r.date_rapport).substring(0, 10);
           var metres = parseFloat(r.total_metres) || 0;
-          // Resolution chantier_id : explicite ou fallback par lieu/site
+          // Resolution chantier_id : explicite ou fallback approximatif par lieu/site
           var chId = r.chantier_id;
-          if (chId == null && r.lieu) {
-            var sk = String(r.lieu).toUpperCase().trim();
-            if (chantierBySite[sk]) chId = chantierBySite[sk].id;
+          if (chId == null) {
+            var fb = findChantierByLieu(r.lieu);
+            if (fb) chId = fb.id;
           }
           // Resolution sondeuse / equipement : on remplit les 2 champs pour cle de regroupement coherente
           var sondeuseCode = r.sondeuse_code || "";
