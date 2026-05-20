@@ -8199,7 +8199,7 @@
           // KPIs
           h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14, marginBottom: 28 } },
             kpiCard("indigo", "rocket", Math.round(totalMetres).toLocaleString("fr-FR") + " m", "Metrage total"),
-            kpiCard("green", "clock", Math.round(totalMinutes / 60).toLocaleString("fr-FR") + " h", "Heures totales"),
+            kpiCard("green", "clock", (function(){ var hh = Math.floor(totalMinutes / 60); var mm = Math.round(totalMinutes - hh * 60); if (mm === 60) { hh += 1; mm = 0; } return hh.toLocaleString("fr-FR") + "H" + (mm < 10 ? "0" : "") + mm; }()), "Heures totales"),
             kpiCard("pink", "package-x", fmtXPF(totalCoutConso), "Cout consommables"),
             kpiCard("amber", "zap", productivite.toFixed(1) + " m/h", "Productivite foration")
           ),
@@ -8741,7 +8741,7 @@
             h(Icon, { name: "plus", size: 14, color: "#a1a1aa" }), "Ajouter une activite"),
           h("div", { style: { background: "linear-gradient(135deg,rgba(236,72,153,0.20),rgba(236,72,153,0.05))", border: "1px solid rgba(236,72,153,0.40)", borderRadius: 10, padding: "12px 14px", margin: "10px 0 0", display: "flex", justifyContent: "space-between", alignItems: "center" } },
             h("span", { style: { fontSize: 11, fontWeight: 700, color: "#f9a8d4", textTransform: "uppercase" } }, "Total heures journee"),
-            h("span", { style: { fontSize: 18, fontWeight: 900, color: "#fff", fontFamily: "monospace" } }, minToTime(totalMinutes))
+            h("span", { style: { fontSize: 18, fontWeight: 900, color: "#fff", fontFamily: "monospace" } }, (function(){ var hh = Math.floor(totalMinutes / 60); var mm = Math.round(totalMinutes - hh * 60); if (mm === 60) { hh += 1; mm = 0; } return (hh < 10 ? "0" : "") + hh + "H" + (mm < 10 ? "0" : "") + mm; }()))
           ),
 
           // ── Section Remarques ──
@@ -9059,6 +9059,15 @@
           if (isNaN(dt.getTime())) return String(d);
           return dt.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }) + " " + dt.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
         } catch(e) { return String(d); }
+      };
+      // Formatte des minutes en "08H30" (heures totales rapport de forage)
+      var fmtMinsHHmm = function(mins) {
+        var m = parseFloat(mins);
+        if (!m || m < 0) m = 0;
+        var hh = Math.floor(m / 60);
+        var mm = Math.round(m - hh * 60);
+        if (mm === 60) { hh += 1; mm = 0; }
+        return (hh < 10 ? "0" : "") + hh + "H" + (mm < 10 ? "0" : "") + mm;
       };
 
       var STATUT_LABEL = {
@@ -9415,7 +9424,7 @@
             rowHeader({
               avatarText: sondLabel,
               name: sondLabel + " - " + sondeurName,
-              sub: (r.client ? r.client + (r.lieu ? " / " + r.lieu : "") + " - " : "") + (r.total_metres || 0) + " m / " + (r.total_heures || 0) + " h" + (sondages.length ? " - " + sondages.length + " sondage" + (sondages.length > 1 ? "s" : "") : "") + " - Quart " + (r.quart || "?"),
+              sub: (r.client ? r.client + (r.lieu ? " / " + r.lieu : "") + " - " : "") + (r.total_metres || 0) + " m / " + fmtMinsHHmm(r.total_heures) + (sondages.length ? " - " + sondages.length + " sondage" + (sondages.length > 1 ? "s" : "") : "") + " - Quart " + (r.quart || "?"),
               right: r.date_rapport ? "Rapport du " + fmtDate(r.date_rapport) : (r.created_at ? "Envoye le " + fmtDateTime(r.created_at) : "-"),
               statut: r.statut,
               isExpanded: isExp,
@@ -9431,7 +9440,7 @@
                 { label: "Sondeur (responsable)", value: sondeurName },
                 { label: "Chantier", value: chantierLabel(r.chantier_id) },
                 { label: "Total metres", value: (r.total_metres || 0) + " m" },
-                { label: "Total heures", value: (r.total_heures || 0) + " h" },
+                { label: "Total heures", value: fmtMinsHHmm(r.total_heures) },
                 { label: "Controles OK", value: r.controles_ok ? "Oui" : "Non" }
               ]),
               equipe.length > 0 ? h("div", null,
