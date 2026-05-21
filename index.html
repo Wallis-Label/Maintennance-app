@@ -2150,16 +2150,23 @@
     // ─── Ecran Parametres (gestion des listes deroulantes) ─────────────
     function EcranParametres() {
       const { parametres, addParametre, updateParametre, deleteParametre } = useAppData();
+      // Groupes : "employes" = listes utilisees dans l'app terrain (sondeurs)
+      //           "admin"    = listes utilisees uniquement dans l'app admin
+      const CATEGORY_GROUPS = [
+        { key: "employes", label: "APP Employes (terrain)" },
+        { key: "admin",    label: "APP Admin" }
+      ];
       const categories = [
-        { key: "type_engin", label: "Types d'engin", lucide: "hard-hat" },
-        { key: "type_vl", label: "Types de vehicule", lucide: "car" },
-        { key: "rf_types_sondage", label: "Types de forage", lucide: "layers" },
-        { key: "clients", label: "Clients", lucide: "briefcase" },
-        { key: "localisation", label: "Localisations", lucide: "map-pin" },
-        { key: "cat_piece", label: "Categories de piece", lucide: "package" },
-        { key: "frequence_plan", label: "Frequences de plan", lucide: "calendar" },
-        { key: "technicien", label: "Techniciens", lucide: "user-round" },
-        { key: "destinataires_emails", label: "Destinataires emails", lucide: "mail" },
+        { key: "rf_types_sondage",     label: "Types de forage",      lucide: "layers",        group: "employes" },
+        { key: "rf_types_activite",    label: "Types d'activite",     lucide: "activity",      group: "employes" },
+        { key: "clients",              label: "Clients",              lucide: "briefcase",     group: "employes" },
+        { key: "type_engin",           label: "Types d'engin",        lucide: "hard-hat",      group: "admin" },
+        { key: "type_vl",              label: "Types de vehicule",    lucide: "car",           group: "admin" },
+        { key: "localisation",         label: "Localisations",        lucide: "map-pin",       group: "admin" },
+        { key: "cat_piece",            label: "Categories de piece",  lucide: "package",       group: "admin" },
+        { key: "frequence_plan",       label: "Frequences de plan",   lucide: "calendar",      group: "admin" },
+        { key: "technicien",           label: "Techniciens",          lucide: "user-round",    group: "admin" },
+        { key: "destinataires_emails", label: "Destinataires emails", lucide: "mail",          group: "admin" },
       ];
       const [selected, setSelected] = useState("type_engin");
       const [newValeur, setNewValeur] = useState("");
@@ -2196,11 +2203,22 @@
       return h("div", null,
         h(PageHeader, { title: h(IconText, { icon: "settings", size: 20 }, "Parametres"), subtitle: "Gerer les listes deroulantes de l'application" }),
         h("div", { style: { display: "grid", gridTemplateColumns: "240px 1fr", gap: 16 } },
-          // Colonne gauche : categories
+          // Colonne gauche : categories regroupees par app (Employes / Admin)
           h(Card, { style: { padding: 12 } },
-            h("div", { style: { fontSize: 12, color: "#a1a1aa", fontWeight: 700, textTransform: "uppercase", marginBottom: 8 } }, "Categories"),
-            categories.map((c) => h("button", { key: c.key, onClick: () => setSelected(c.key),
-              style: { display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left", padding: "10px 12px", marginBottom: 4, border: "none", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: selected === c.key ? 700 : 500, background: selected === c.key ? "rgba(167,139,250,0.15)" : "transparent", color: selected === c.key ? "#6d28d9" : "#e5e7eb" } }, c.lucide && h(Icon, { name: c.lucide, size: 14 }), c.label))),
+            CATEGORY_GROUPS.map(function(g) {
+              const inGroup = categories.filter(function(c) { return c.group === g.key; });
+              if (inGroup.length === 0) return null;
+              return h("div", { key: g.key, style: { marginBottom: 14 } },
+                h("div", { style: { fontSize: 11, color: "#a78bfa", fontWeight: 800, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8, paddingBottom: 6, borderBottom: "1px solid rgba(167,139,250,0.20)" } }, g.label),
+                inGroup.map(function(c) {
+                  return h("button", { key: c.key, onClick: function() { setSelected(c.key); },
+                    style: { display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left", padding: "10px 12px", marginBottom: 4, border: "none", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: selected === c.key ? 700 : 500, background: selected === c.key ? "rgba(167,139,250,0.15)" : "transparent", color: selected === c.key ? "#6d28d9" : "#e5e7eb" } },
+                    c.lucide && h(Icon, { name: c.lucide, size: 14 }), c.label
+                  );
+                })
+              );
+            })
+          ),
           // Colonne droite : valeurs (rendu custom pour destinataires_emails, standard sinon)
           h(Card, null,
             h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, (categories.find((c) => c.key === selected) || {}).label),
@@ -8662,21 +8680,23 @@
     }
 
     // ─── Vue d'edition complete d'un rapport de forage ─────────────────
-    // Fallback constants si la categorie parametres.rf_types_sondage est vide
+    // Fallbacks si les categories parametres correspondantes sont vides
     var RF_TYPES_SONDAGE_FALLBACK = ["AIRCORE", "RC", "DIAMOND", "CAROTTE", "MFT", "AUTRE"];
-    var RF_TYPES_ACTIVITE = ["TRAJET","MAINTENANCE","FORATION","DEPLACEMENT","PCC","REMPLISSAGE RAPPORT TABLETTE","ATTENTE","PAUSE","AUTRE"];
+    var RF_TYPES_ACTIVITE_FALLBACK = ["TRAJET","MAINTENANCE","FORATION","DEPLACEMENT","PCC","REMPLISSAGE RAPPORT TABLETTE","ATTENTE","PAUSE","AUTRE"];
     var RF_ROLES = ["Sondeur", "Aide sondeur", "Chauffeur", "Mecanicien", "Atelier", "Bureau", "Autre"];
 
     function RapportEditView({ rapport, personnelMap, dbChantiers, equipements, pieces, onClose, onSaved, showToast }) {
-      // Types de forage dynamiques : lus depuis parametres (categorie rf_types_sondage)
+      // Types dynamiques : lus depuis parametres (categories rf_types_sondage / rf_types_activite)
       var _parametres = useAppData().parametres || [];
-      var RF_TYPES_SONDAGE = (function() {
+      var listFromParametres = function(categorie, fallback) {
         var list = _parametres
-          .filter(function(p) { return p.categorie === "rf_types_sondage"; })
+          .filter(function(p) { return p.categorie === categorie; })
           .sort(function(a, b) { return (a.ordre || 0) - (b.ordre || 0); })
           .map(function(p) { return p.valeur; });
-        return list.length > 0 ? list : RF_TYPES_SONDAGE_FALLBACK;
-      }());
+        return list.length > 0 ? list : fallback;
+      };
+      var RF_TYPES_SONDAGE = listFromParametres("rf_types_sondage", RF_TYPES_SONDAGE_FALLBACK);
+      var RF_TYPES_ACTIVITE = listFromParametres("rf_types_activite", RF_TYPES_ACTIVITE_FALLBACK);
       var _form = useState(function() {
         // Copie profonde minimale pour eviter de muter la prop
         var deep = function(o) { try { return JSON.parse(JSON.stringify(o)); } catch(e) { return o; } };
@@ -9409,6 +9429,25 @@
           setRaps(raps.map(function(x) { return x.id === id ? updated : x; }));
         });
       };
+      // Suppression definitive d'un rapport (utile pour purger les doublons d'import)
+      var deleteRapport = function(r) {
+        var libelle = "Rapport #" + r.id + (r.sondeuse_code ? " " + r.sondeuse_code : "") + (r.date_rapport ? " du " + fmtDate(r.date_rapport) : "");
+        if (!confirm("Supprimer DEFINITIVEMENT ce rapport ?\n\n" + libelle + "\n\nCette action est irreversible.")) return;
+        supabase.from("rapports_forage").delete().eq("id", r.id).then(function(res) {
+          if (res.error) {
+            alert("Erreur suppression : " + res.error.message);
+            return;
+          }
+          setRaps(raps.filter(function(x) { return x.id !== r.id; }));
+          // Refresh contexte global pour que Avancement / Stats / Accueil voient la suppression immediatement
+          if (ctx.setDbRapportsForage) {
+            var current = ctx.dbRapportsForage || [];
+            ctx.setDbRapportsForage(current.filter(function(x) { return x.id !== r.id; }));
+          }
+          if (showToast) showToast("Rapport supprime", "success");
+          setExpanded(null);
+        });
+      };
 
       // ── Filtres statut par onglet ──
       var STATUTS_BY_TAB = {
@@ -9891,7 +9930,8 @@
               h("div", { style: { display: "flex", gap: 10, marginTop: 16, flexWrap: "wrap" } },
                 r.statut !== "valide_admin" ? actionBtn({ label: "Valider", icon: "check", color: "green", onClick: function() { updateRapportStatut(r.id, "valide_admin"); setExpanded(null); } }) : null,
                 r.statut === "valide_admin" ? actionBtn({ label: "Re-mettre soumis", icon: "rotate-ccw", color: "neutral", onClick: function() { updateRapportStatut(r.id, "soumis"); } }) : null,
-                actionBtn({ label: "Edition complete", icon: "edit-3", color: "indigo", onClick: function() { setEditingRapportId(r.id); } })
+                actionBtn({ label: "Edition complete", icon: "edit-3", color: "indigo", onClick: function() { setEditingRapportId(r.id); } }),
+                isAdmin ? actionBtn({ label: "Supprimer", icon: "trash-2", color: "red", onClick: function() { deleteRapport(r); } }) : null
               )
             ]) : null
           );
@@ -10986,7 +11026,7 @@
         dbDemandesFin, setDbDemandesFin, addDemandeFin, updateDemandeFin, deleteDemandeFin,
         dbRelevesJourn: relevesUnifies, setDbRelevesJourn, upsertRelevesJourn, deleteReleveJourn, updateReleveJourn, createReleveJourn,
         dbRelevesJournRaw: dbRelevesJourn, // acces brut au CSV legacy si besoin
-        dbRapportsForage, rapportsAsReleves,
+        dbRapportsForage, setDbRapportsForage, rapportsAsReleves,
         loadAll, showToast,
         addIntervention: wrappedAddIntervention, updateIntervention: wrappedUpdateIntervention, deleteIntervention,
         addEquipement: wrappedAddEquipement, updateEquipement: wrappedUpdateEquipement, deleteEquipement,
