@@ -6948,104 +6948,17 @@
         personnel.forEach(function(emp) {
           var empNom = ((emp.prenom || "") + " " + (emp.nom || "")).toUpperCase().trim();
           var empNomRev = ((emp.nom || "") + " " + (emp.prenom || "")).toUpperCase().trim();
-          var totalPrime = 0;
-          var details = [];
 
-          // ── Stratégie 1 : utiliser releves_journaliers (machine + site) si disponibles ──
-          var empReleves = releves.filter(function(r) {
-            if (!r.dateReleve) return false;
-            if (!isDateInPeriod(r.dateReleve, period.start, period.end)) return false;
-            // Doit etre rattache a un chantier de ce site
-            if (!r.chantierId || siteChIds.indexOf(r.chantierId) < 0) return false;
-            // Match employe : personnel_id si renseigne, sinon nom
-            if (r.personnelId === emp.id) return true;
-            var rNom = (r.employeNom || "").toUpperCase().trim();
-            return rNom === empNom || rNom === empNomRev;
-          });
-
-          if (empReleves.length > 0) {
-            // Calcul par machine + site, base sur le metrage reel et un volume de
-            // 9h/jour fixe (regle metier validee : on ignore le champ heures variable
-            // qui contient parfois 0 ou des valeurs incoherentes).
-            var byMachine = {};
-            empReleves.forEach(function(r) {
-              var key = r.equipementId || r.sondeuseCode || "_no_machine";
-              if (!byMachine[key]) byMachine[key] = { metrage: 0, heures: 0, jours: 0, sondeuseCode: r.sondeuseCode, equipementId: r.equipementId, chantierId: r.chantierId, datesCovered: {} };
-              byMachine[key].metrage += parseFloat(r.metrage) || 0;
-              byMachine[key].heures += parseFloat(r.heures) || 0; // garde pour info / affichage mais pas utilise dans mhRealise
-              byMachine[key].jours += 1;
-              if (r.dateReleve) byMachine[key].datesCovered[r.dateReleve] = true;
-            });
-            // ── Mode hybride : ajoute les jours panne/ferie/conge/chomage/intemperies/non_productif/maladie ──
-            // saisis dans Avancement (saisies_metrage avec typeJour) mais sans releve correspondant.
-            // Permet d'inclure les jours non-productifs dans le calcul des primes meme si le sondeur
-            // n'a pas envoye de rapport ce jour-la.
-            Object.keys(byMachine).forEach(function(mkey) {
-              var b = byMachine[mkey];
-              if (!b.chantierId) return;
-              var sCh = saisies[b.chantierId] || {};
-              Object.keys(sCh).forEach(function(dateStr) {
-                if (!isDateInPeriod(dateStr, period.start, period.end)) return;
-                if (b.datesCovered[dateStr]) return; // un releve existe deja ce jour, on n'ajoute pas
-                var saisieEntry = sCh[dateStr];
-                var saisieType = getSaisieType(saisieEntry);
-                if (saisieType === "panne" || saisieType === "intemperies" || saisieType === "non_productif" ||
-                    saisieType === "ferie" || saisieType === "conge" || saisieType === "chomage") {
-                  b.metrage += siteMoyenne; // rattrapage
-                  b.jours += 1;
-                } else if (saisieType === "maladie") {
-                  b.jours += 1; // 0 metrage
-                }
-                // saisieType "normal" sans releve : on ne compte pas (l'employe n'etait pas la)
-              });
-            });
-            Object.keys(byMachine).forEach(function(k) {
-              var b = byMachine[k];
-              if (b.jours <= 0) return;
-              // Volume horaire fixe : 9h par jour, identique a la Strategy 2
-              var mhRealise = b.metrage / (b.jours * 9);
-              var coef = lookupCoefficient(paliers, site, mhRealise);
-              var diff = mhRealise - objectif;
-              var prime = diff > 0 && coef > 0 ? diff * coef : 0;
-              totalPrime += prime;
-              var eqLabel = b.sondeuseCode || (b.equipementId ? (equipementsList.find(function(e) { return e.Id === b.equipementId; }) || {}).Title : "");
-              var chRef = siteCh.find(function(c) { return c.id === b.chantierId; });
-              var chTitre = chRef ? chRef.titre : site;
-              // Eviter la duplication si chantier.titre contient deja le code sondeuse (nouveau modele : chantier = machine)
-              var displayName = chTitre;
-              if (eqLabel && chTitre.toUpperCase().indexOf(eqLabel.toUpperCase()) < 0) {
-                displayName = chTitre + " · " + eqLabel;
-              }
-              details.push({
-                chantier: displayName,
-                jours: b.jours,
-                mhRealise: mhRealise,
-                objectif: objectif,
-                coef: coef,
-                prime: prime
-              });
-            });
-            if (details.length > 0) {
-              results.push({ employe: (emp.prenom || "") + " " + (emp.nom || ""), employeId: emp.id, totalPrime: totalPrime, details: details });
-            }
-            return; // employe traite via releves, on saute le fallback
-          }
-
-          // ── Stratégie 2 (fallback) : ancien calcul via affectations + saisies ──
-          siteCh.forEach(function(ch) {
-            // Affectations travail sur ce chantier dans la periode
-            var empAff = affectations.filter(function(a) {
-              return a.personnelId === emp.id && a.chantierId === ch.id && isDateInPeriod(a.dateAffectation, period.start, period.end);
-            });
-            if (empAff.length === 0) return;
-            // Affectations sans chantier (chomage, conge, maladie, ferie) a rattacher au dernier site
-            // Pour chaque jour sans chantier, trouver le dernier chantier travaille avant ce jour
-            var empNullAff = affectations.filter(function(a) {
-              return a.personnelId === emp.id && !a.chantierId && isDateInPeriod(a.dateAffectation, period.start, period.end);
-            });
-            // Determiner quels jours null appartiennent a ce site
-            var nullDaysForSite = [];
-            empNullAff.forEach(function(a) {
+          // ── Strategie unifiee : base de comptage = AFFECTATIONS (planning) ──
+          // 1) Recupere les affectations de l'employe sur les chantiers du site (ou null)
+          //    pour la periode demandee.
+          var empAffOnSite = affectations.filter(function(a) {
+            if (a.personnelId !== emp.id) return false;
+            if (!isDateInPeriod(a.dateAffectation, period.start, period.end)) return false;
+            // chantier du site OU sans chantier (chomage/conge a rattacher au site si l'employe
+            // travaillait sur ce site avant)
+            if (a.chantierId && siteChIds.indexOf(a.chantierId) >= 0) return true;
+            if (!a.chantierId) {
               // Trouver le dernier chantier travaille avant cette date
               var lastWork = affectations.filter(function(af) {
                 return af.personnelId === emp.id && af.chantierId && af.dateAffectation < a.dateAffectation && (af.typeJour === "travail" || !af.typeJour);
@@ -7053,57 +6966,87 @@
               if (lastWork.length > 0) {
                 var lastCh = chantiers.find(function(c) { return c.id === lastWork[0].chantierId; });
                 var lastSite = lastCh ? lastCh.site || "" : "";
-                if (lastSite === site) {
-                  nullDaysForSite.push(a);
-                }
+                return lastSite === site;
               }
-            });
-            // Combiner les affectations chantier + les jours sans chantier rattaches a ce site
-            var allEmpAff = empAff.concat(nullDaysForSite);
-            var joursEmp = allEmpAff.length;
-            // ── Calcul base sur les affectations (Planning Employes) ──
-            // siteMoyenne et objectif sont definis en amont
-            var adjMetrage = 0;
-            var adjJours = 0;
-            // Parcourir chaque jour d'affectation
-            allEmpAff.forEach(function(a) {
-              var tj = a.typeJour || "travail";
-              var dateStr = a.dateAffectation;
-              // Verifier aussi le type dans les saisies (panne/intemperies peintes dans Avancement)
-              var saisieEntry = saisies[ch.id] && saisies[ch.id][dateStr] ? saisies[ch.id][dateStr] : null;
-              var saisieType = saisieEntry ? getSaisieType(saisieEntry) : "normal";
-              var saisieVal = saisieEntry ? getSaisieVal(saisieEntry) : 0;
-              // Le type effectif: priorite au type saisie si panne/intemperies/non_productif
-              var effectiveType = (saisieType === "panne" || saisieType === "intemperies" || saisieType === "non_productif") ? saisieType : tj;
-              // Regle metier (validee par le user) :
-              // - Travail normal : metrage reel saisi
-              // - Panne / intemperies / non_productif : jour compte + rattrapage (+moyenne_jour)
-              // - Ferie / conge / chomage : idem (rattrapage)
-              // - Maladie : jour compte mais 0 metrage (pas de rattrapage, tire la moyenne vers le bas)
-              if (effectiveType === "panne" || effectiveType === "intemperies" || effectiveType === "non_productif") {
-                adjMetrage += siteMoyenne;
-                adjJours += 1;
-              } else if (effectiveType === "ferie" || effectiveType === "conge" || effectiveType === "chomage") {
-                adjMetrage += siteMoyenne;
-                adjJours += 1;
-              } else if (effectiveType === "maladie") {
-                adjJours += 1;
-              } else {
-                adjMetrage += saisieVal;
-                adjJours += 1;
-              }
-            });
-            if (adjJours === 0) return;
-            var mhRealise = adjMetrage / (adjJours * 9);
-            var coef = lookupCoefficient(paliers, site, mhRealise);
-            var diff = mhRealise - objectif;
-            var primeChantier = diff > 0 && coef > 0 ? diff * coef : 0;
-            totalPrime += primeChantier;
-            details.push({ chantier: ch.titre, jours: joursEmp, mhRealise: mhRealise, objectif: objectif, coef: coef, prime: primeChantier });
+            }
+            return false;
           });
-          if (details.length > 0) {
-            results.push({ employe: (emp.prenom || "") + " " + (emp.nom || ""), employeId: emp.id, totalPrime: totalPrime, details: details });
-          }
+          if (empAffOnSite.length === 0) return; // pas d'affectation sur ce site = pas de prime
+
+          // 2) Recupere les releves+rapports de l'employe (pour le metrage des jours travail)
+          //    Indexes par date pour lookup rapide.
+          var empReleves = releves.filter(function(r) {
+            if (!r.dateReleve) return false;
+            if (!isDateInPeriod(r.dateReleve, period.start, period.end)) return false;
+            if (!r.chantierId || siteChIds.indexOf(r.chantierId) < 0) return false;
+            if (r.personnelId === emp.id) return true;
+            var rNom = (r.employeNom || "").toUpperCase().trim();
+            return rNom === empNom || rNom === empNomRev;
+          });
+          var releveByDate = {};
+          empReleves.forEach(function(r) {
+            if (!releveByDate[r.dateReleve]) releveByDate[r.dateReleve] = [];
+            releveByDate[r.dateReleve].push(r);
+          });
+
+          // 3) Pour chaque affectation : appliquer les regles metier
+          //    - Travail : metrage = releve(s) du jour si trouve(s), sinon saisie du chantier, sinon 0
+          //    - Panne / intemperies / non_productif : +moyenne_jour (rattrapage)
+          //    - Ferie / conge / chomage : idem (rattrapage)
+          //    - Maladie : +0 metrage, +1 jour (tire la moyenne vers le bas)
+          var adjMetrage = 0;
+          var adjJours = 0;
+          empAffOnSite.forEach(function(a) {
+            var tj = a.typeJour || "travail";
+            var dateStr = a.dateAffectation;
+            var chId = a.chantierId;
+            // Override saisie si type panne/intemperies/non_productif
+            var saisieEntry = (chId && saisies[chId]) ? saisies[chId][dateStr] : null;
+            var saisieType = saisieEntry ? getSaisieType(saisieEntry) : "normal";
+            var saisieVal = saisieEntry ? (parseFloat(getSaisieVal(saisieEntry)) || 0) : 0;
+            var effectiveType = (saisieType === "panne" || saisieType === "intemperies" || saisieType === "non_productif") ? saisieType : tj;
+            if (effectiveType === "panne" || effectiveType === "intemperies" || effectiveType === "non_productif") {
+              adjMetrage += siteMoyenne;
+              adjJours += 1;
+            } else if (effectiveType === "ferie" || effectiveType === "conge" || effectiveType === "chomage") {
+              adjMetrage += siteMoyenne;
+              adjJours += 1;
+            } else if (effectiveType === "maladie") {
+              adjJours += 1;
+            } else {
+              // Travail : priorite releve/rapport, puis saisie chantier, puis 0
+              var dayMetrage = 0;
+              if (releveByDate[dateStr] && releveByDate[dateStr].length > 0) {
+                releveByDate[dateStr].forEach(function(r) {
+                  dayMetrage += parseFloat(r.metrage) || 0;
+                });
+              } else if (saisieVal > 0) {
+                dayMetrage = saisieVal;
+              }
+              adjMetrage += dayMetrage;
+              adjJours += 1;
+            }
+          });
+
+          if (adjJours === 0) return;
+          var mhRealise = adjMetrage / (adjJours * 9);
+          var coef = lookupCoefficient(paliers, site, mhRealise);
+          var diff = mhRealise - objectif;
+          var primeFinale = diff > 0 && coef > 0 ? diff * coef : 0;
+          results.push({
+            employe: (emp.prenom || "") + " " + (emp.nom || ""),
+            employeId: emp.id,
+            totalPrime: primeFinale,
+            details: [{
+              chantier: site,
+              jours: adjJours,
+              mhRealise: mhRealise,
+              objectif: objectif,
+              coef: coef,
+              prime: primeFinale,
+              metrage: adjMetrage
+            }]
+          });
         });
         return results;
       }
