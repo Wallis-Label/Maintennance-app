@@ -11035,15 +11035,35 @@
       }, [dbRapportsForage, parametres, dbChantiers, equipements]);
 
       // ── relevesUnifies : merge rapports (priorite) + CSV legacy ──
-      // Pour chaque (personnelId, dateReleve, chantierId), si un rapport existe il prevaut sur le releve CSV.
+      // Pour chaque (employeNom, dateReleve, chantierId), si un rapport VALIDE
+      // (heures > 0) existe il prevaut sur le releve CSV.
+      //
+      // Cle volontairement basee sur le NOM normalise et pas sur personnelId/equipementId
+      // car ces 2 champs different selon la source :
+      //  - rapport_forage : personnelId = strToBigint(code_court "p7" -> 3527), equipementId = null
+      //  - CSV legacy     : personnelId = hash du nom complet -> bigint different, equipementId = UUID
+      // -> sans cette normalisation, les memes donnees existent en double et gonflent les primes.
+      //
+      // De plus, on IGNORE les rapports avec heures = 0 (typiquement les imports SQL anciens
+      // ou m.hours etait vide) au profit des CSV qui ont des heures reelles pour ces jours-la.
       const relevesUnifies = React.useMemo(function() {
         if (rapportsAsReleves.length === 0) return dbRelevesJourn || [];
-        // Key d'unicite : personnelId-date-chantier-equipement
-        function kf(r) { return String(r.personnelId || r.employeNom || "") + "-" + r.dateReleve + "-" + String(r.chantierId || "") + "-" + String(r.equipementId || ""); }
+        function kf(r) {
+          var nameKey = String(r.employeNom || "").toLowerCase().trim().split(/\s+/).filter(Boolean).sort().join(" ");
+          return nameKey + "-" + (r.dateReleve || "") + "-" + String(r.chantierId || "");
+        }
+        // Seuls les rapports avec heures > 0 prevalent sur la CSV. Les autres sont ignores
+        // (la CSV correspondante sera conservee).
         var rapportKeys = {};
-        rapportsAsReleves.forEach(function(r) { rapportKeys[kf(r)] = true; });
-        var fallback = (dbRelevesJourn || []).filter(function(r) { return !rapportKeys[kf(r)]; });
-        return rapportsAsReleves.concat(fallback);
+        var keptRapports = [];
+        rapportsAsReleves.forEach(function(r) {
+          if ((parseFloat(r.heures) || 0) > 0) {
+            rapportKeys[kf(r)] = true;
+            keptRapports.push(r);
+          }
+        });
+        var csvFiltered = (dbRelevesJourn || []).filter(function(r) { return !rapportKeys[kf(r)]; });
+        return keptRapports.concat(csvFiltered);
       }, [rapportsAsReleves, dbRelevesJourn]);
 
       const contextValue = {
