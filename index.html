@@ -8371,33 +8371,44 @@
         return p;
       }
 
-      // ── Nombre de jours REELS travailles par employe sur la periode ──
-      // Source : affectations avec type_jour = 'travail' (les rapports synchronisent
-      // les affectations donc c'est la verite operationnelle).
-      // Resultat : { personnel_id (bigint) -> nb jours travail }
-      var joursReelsParEmploye = {};
-      (affectations || []).forEach(function(a) {
-        if (!a || !a.personnelId) return;
-        if ((a.typeJour || "travail") !== "travail") return;
-        if (!a.dateAffectation) return;
-        if (periodStart && new Date(a.dateAffectation) < periodStart) return;
-        if (periodEnd && new Date(a.dateAffectation) > periodEnd) return;
-        joursReelsParEmploye[a.personnelId] = (joursReelsParEmploye[a.personnelId] || 0) + 1;
-      });
+      // ── Jours theoriques Lun-Mar-Mer-Jeu par mois calendaire ──
+      // Diviseur du salaire : on compte les jours Lun-Jeu (4j/semaine) du mois
+      // calendaire COMPLET du rapport, peu importe la periode partielle selectionnee.
+      // Logique : le salaire etant mensuel, le cout journalier doit rester stable
+      // meme en milieu de mois (sinon 300k / 16j travailles = surestimation).
+      // Les jours feries / conges restent dans le diviseur (ce sont des jours payes).
+      // Cache par cle "YYYY-M" pour eviter de recompter chaque appel.
+      var joursLunJeuParMois = {};
+      function getJoursLunJeuMois(dateStr) {
+        if (!dateStr) return 17; // fallback prudent (~moyenne mensuelle Lun-Jeu)
+        var d = new Date(dateStr);
+        if (isNaN(d.getTime())) return 17;
+        var y = d.getFullYear();
+        var m = d.getMonth();
+        var key = y + "-" + m;
+        if (joursLunJeuParMois[key] != null) return joursLunJeuParMois[key];
+        var nbJours = new Date(y, m + 1, 0).getDate();
+        var count = 0;
+        for (var day = 1; day <= nbJours; day++) {
+          var dow = new Date(y, m, day).getDay();
+          // getDay : 0=Dim, 1=Lun, 2=Mar, 3=Mer, 4=Jeu, 5=Ven, 6=Sam
+          if (dow >= 1 && dow <= 4) count++;
+        }
+        joursLunJeuParMois[key] = count;
+        return count;
+      }
 
-      // Taux journalier d'un membre d'equipe :
-      //   salaire_mensuel / nb_jours_reels_travailles_dans_la_periode
-      // Si l'employe n'a pas d'affectation type=travail (ex: nouveau, mauvaise saisie),
-      // on retombe sur le diviseur standard 22 (jours ouvres).
-      function getSalaireJour(memberName, memberId) {
+      // Taux journalier d'un membre d'equipe pour un rapport donne :
+      //   salaire_mensuel / nb_jours_lun-jeu_du_mois_calendaire_du_rapport
+      // Avantage : stable meme si la periode est incomplete (ex: 16 rapports en mai).
+      function getSalaireJour(memberName, memberId, dateRapport) {
         var p = lookupPersonnel(memberName, memberId);
         if (!p) return 0;
         var salaireMensuel = parseFloat(p.salaire) || 0;
         if (salaireMensuel <= 0) return 0;
-        var pid = p.id;
-        var joursReels = joursReelsParEmploye[pid] || 0;
-        if (joursReels > 0) return salaireMensuel / joursReels;
-        return salaireMensuel / 22; // fallback si pas d'affectation
+        var divJours = getJoursLunJeuMois(dateRapport);
+        if (divJours <= 0) return 0;
+        return salaireMensuel / divJours;
       }
 
       // ── Detail par sondeuse ──
@@ -8423,11 +8434,12 @@
           var prix = lookupPrix(c.designation || c.nom, c.ref);
           sondeusesMap[code].coutConso += qty * prix;
         });
-        // Cout salaire personnel : pour chaque membre de l'equipe, salaire/jour ouvre
+        // Cout salaire personnel : pour chaque membre de l'equipe, salaire / jours Lun-Jeu du mois.
+        // On passe r.date_rapport pour que le diviseur soit base sur le mois calendaire du rapport.
         var equipe = Array.isArray(r.equipe) ? r.equipe : [];
         equipe.forEach(function(m) {
           if (!m) return;
-          sondeusesMap[code].coutPersonnel += getSalaireJour(m.nom, m.id);
+          sondeusesMap[code].coutPersonnel += getSalaireJour(m.nom, m.id, r.date_rapport);
         });
       });
       var sondeusesDetail = Object.keys(sondeusesMap).map(function(code) {
