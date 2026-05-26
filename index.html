@@ -12616,18 +12616,17 @@
           var nameKey = String(r.employeNom || "").toLowerCase().trim().split(/\s+/).filter(Boolean).sort().join(" ");
           return nameKey + "-" + (r.dateReleve || "") + "-" + String(r.chantierId || "");
         }
-        // Seuls les rapports avec heures > 0 prevalent sur la CSV. Les autres sont ignores
-        // (la CSV correspondante sera conservee).
+        // On garde TOUS les membres des rapports (meme avec heures vides) pour ne pas perdre
+        // leur metrage. Bug historique : les membres avec hours="" dans l'equipe etaient
+        // ignores, ce qui faisait que Steeve avait moins de prime qu'Arnold pour les memes
+        // jours simplement parce que ses heures n'avaient pas ete saisies par le sondeur.
+        // CSV correspondante est filtree pour eviter le double-comptage.
         var rapportKeys = {};
-        var keptRapports = [];
         rapportsAsReleves.forEach(function(r) {
-          if ((parseFloat(r.heures) || 0) > 0) {
-            rapportKeys[kf(r)] = true;
-            keptRapports.push(r);
-          }
+          rapportKeys[kf(r)] = true;
         });
         var csvFiltered = (dbRelevesJourn || []).filter(function(r) { return !rapportKeys[kf(r)]; });
-        return keptRapports.concat(csvFiltered);
+        return rapportsAsReleves.concat(csvFiltered);
       }, [rapportsAsReleves, dbRelevesJourn]);
 
       const contextValue = {
