@@ -8297,14 +8297,26 @@
             } else if (effectiveType === "maladie") {
               adjJours += 1;
             } else {
-              // Travail : priorite releve/rapport, puis saisie chantier, puis 0
+              // Travail : on prend le metrage de SA machine habituelle uniquement.
+              // Evite le double-comptage quand un employe apparait dans 2 rapports
+              // concurrents le meme jour (ex: Mace dans D37 + D36 le 18/5 par erreur
+              // de saisie -> on prend juste celui de D36, sa machine recente).
               var dayMetrage = 0;
-              if (releveByDate[dateStr] && releveByDate[dateStr].length > 0) {
-                releveByDate[dateStr].forEach(function(r) {
-                  dayMetrage += parseFloat(r.metrage) || 0;
-                });
-              } else if (saisieVal > 0) {
-                dayMetrage = saisieVal;
+              var machineW = getMachineEmpForDate(emp.id, dateStr);
+              if (machineW) {
+                var vMachine = getMetrageMachineForDate(machineW, dateStr);
+                if (vMachine !== null) dayMetrage = vMachine;
+              }
+              // Fallback : pas de machine identifiable OU pas de rapport pour sa machine
+              // -> releves classiques (somme) ou saisie chantier
+              if (dayMetrage === 0) {
+                if (releveByDate[dateStr] && releveByDate[dateStr].length > 0) {
+                  releveByDate[dateStr].forEach(function(r) {
+                    dayMetrage += parseFloat(r.metrage) || 0;
+                  });
+                } else if (saisieVal > 0) {
+                  dayMetrage = saisieVal;
+                }
               }
               adjMetrage += dayMetrage;
               adjJours += 1;
