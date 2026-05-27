@@ -13,6 +13,7 @@
   <script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
   <style>
     :root {
@@ -2237,6 +2238,7 @@
       const categories = [
         { key: "rf_types_sondage",     label: "Types de forage",      lucide: "layers",        group: "employes" },
         { key: "rf_types_activite",    label: "Types d'activite",     lucide: "activity",      group: "employes" },
+        { key: "rf_activites_facturables", label: "Activites facturables", lucide: "circle-dollar-sign", group: "admin" },
         { key: "clients",              label: "Clients",              lucide: "briefcase",     group: "employes" },
         { key: "type_engin",           label: "Types d'engin",        lucide: "hard-hat",      group: "admin" },
         { key: "type_vl",              label: "Types de vehicule",    lucide: "car",           group: "admin" },
@@ -2302,6 +2304,8 @@
             h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700 } }, (categories.find((c) => c.key === selected) || {}).label),
             selected === "destinataires_emails"
               ? h(DestinatairesEmailsEditor, null)
+              : selected === "rf_activites_facturables"
+              ? h(ActivitesFacturablesEditor, null)
               : h(React.Fragment, null,
                   h("div", { style: { display: "flex", gap: 8, marginBottom: 16 } },
                     h("input", { style: { ...inputStyle, flex: 1 }, value: newValeur, placeholder: "Nouvelle valeur...", onChange: (e) => setNewValeur(e.target.value), onKeyDown: (e) => e.key === "Enter" && handleAdd() }),
@@ -2316,6 +2320,54 @@
                         h("button", { onClick: () => handleRename(p), style: { background: "transparent", border: "none", cursor: "pointer", fontSize: 14, padding: 4 }, title: "Renommer" }, h(Icon, { name: "pencil", size: 15 })),
                         h("button", { onClick: () => setToDelete(p), style: { background: "transparent", border: "none", cursor: "pointer", fontSize: 14, padding: 4, color: "#dc2626" }, title: "Supprimer" }, h(Icon, { name: "trash-2", size: 15, color: "#dc2626" })))))))),
         toDelete && h(ConfirmDialog, { title: "Supprimer la valeur ?", message: "Confirmer la suppression de \"" + toDelete.valeur + "\" ?", onConfirm: handleConfirmDelete, onCancel: () => setToDelete(null) }));
+    }
+
+    // ─── Editeur Activites facturables ──────────────────────────────────
+    // Pour chaque libelle present dans rf_types_activite, affiche une checkbox.
+    // L'etat "facturable" est materialise par la presence d'une entree dans la
+    // categorie rf_activites_facturables (valeur = libelle).
+    function ActivitesFacturablesEditor() {
+      const { parametres, addParametre, deleteParametre } = useAppData();
+      const activites = parametres.filter(function(p) { return p.categorie === "rf_types_activite"; }).sort(function(a, b) { return (a.ordre || 0) - (b.ordre || 0); });
+      const facturables = parametres.filter(function(p) { return p.categorie === "rf_activites_facturables"; });
+      const facturableMap = {};
+      facturables.forEach(function(p) { facturableMap[p.valeur] = p; });
+      const [saving, setSaving] = useState(false);
+
+      async function toggle(libelle) {
+        if (saving) return;
+        setSaving(true);
+        try {
+          const existing = facturableMap[libelle];
+          if (existing) {
+            await deleteParametre(existing.id);
+          } else {
+            await addParametre("rf_activites_facturables", libelle, 0);
+          }
+        } catch (err) { /* toast deja affiche */ }
+        finally { setSaving(false); }
+      }
+
+      if (activites.length === 0) {
+        return h("p", { style: { textAlign: "center", color: "#71717a", padding: 20 } }, "Aucun type d'activite. Ajoute des activites dans 'Types d'activite' d'abord.");
+      }
+
+      return h(React.Fragment, null,
+        h("div", { style: { padding: 12, background: "rgba(99,102,241,0.08)", border: "1px solid rgba(129,140,248,0.20)", borderRadius: 8, marginBottom: 16, fontSize: 12, color: "#c7d2fe", display: "flex", gap: 8, alignItems: "flex-start" } },
+          h(Icon, { name: "info", size: 14, color: "#c7d2fe" }),
+          h("span", null, "Coche les activites qui doivent etre comptees comme facturables dans le recap mensuel des rapports.")
+        ),
+        h("div", { style: { display: "flex", flexDirection: "column", gap: 6 } },
+          activites.map(function(p) {
+            const isFact = !!facturableMap[p.valeur];
+            return h("label", { key: p.id, style: { display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: isFact ? "rgba(34,197,94,0.10)" : "rgba(255,255,255,0.04)", border: "1px solid " + (isFact ? "rgba(34,197,94,0.30)" : "rgba(255,255,255,0.06)"), borderRadius: 8, cursor: saving ? "wait" : "pointer", transition: "background 0.1s" } },
+              h("input", { type: "checkbox", checked: isFact, disabled: saving, onChange: function() { toggle(p.valeur); }, style: { width: 18, height: 18, cursor: saving ? "wait" : "pointer" } }),
+              h("span", { style: { flex: 1, fontWeight: 600, fontSize: 14 } }, p.valeur),
+              isFact ? h("span", { style: { padding: "3px 10px", background: "rgba(34,197,94,0.20)", color: "#86efac", border: "1px solid rgba(34,197,94,0.40)", borderRadius: 999, fontSize: 11, fontWeight: 700 } }, "FACTURABLE") : null
+            );
+          })
+        )
+      );
     }
 
     // ─── Ecran Organisation ─────────────────────────────────────────────
@@ -11126,6 +11178,12 @@
       var _filtStatut = useState("tous"); var filtStatut = _filtStatut[0]; var setFiltStatut = _filtStatut[1];
       var _refresh = useState(0);     var refreshFlag = _refresh[0]; var setRefreshFlag = _refresh[1];
       var _editingRapportId = useState(null); var editingRapportId = _editingRapportId[0]; var setEditingRapportId = _editingRapportId[1];
+      // Switch dans l'onglet Rapports : "liste" (defaut) ou "recap_mensuel"
+      var _rapportsView = useState("liste"); var rapportsView = _rapportsView[0]; var setRapportsView = _rapportsView[1];
+      var _recapStart = useState(function() { var d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
+      var recapStart = _recapStart[0], setRecapStart = _recapStart[1];
+      var _recapEnd = useState(function() { var d = new Date(); return new Date(d.getFullYear(), d.getMonth() + 1, 0); });
+      var recapEnd = _recapEnd[0], setRecapEnd = _recapEnd[1];
 
       // ── Personnel index ──
       // L'app Employes utilise une liste hardcodee d'employes avec des string ids ("p1", "p2", ...)
@@ -11885,6 +11943,349 @@
         }));
       };
 
+      // ─── Recap mensuel des rapports : KPIs + sections + export Excel ───
+      var renderRapportsRecapMensuel = function() {
+        // Helpers locaux date
+        function isoDate(d) {
+          if (!d) return "";
+          var y = d.getFullYear(), m = d.getMonth() + 1, dd = d.getDate();
+          return y + "-" + (m < 10 ? "0" + m : m) + "-" + (dd < 10 ? "0" + dd : dd);
+        }
+        function parseIso(s) {
+          var p = String(s || "").substring(0, 10).split("-");
+          if (p.length !== 3) return null;
+          return new Date(parseInt(p[0]), parseInt(p[1]) - 1, parseInt(p[2]));
+        }
+        function fmtFr(s) {
+          var p = String(s || "").substring(0, 10).split("-");
+          return p.length === 3 ? p[2] + "/" + p[1] + "/" + p[0] : (s || "-");
+        }
+        function t2m(t) { if (!t) return 0; var p = String(t).split(":"); return (parseInt(p[0]) || 0) * 60 + (parseInt(p[1]) || 0); }
+        function durBtw(d, f) { if (!d || !f) return 0; var m = t2m(f) - t2m(d); if (m < 0) m += 24 * 60; return m; }
+        function minToHHmm(m) { var hh = Math.floor(m / 60), mm = m % 60; return hh + "h" + (mm < 10 ? "0" + mm : mm); }
+        function actColor(libelle) {
+          var c = String(libelle || "").toUpperCase();
+          if (c === "FORATION") return "#ec4899";
+          if (c === "TRAJET") return "#818cf8";
+          if (c === "MAINTENANCE") return "#f59e0b";
+          if (c === "DEPLACEMENT") return "#a78bfa";
+          if (c === "PCC") return "#22c55e";
+          if (c === "PAUSE") return "#71717a";
+          if (c === "ATTENTE") return "#0ea5e9";
+          if (c === "REMPLISSAGE RAPPORT TABLETTE") return "#06b6d4";
+          return "#94a3b8";
+        }
+
+        // Activites facturables (depuis parametres / categorie rf_activites_facturables)
+        var facturables = {};
+        (ctx.parametres || []).forEach(function(p) {
+          if (p.categorie === "rf_activites_facturables") facturables[String(p.valeur).toUpperCase()] = true;
+        });
+        function isFacturable(libelle) { return !!facturables[String(libelle || "").toUpperCase()]; }
+
+        // Periode et filtrage
+        var startStr = isoDate(recapStart), endStr = isoDate(recapEnd);
+        var periodRaps = raps.filter(function(r) {
+          var d = String(r.date_rapport || "").substring(0, 10);
+          return d >= startStr && d <= endStr;
+        });
+
+        // ── KPIs globaux ──
+        var totalMetres = 0;
+        var jMachines = {}; // sondeuse_code|date -> 1
+        var allSondeurs = {};
+        periodRaps.forEach(function(r) {
+          totalMetres += parseFloat(r.total_metres) || 0;
+          if (r.sondeuse_code && r.date_rapport) {
+            jMachines[r.sondeuse_code + "|" + String(r.date_rapport).substring(0, 10)] = true;
+          }
+          (r.equipe || []).forEach(function(m) {
+            if (m && (m.nom || m.id)) allSondeurs[m.nom || m.id] = true;
+          });
+        });
+        var nbJMachines = Object.keys(jMachines).length;
+        var moyJM = nbJMachines > 0 ? totalMetres / nbJMachines : 0;
+        var nbSondeurs = Object.keys(allSondeurs).length;
+
+        // ── Resume par machine ──
+        var machinesMap = {}; // code -> { jours:{}, metres, sondages, sondeurs:{} }
+        periodRaps.forEach(function(r) {
+          if (!r.sondeuse_code) return;
+          var k = r.sondeuse_code;
+          if (!machinesMap[k]) machinesMap[k] = { jours: {}, metres: 0, sondages: 0, sondeurs: {} };
+          if (r.date_rapport) machinesMap[k].jours[String(r.date_rapport).substring(0, 10)] = true;
+          machinesMap[k].metres += parseFloat(r.total_metres) || 0;
+          machinesMap[k].sondages += Array.isArray(r.sondages) ? r.sondages.length : 0;
+          (r.equipe || []).forEach(function(m) {
+            if (!m) return;
+            var isSond = m.isSondeur === true || (m.role && String(m.role).toLowerCase().indexOf("sondeur") >= 0 && String(m.role).toLowerCase().indexOf("aide") < 0);
+            if (isSond) {
+              var nm = m.nom || ("PID " + m.id);
+              machinesMap[k].sondeurs[nm] = (machinesMap[k].sondeurs[nm] || 0) + 1;
+            }
+          });
+        });
+        var machinesList = Object.keys(machinesMap).map(function(k) {
+          var d = machinesMap[k]; var jr = Object.keys(d.jours).length;
+          var topS = "-"; var maxC = 0;
+          Object.keys(d.sondeurs).forEach(function(n) { if (d.sondeurs[n] > maxC) { maxC = d.sondeurs[n]; topS = n; } });
+          return { machine: k, jours: jr, metres: d.metres, moyJ: jr > 0 ? d.metres / jr : 0, sondages: d.sondages, sondeur: topS };
+        }).sort(function(a, b) { return b.metres - a.metres; });
+
+        // ── Resume par site ──
+        var sitesMap = {}; // site -> { jours:{}, metres, machines:{}, sondeurs:{} }
+        periodRaps.forEach(function(r) {
+          var s = r.lieu || "(inconnu)";
+          if (!sitesMap[s]) sitesMap[s] = { jours: {}, metres: 0, machines: {}, sondeurs: {} };
+          if (r.date_rapport) sitesMap[s].jours[String(r.date_rapport).substring(0, 10)] = true;
+          sitesMap[s].metres += parseFloat(r.total_metres) || 0;
+          if (r.sondeuse_code) sitesMap[s].machines[r.sondeuse_code] = true;
+          (r.equipe || []).forEach(function(m) {
+            if (m && m.nom) sitesMap[s].sondeurs[m.nom] = true;
+          });
+        });
+        var sitesList = Object.keys(sitesMap).map(function(k) {
+          var d = sitesMap[k];
+          return { site: k, jours: Object.keys(d.jours).length, metres: d.metres, machines: Object.keys(d.machines).sort().join(", "), sondeurs: Object.keys(d.sondeurs).sort().join(", ") };
+        }).sort(function(a, b) { return b.metres - a.metres; });
+
+        // ── Activites cumulees ──
+        var actMap = {}; // libelle -> minutes
+        periodRaps.forEach(function(r) {
+          (Array.isArray(r.activites) ? r.activites : []).forEach(function(a) {
+            if (!a || !a.debut || !a.fin) return;
+            var lib = a.libelle || "AUTRE";
+            actMap[lib] = (actMap[lib] || 0) + durBtw(a.debut, a.fin);
+          });
+        });
+        var actList = Object.keys(actMap).map(function(k) { return { libelle: k, mins: actMap[k], facturable: isFacturable(k) }; }).sort(function(a, b) { return b.mins - a.mins; });
+        var totalActMins = actList.reduce(function(s, x) { return s + x.mins; }, 0);
+        var totalFacturableMins = actList.filter(function(a) { return a.facturable; }).reduce(function(s, x) { return s + x.mins; }, 0);
+
+        // ── Consommables par machine (matrice) ──
+        var consoMap = {}; // key = designation|ref -> { designation, ref, byMachine: {machineCode: qty} }
+        var machinesInConso = {};
+        periodRaps.forEach(function(r) {
+          (Array.isArray(r.consommables_perdus) ? r.consommables_perdus : []).forEach(function(c) {
+            var des = c.designation || c.nom || "-";
+            var ref = c.ref || c.reference || "";
+            var key = des + "|" + ref;
+            var qte = parseFloat(c.qty != null ? c.qty : (c.quantite != null ? c.quantite : c.qte)) || 0;
+            if (!consoMap[key]) consoMap[key] = { designation: des, ref: ref, byMachine: {} };
+            var mk = r.sondeuse_code || "?";
+            consoMap[key].byMachine[mk] = (consoMap[key].byMachine[mk] || 0) + qte;
+            machinesInConso[mk] = true;
+          });
+        });
+        var consoMachines = Object.keys(machinesInConso).sort();
+        var consoList = Object.keys(consoMap).map(function(k) {
+          var c = consoMap[k];
+          var total = 0;
+          consoMachines.forEach(function(m) { total += c.byMachine[m] || 0; });
+          return { designation: c.designation, ref: c.ref, byMachine: c.byMachine, total: total };
+        }).sort(function(a, b) { return b.total - a.total; });
+
+        // ─── Export Excel ───
+        function exportExcel() {
+          if (typeof XLSX === "undefined") { alert("La librairie d'export n'est pas chargee. Recharge la page."); return; }
+          var aoa = [];
+          aoa.push(["RECAP MENSUEL DES RAPPORTS DE FORAGE"]);
+          aoa.push(["Periode :", fmtFr(startStr) + " au " + fmtFr(endStr)]);
+          aoa.push(["Nb rapports :", periodRaps.length]);
+          aoa.push([]);
+          aoa.push(["KPIs GLOBAUX"]);
+          aoa.push(["Metrage total (m)", "J-machines", "Moyenne / J-machine (m)", "Sondeurs", "Heures facturables", "Heures totales"]);
+          aoa.push([Math.round(totalMetres * 10) / 10, nbJMachines, Math.round(moyJM * 10) / 10, nbSondeurs, minToHHmm(totalFacturableMins), minToHHmm(totalActMins)]);
+          aoa.push([]);
+          aoa.push(["RESUME PAR MACHINE"]);
+          aoa.push(["Machine", "Jours", "Metrage (m)", "Moy/j (m)", "Sondages", "Sondeur principal"]);
+          machinesList.forEach(function(r) {
+            aoa.push([r.machine, r.jours, Math.round(r.metres * 10) / 10, Math.round(r.moyJ * 10) / 10, r.sondages, r.sondeur]);
+          });
+          aoa.push([]);
+          aoa.push(["RESUME PAR SITE / CHANTIER"]);
+          aoa.push(["Site", "Jours", "Metrage (m)", "Machines", "Sondeurs"]);
+          sitesList.forEach(function(r) {
+            aoa.push([r.site, r.jours, Math.round(r.metres * 10) / 10, r.machines, r.sondeurs]);
+          });
+          aoa.push([]);
+          aoa.push(["ACTIVITES CUMULEES"]);
+          aoa.push(["Libelle", "Duree (heures decimales)", "Duree (h:mm)", "Facturable"]);
+          actList.forEach(function(a) {
+            aoa.push([a.libelle, Math.round((a.mins / 60) * 100) / 100, minToHHmm(a.mins), a.facturable ? "Oui" : "Non"]);
+          });
+          aoa.push(["TOTAL", Math.round((totalActMins / 60) * 100) / 100, minToHHmm(totalActMins), ""]);
+          aoa.push(["TOTAL FACTURABLE", Math.round((totalFacturableMins / 60) * 100) / 100, minToHHmm(totalFacturableMins), ""]);
+          aoa.push([]);
+          aoa.push(["CONSOMMABLES PAR MACHINE"]);
+          var header = ["Designation", "Reference"].concat(consoMachines).concat(["Total"]);
+          aoa.push(header);
+          consoList.forEach(function(c) {
+            var row = [c.designation, c.ref];
+            consoMachines.forEach(function(m) { row.push(c.byMachine[m] || 0); });
+            row.push(c.total);
+            aoa.push(row);
+          });
+          var ws = XLSX.utils.aoa_to_sheet(aoa);
+          // Largeur de colonnes auto-approximative
+          var maxCols = 2;
+          aoa.forEach(function(r) { if (r.length > maxCols) maxCols = r.length; });
+          ws["!cols"] = [];
+          for (var i = 0; i < maxCols; i++) {
+            ws["!cols"].push({ wch: i === 0 ? 32 : (i === 1 ? 18 : 14) });
+          }
+          var wb = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(wb, ws, "Recap mensuel");
+          var fname = "recap_rapports_" + startStr + "_au_" + endStr + ".xlsx";
+          XLSX.writeFile(wb, fname);
+        }
+
+        function applyCurrentMonth() {
+          var d = new Date();
+          setRecapStart(new Date(d.getFullYear(), d.getMonth(), 1));
+          setRecapEnd(new Date(d.getFullYear(), d.getMonth() + 1, 0));
+        }
+
+        // ─── Rendu ───
+        function sectionTitle(t, extra) {
+          return h("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", margin: "20px 0 10px" } },
+            h("div", { style: { fontSize: 11, color: "#a1a1aa", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 } }, t),
+            extra || null
+          );
+        }
+        function kpiCard(value, label, color) {
+          return h("div", { style: { background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 10, padding: 14, flex: "1 1 0", minWidth: 130 } },
+            h("div", { style: { fontSize: 22, fontWeight: 700, color: color || "#fafafa", marginBottom: 4 } }, value),
+            h("div", { style: { fontSize: 11, color: "#a1a1aa", textTransform: "uppercase", letterSpacing: 0.5 } }, label)
+          );
+        }
+
+        // Period bar + export
+        var periodBar = h("div", { style: { display: "flex", alignItems: "center", gap: 10, marginBottom: 16, flexWrap: "wrap", padding: 12, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 8 } },
+          h("span", { style: { fontSize: 11, color: "#a1a1aa", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 } }, "Periode"),
+          h("input", { type: "date", value: startStr, onChange: function(e) { var d = parseIso(e.target.value); if (d) setRecapStart(d); }, style: { background: "rgba(0,0,0,0.30)", border: "1px solid rgba(255,255,255,0.10)", borderRadius: 6, padding: "6px 10px", color: "#fafafa", fontSize: 13, fontFamily: "inherit" } }),
+          h("span", { style: { color: "#71717a" } }, "->"),
+          h("input", { type: "date", value: endStr, onChange: function(e) { var d = parseIso(e.target.value); if (d) setRecapEnd(d); }, style: { background: "rgba(0,0,0,0.30)", border: "1px solid rgba(255,255,255,0.10)", borderRadius: 6, padding: "6px 10px", color: "#fafafa", fontSize: 13, fontFamily: "inherit" } }),
+          h("button", { onClick: applyCurrentMonth, style: { padding: "6px 12px", background: "rgba(99,102,241,0.15)", border: "1px solid rgba(129,140,248,0.30)", borderRadius: 6, color: "#c7d2fe", cursor: "pointer", fontSize: 12, fontWeight: 600 } }, "Mois en cours"),
+          h("div", { style: { flex: 1 } }),
+          h("button", { onClick: exportExcel, disabled: periodRaps.length === 0, style: { padding: "8px 14px", background: periodRaps.length === 0 ? "rgba(34,197,94,0.10)" : "linear-gradient(135deg, #16a34a, #22c55e)", border: "1px solid rgba(34,197,94,0.40)", borderRadius: 6, color: periodRaps.length === 0 ? "#71717a" : "#ffffff", cursor: periodRaps.length === 0 ? "not-allowed" : "pointer", fontSize: 12, fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 6 } }, h(Icon, { name: "file-spreadsheet", size: 14, color: periodRaps.length === 0 ? "#71717a" : "#ffffff" }), "Exporter Excel")
+        );
+
+        if (periodRaps.length === 0) {
+          return h(React.Fragment, null, periodBar,
+            h("div", { style: { padding: 40, textAlign: "center", color: "#71717a", background: "rgba(255,255,255,0.02)", borderRadius: 8 } }, "Aucun rapport sur cette periode")
+          );
+        }
+
+        return h(React.Fragment, null,
+          periodBar,
+          // KPIs
+          h("div", { style: { display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 8 } },
+            kpiCard(totalMetres.toFixed(1) + " m", "Metrage total", "#a78bfa"),
+            kpiCard(String(nbJMachines), "J-machines"),
+            kpiCard(moyJM.toFixed(1) + " m", "Moy / j-machine"),
+            kpiCard(String(nbSondeurs), "Sondeurs", "#fcd34d"),
+            kpiCard(minToHHmm(totalFacturableMins), "Heures facturables", "#86efac")
+          ),
+          // Resume par machine
+          machinesList.length > 0 ? h("div", null,
+            sectionTitle("Resume par machine"),
+            h("div", { style: { background: "rgba(0,0,0,0.20)", borderRadius: 8, overflow: "hidden" } },
+              h("table", { style: { width: "100%", borderCollapse: "collapse", fontSize: 13 } },
+                h("thead", null, h("tr", { style: { background: "rgba(255,255,255,0.04)", textAlign: "left" } },
+                  ["Machine", "Jours", "Metrage", "Moy/j", "Sondages", "Sondeur principal"].map(function(x, i) {
+                    return h("th", { key: i, style: { padding: "8px 12px", fontWeight: 600, color: "#a1a1aa", fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5 } }, x);
+                  })
+                )),
+                h("tbody", null, machinesList.map(function(r, i) {
+                  return h("tr", { key: i, style: { borderTop: "1px solid rgba(255,255,255,0.04)" } },
+                    h("td", { style: { padding: "8px 12px", fontWeight: 700, color: "#fcd34d", fontFamily: "monospace" } }, r.machine),
+                    h("td", { style: { padding: "8px 12px" } }, r.jours),
+                    h("td", { style: { padding: "8px 12px", color: "#a78bfa", fontWeight: 700 } }, r.metres.toFixed(1) + " m"),
+                    h("td", { style: { padding: "8px 12px" } }, r.moyJ.toFixed(1) + " m"),
+                    h("td", { style: { padding: "8px 12px" } }, r.sondages),
+                    h("td", { style: { padding: "8px 12px" } }, r.sondeur)
+                  );
+                }))
+              )
+            )
+          ) : null,
+          // Resume par site
+          sitesList.length > 0 ? h("div", null,
+            sectionTitle("Resume par site / chantier"),
+            h("div", { style: { background: "rgba(0,0,0,0.20)", borderRadius: 8, overflow: "hidden" } },
+              h("table", { style: { width: "100%", borderCollapse: "collapse", fontSize: 13 } },
+                h("thead", null, h("tr", { style: { background: "rgba(255,255,255,0.04)", textAlign: "left" } },
+                  ["Site", "Jours", "Metrage", "Machines", "Sondeurs"].map(function(x, i) {
+                    return h("th", { key: i, style: { padding: "8px 12px", fontWeight: 600, color: "#a1a1aa", fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5 } }, x);
+                  })
+                )),
+                h("tbody", null, sitesList.map(function(r, i) {
+                  return h("tr", { key: i, style: { borderTop: "1px solid rgba(255,255,255,0.04)" } },
+                    h("td", { style: { padding: "8px 12px", fontWeight: 700 } }, r.site),
+                    h("td", { style: { padding: "8px 12px" } }, r.jours),
+                    h("td", { style: { padding: "8px 12px", color: "#a78bfa", fontWeight: 700 } }, r.metres.toFixed(1) + " m"),
+                    h("td", { style: { padding: "8px 12px", color: "#fcd34d", fontFamily: "monospace", fontSize: 12 } }, r.machines || "-"),
+                    h("td", { style: { padding: "8px 12px", fontSize: 12 } }, r.sondeurs || "-")
+                  );
+                }))
+              )
+            )
+          ) : null,
+          // Activites cumulees
+          actList.length > 0 ? h("div", null,
+            sectionTitle("Activites cumulees", h("span", { style: { fontSize: 11, color: "#86efac", fontWeight: 700 } }, "Total facturable : " + minToHHmm(totalFacturableMins))),
+            h("div", { style: { background: "rgba(0,0,0,0.20)", borderRadius: 8, padding: 12 } },
+              actList.map(function(a, i) {
+                var pct = totalActMins > 0 ? (a.mins / totalActMins) * 100 : 0;
+                return h("div", { key: i, style: { marginBottom: i < actList.length - 1 ? 8 : 0 } },
+                  h("div", { style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 3 } },
+                    h("span", { style: { display: "inline-block", width: 10, height: 10, borderRadius: 2, background: actColor(a.libelle), flexShrink: 0 } }),
+                    h("span", { style: { fontSize: 12, fontWeight: 600, flex: 1 } }, a.libelle),
+                    a.facturable ? h("span", { style: { padding: "1px 7px", background: "rgba(34,197,94,0.18)", color: "#86efac", border: "1px solid rgba(34,197,94,0.35)", borderRadius: 999, fontSize: 9, fontWeight: 700 } }, "FACT") : null,
+                    h("span", { style: { fontSize: 12, fontFamily: "monospace", color: "#a1a1aa" } }, minToHHmm(a.mins)),
+                    h("span", { style: { fontSize: 11, color: "#71717a", minWidth: 36, textAlign: "right" } }, pct.toFixed(1) + "%")
+                  ),
+                  h("div", { style: { height: 4, background: "rgba(255,255,255,0.05)", borderRadius: 2, overflow: "hidden" } },
+                    h("div", { style: { height: "100%", width: pct + "%", background: actColor(a.libelle) } })
+                  )
+                );
+              }),
+              h("div", { style: { marginTop: 10, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.06)", display: "flex", justifyContent: "space-between", fontSize: 12, fontWeight: 700 } },
+                h("span", null, "Total"),
+                h("span", { style: { fontFamily: "monospace" } }, minToHHmm(totalActMins))
+              ),
+              h("div", { style: { display: "flex", justifyContent: "space-between", fontSize: 12, fontWeight: 700, color: "#86efac", marginTop: 4 } },
+                h("span", null, "Total facturable"),
+                h("span", { style: { fontFamily: "monospace" } }, minToHHmm(totalFacturableMins))
+              )
+            )
+          ) : null,
+          // Consommables par machine (matrice)
+          consoList.length > 0 ? h("div", null,
+            sectionTitle("Consommables par machine"),
+            h("div", { style: { background: "rgba(0,0,0,0.20)", borderRadius: 8, overflow: "auto" } },
+              h("table", { style: { width: "100%", borderCollapse: "collapse", fontSize: 12, minWidth: 600 } },
+                h("thead", null, h("tr", { style: { background: "rgba(255,255,255,0.04)", textAlign: "left" } },
+                  [h("th", { key: "h0", style: { padding: "8px 12px", fontWeight: 600, color: "#a1a1aa", fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, position: "sticky", left: 0, background: "rgba(40,42,60,0.95)" } }, "Designation")]
+                    .concat([h("th", { key: "h1", style: { padding: "8px 12px", fontWeight: 600, color: "#a1a1aa", fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5 } }, "Reference")])
+                    .concat(consoMachines.map(function(m, i) { return h("th", { key: "hm-" + i, style: { padding: "8px 12px", fontWeight: 700, color: "#fcd34d", fontSize: 11, textAlign: "center", fontFamily: "monospace" } }, m); }))
+                    .concat([h("th", { key: "ht", style: { padding: "8px 12px", fontWeight: 600, color: "#a78bfa", fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, textAlign: "center" } }, "Total")])
+                )),
+                h("tbody", null, consoList.map(function(c, i) {
+                  return h("tr", { key: i, style: { borderTop: "1px solid rgba(255,255,255,0.04)" } },
+                    [h("td", { key: "d", style: { padding: "8px 12px", fontWeight: 600, position: "sticky", left: 0, background: "rgba(30,33,50,0.95)" } }, c.designation)]
+                      .concat([h("td", { key: "r", style: { padding: "8px 12px", fontFamily: "monospace", fontSize: 11, color: "#a1a1aa" } }, c.ref)])
+                      .concat(consoMachines.map(function(m, j) { var v = c.byMachine[m] || 0; return h("td", { key: "v-" + j, style: { padding: "8px 12px", textAlign: "center", color: v > 0 ? "#fafafa" : "#52525b", fontWeight: v > 0 ? 600 : 400 } }, v || "-"); }))
+                      .concat([h("td", { key: "t", style: { padding: "8px 12px", textAlign: "center", color: "#a78bfa", fontWeight: 700 } }, c.total)])
+                  );
+                }))
+              )
+            )
+          ) : null
+        );
+      };
+
       // ── Rendu principal ──
       if (visibleSubs.length === 0) {
         return h("div", null,
@@ -11957,15 +12358,27 @@
               h(Icon, { name: (visibleSubs.find(function(s) { return s.key === tab; }) || {}).icon || "inbox", size: 18, color: "#a78bfa" }),
               (visibleSubs.find(function(s) { return s.key === tab; }) || {}).label || "-"
             ),
-            // Filtres statut
-            h("div", { style: { display: "flex", gap: 6, flexWrap: "wrap" } },
-              currentStatuts.map(function(s) {
-                var active = filtStatut === s;
-                var count = s === "tous" ? currentList.length : currentList.filter(function(r) { return r.statut === s; }).length;
-                return h("button", { key: s, onClick: function() { setFiltStatut(s); },
-                  style: { padding: "5px 11px", borderRadius: 999, fontSize: 11, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", border: "1px solid " + (active ? "rgba(129,140,248,0.5)" : "rgba(255,255,255,0.1)"), background: active ? "rgba(99,102,241,0.18)" : "rgba(255,255,255,0.04)", color: active ? "#e0e7ff" : "#a1a1aa" } },
-                  (s === "tous" ? "Tous" : (STATUT_LABEL[s] || s)) + " (" + count + ")");
-              })
+            // Filtres + switch vue (Liste/Recap pour Rapports)
+            h("div", { style: { display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" } },
+              // Switch vue pour Rapports uniquement
+              tab === "soumissions_rapports" ? h("div", { style: { display: "flex", gap: 0, background: "rgba(0,0,0,0.25)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 999, padding: 2, marginRight: 8 } },
+                ["liste", "recap_mensuel"].map(function(v) {
+                  var active = rapportsView === v;
+                  var label = v === "liste" ? "Liste" : "Recap mensuel";
+                  return h("button", { key: v, onClick: function() { setRapportsView(v); },
+                    style: { padding: "5px 13px", borderRadius: 999, fontSize: 11, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", border: "none", background: active ? "linear-gradient(135deg, #6366f1, #818cf8)" : "transparent", color: active ? "#ffffff" : "#a1a1aa", boxShadow: active ? "0 2px 8px rgba(99,102,241,0.30)" : "none" } }, label);
+                })
+              ) : null,
+              // Filtres statut (masques en mode recap mensuel)
+              !(tab === "soumissions_rapports" && rapportsView === "recap_mensuel") ? h("div", { style: { display: "flex", gap: 6, flexWrap: "wrap" } },
+                currentStatuts.map(function(s) {
+                  var active = filtStatut === s;
+                  var count = s === "tous" ? currentList.length : currentList.filter(function(r) { return r.statut === s; }).length;
+                  return h("button", { key: s, onClick: function() { setFiltStatut(s); },
+                    style: { padding: "5px 11px", borderRadius: 999, fontSize: 11, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", border: "1px solid " + (active ? "rgba(129,140,248,0.5)" : "rgba(255,255,255,0.1)"), background: active ? "rgba(99,102,241,0.18)" : "rgba(255,255,255,0.04)", color: active ? "#e0e7ff" : "#a1a1aa" } },
+                    (s === "tous" ? "Tous" : (STATUT_LABEL[s] || s)) + " (" + count + ")");
+                })
+              ) : null
             )
           ),
           loading ? h("div", { style: { padding: 60, textAlign: "center", color: "#a1a1aa" } },
@@ -11976,7 +12389,7 @@
           tab === "soumissions_conges" ? renderConges() :
           tab === "soumissions_commandes" ? renderCommandes() :
           tab === "soumissions_interventions" ? renderInterventions() :
-          tab === "soumissions_rapports" ? renderRapports() :
+          tab === "soumissions_rapports" ? (rapportsView === "recap_mensuel" ? renderRapportsRecapMensuel() : renderRapports()) :
           h("div", null, "Aucun onglet selectionne.")
         ),
         // Modal "Ajouter aux Pieces detachees" depuis une soumission
