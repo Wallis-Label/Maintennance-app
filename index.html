@@ -11711,8 +11711,16 @@
       };
 
       var updateCongeStatut = function(id, st) {
-        updateStatut("demandes_conge", id, st, function(updated) {
-          setConges(conges.map(function(x) { return x.id === id ? updated : x; }));
+        // En plus du statut, on horodate la validation (utilise par l'app Employes
+        // pour afficher un badge "reponse non vue" sur l'accueil).
+        // Quand on remet en_attente, on remet valide_at a null.
+        var extra = {};
+        if (st === "approuvee" || st === "refusee") extra.valide_at = new Date().toISOString();
+        else if (st === "en_attente") extra.valide_at = null;
+        supabase.from("demandes_conge").update(Object.assign({ statut: st }, extra)).eq("id", id).select().single().then(function(res) {
+          if (res.error) { alert("Erreur mise a jour : " + res.error.message); return; }
+          setConges(conges.map(function(x) { return x.id === id ? res.data : x; }));
+          if (showToast) showToast("Statut mis a jour", "success");
         });
       };
       var updateCommandeStatut = function(id, st) {
