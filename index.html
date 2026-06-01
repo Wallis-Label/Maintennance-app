@@ -11729,6 +11729,18 @@
           if (showToast) showToast("Statut mis a jour", "success");
         });
       };
+      // Suppression definitive d'une demande d'intervention (admin uniquement)
+      var deleteIntervention = function(c) {
+        var name = personnelLabel(c.demandeur_id) || ("Demandeur #" + c.demandeur_id);
+        var libelle = "Intervention #" + c.id + " — " + name + (c.immatriculation ? " (" + c.immatriculation + ")" : "") + (c.type_panne ? " - " + c.type_panne : "");
+        if (!confirm("Supprimer DEFINITIVEMENT cette demande d'intervention ?\n\n" + libelle + "\n\nLes photos uploadees resteront dans le bucket Storage (a purger separement si besoin).\n\nCette action est irreversible.")) return;
+        supabase.from("demandes_intervention").delete().eq("id", c.id).then(function(res) {
+          if (res.error) { alert("Erreur suppression : " + res.error.message); return; }
+          setInts(ints.filter(function(x) { return x.id !== c.id; }));
+          if (showToast) showToast("Demande d'intervention supprimee", "success");
+          setExpanded(null);
+        });
+      };
       // Suppression definitive d'un releve d'heures (admin uniquement)
       var deleteReleveHeures = function(c) {
         var emp = personnelLabel(c.personnel_id) || ("Employe #" + c.personnel_id);
@@ -12115,7 +12127,8 @@
                 c.statut === "planifiee" ? actionBtn({ label: "Demarrer", icon: "play", color: "indigo", onClick: function() { updateInterventionStatut(c.id, "en_cours"); } }) : null,
                 c.statut === "en_cours" ? actionBtn({ label: "Terminer", icon: "check", color: "green", onClick: function() { updateInterventionStatut(c.id, "terminee"); } }) : null,
                 c.statut === "soumis" ? actionBtn({ label: "Refuser", icon: "x", color: "red", onClick: function() { if (confirm("Refuser cette demande ?")) { updateInterventionStatut(c.id, "refusee"); setExpanded(null); } } }) : null,
-                c.statut !== "soumis" ? actionBtn({ label: "Re-mettre soumis", icon: "rotate-ccw", color: "neutral", onClick: function() { updateInterventionStatut(c.id, "soumis"); } }) : null
+                c.statut !== "soumis" ? actionBtn({ label: "Re-mettre soumis", icon: "rotate-ccw", color: "neutral", onClick: function() { updateInterventionStatut(c.id, "soumis"); } }) : null,
+                isAdmin ? actionBtn({ label: "Supprimer", icon: "trash-2", color: "red", onClick: function() { deleteIntervention(c); } }) : null
               )
             ]) : null
           );
