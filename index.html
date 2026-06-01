@@ -12073,7 +12073,7 @@
           var isExp = expanded === ("i-" + c.id);
           var photos = Array.isArray(c.photos) ? c.photos : [];
           var name = personnelLabel(c.demandeur_id);
-          var mat = c.materiel_modele || equipementLabel(c.equipement_id) || "Materiel ?";
+          var mat = c.immatriculation || equipementLabel(c.equipement_id) || "Machine ?";
           return h(React.Fragment, { key: "i-" + c.id },
             rowHeader({
               name: name + " - " + mat,
@@ -12090,9 +12090,7 @@
               detailGrid([
                 { label: "Demandeur", value: name },
                 { label: "Date demande", value: fmtDate(c.date_demande) },
-                { label: "Materiel", value: c.materiel_modele },
-                { label: "No de serie", value: c.materiel_no_serie },
-                { label: "Immatriculation", value: c.immatriculation },
+                { label: "Machine", value: c.immatriculation },
                 { label: "Horametre", value: c.horametre != null ? c.horametre + " h" : null },
                 { label: "Type de panne", value: c.type_panne },
                 { label: "Urgence", value: URG_LABEL[c.urgence] || c.urgence },
