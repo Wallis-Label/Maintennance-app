@@ -10428,23 +10428,28 @@
         });
       });
       // Source unique pour le mazout : table consommations_carburant (saisi par sondeur).
-      // On filtre les memes contraintes (periode, chantier, sondeuse, sondeur) que les rapports.
-      // Le prix unitaire est lookuped depuis la table pieces (Mazout/L).
+      // Regles d'inclusion :
+      //   - Toujours filtrer par PERIODE (date_consommation entre periodStart et periodEnd)
+      //   - Filtre sondeuse si sondeuseF != "all" -> sur c.sondeuse_code directement
+      //   - Filtres chantier/sondeur : appliques via le rapport lie SEULEMENT si rapport_id present
+      //     (les entrees libres comme les VL n'ont pas de rapport, donc echappent aux filtres
+      //     chantier/sondeur qui n'ont pas de sens pour elles)
       var filteredIdsSet = {};
       filtered.forEach(function(r) { filteredIdsSet[r.id] = true; });
-      var filteredSondeuses = {};
-      filtered.forEach(function(r) { if (r.sondeuse_code) filteredSondeuses[r.sondeuse_code] = true; });
       var prixMazout = lookupPrix("Mazout/L", "");
       var mazoutDisplayName = pieceDesignationOfficielle("Mazout/L", "");
       (carburants || []).forEach(function(c) {
-        // Filtre par rapport lie (priorite) ou couple sondeuse + periode
         var dateStr = String(c.date_consommation || "").substring(0, 10);
-        var inPeriod = (!periodStart || new Date(dateStr) >= periodStart) && (!periodEnd || new Date(dateStr) <= periodEnd);
-        var matchesScope;
-        if (c.rapport_id && filteredIdsSet[c.rapport_id]) matchesScope = true;
-        else if (filteredSondeuses[c.sondeuse_code] && inPeriod) matchesScope = true;
-        else matchesScope = false;
-        if (!matchesScope) return;
+        if (!dateStr) return;
+        var d = new Date(dateStr);
+        if (periodStart && d < periodStart) return;
+        if (periodEnd && d > periodEnd) return;
+        // Filtre sondeuse direct (s'applique aussi aux VL via leur immatriculation)
+        if (sondeuseF !== "all" && c.sondeuse_code !== sondeuseF) return;
+        // Filtres chantier/sondeur : seulement via rapport lie
+        var hasRapportFilter = (chantierF !== "all" || sondeurF !== "all");
+        if (hasRapportFilter && c.rapport_id && !filteredIdsSet[c.rapport_id]) return;
+        if (hasRapportFilter && !c.rapport_id) return; // VL exclu si filtre chantier/sondeur actif
         var qty = parseFloat(c.quantite_l) || 0;
         if (qty <= 0) return;
         var cout = qty * prixMazout;
