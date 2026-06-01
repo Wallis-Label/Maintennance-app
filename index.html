@@ -11723,6 +11723,18 @@
           if (showToast) showToast("Statut mis a jour", "success");
         });
       };
+      // Suppression definitive d'un releve d'heures (admin uniquement)
+      var deleteReleveHeures = function(c) {
+        var emp = personnelLabel(c.personnel_id) || ("Employe #" + c.personnel_id);
+        var libelle = "Releve " + emp + (c.date_releve ? " du " + fmtDate(c.date_releve) : "") + (c.sondeuse_code ? " — " + c.sondeuse_code : "");
+        if (!confirm("Supprimer DEFINITIVEMENT ce releve d'heures ?\n\n" + libelle + "\n\nCette action est irreversible.")) return;
+        supabase.from("releves_heures").delete().eq("id", c.id).then(function(res) {
+          if (res.error) { alert("Erreur suppression : " + res.error.message); return; }
+          setRels(rels.filter(function(x) { return x.id !== c.id; }));
+          if (showToast) showToast("Releve supprime", "success");
+          setExpanded(null);
+        });
+      };
       // Suppression definitive d'une demande de conge (admin uniquement)
       var deleteConge = function(c) {
         var dem = (personnelMap[c.demandeur_id] && personnelMap[c.demandeur_id].nom) || ("Demandeur #" + c.demandeur_id);
@@ -11935,7 +11947,10 @@
                 { label: "Prime panier", value: c.prime_panier }
               ]),
               c.remarques ? h("div", null, sectionTitle("Remarques"), h("div", { style: { fontSize: 13, color: "#cbd5e1", padding: 12, background: "rgba(0,0,0,0.20)", borderRadius: 8, whiteSpace: "pre-wrap" } }, c.remarques)) : null,
-              c.signature_png ? h("div", null, sectionTitle("Signature"), sigBox(c.signature_png)) : null
+              c.signature_png ? h("div", null, sectionTitle("Signature"), sigBox(c.signature_png)) : null,
+              isAdmin ? h("div", { style: { display: "flex", gap: 10, marginTop: 16, flexWrap: "wrap" } },
+                actionBtn({ label: "Supprimer", icon: "trash-2", color: "red", onClick: function() { deleteReleveHeures(c); } })
+              ) : null
             ]) : null
           );
         }));
