@@ -15112,7 +15112,7 @@
       var mainPadding = bpInfo.isMobile ? "16px 12px 80px" : bpInfo.isTablet ? "20px 20px" : "24px 32px";
 
       return h(AppContext.Provider, { value: contextValue },
-        h("div", { style: { display: "flex", minHeight: "100vh", background: "var(--bg)", fontFamily: "'Inter', system-ui, -apple-system, sans-serif" } },
+        h("div", { style: { display: "flex", height: bpInfo.isMobile ? "auto" : "100vh", minHeight: "100vh", overflow: bpInfo.isMobile ? "visible" : "hidden", background: "var(--bg)", fontFamily: "'Inter', system-ui, -apple-system, sans-serif" } },
           // Overlay derriere le drawer mobile (clic ferme)
           bpInfo.isMobile && sidebarOpen ? h("div", { onClick: function() { setSidebarOpen(false); }, style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)", zIndex: 998 } }) : null,
           h(Sidebar, { currentPage, onNavigate: navigate, userEmail: session.user && session.user.email, onLogout: logout, isAdmin, pendingCount: pendingValidations.length, demandesFinPending: (function() { var u = session.user && session.user.email; return (dbDemandesFin || []).filter(function(d) { return (isAdmin || d.demandeurEmail === u) && (d.statut === "soumise" || (d.statut === "info_demandee" && (isAdmin || d.demandeurEmail === u))); }).length; }()), empruntsFinProche: countEmpruntsFinProche(dbEmprunts), allowedPages: allowedPages, isMobile: bpInfo.isMobile, isOpen: sidebarOpen, onClose: function() { setSidebarOpen(false); } }),
