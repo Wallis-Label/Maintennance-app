@@ -11225,6 +11225,14 @@
     function ReleveEditModal({ releve, personnelMap, onClose, onSaved }) {
       var ctx = useAppData();
       var parametres = ctx.parametres || [];
+      // Reproduction du strToBigint de l'app Employes (utilise pour hash code -> personnel_id)
+      var _strToBigint = function(s) {
+        if (typeof s === "number") return s;
+        if (/^\d+$/.test(String(s))) return parseInt(s, 10);
+        var h = 0; var str = String(s);
+        for (var i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) & 0x7fffffff;
+        return h || 1;
+      };
       // Liste canonique du personnel : meme source que la page Personnel
       // (parametres > categorie personnel_data). Pas de doublons, pas de hash bigint.
       var personnel = (function() {
@@ -11241,7 +11249,7 @@
       personnel.sort(function(a, b) { return String(a.nom || "").localeCompare(String(b.nom || ""), "fr", { sensitivity: "base" }); });
       // Trouve l'employe canonique correspondant au releve actuel via le bigint hash de leur code
       var initialEmpId = (function() {
-        var p1 = personnel.find(function(p) { return p.code && String(strToBigintMA(p.code)) === String(releve.personnel_id); });
+        var p1 = personnel.find(function(p) { return p.code && String(_strToBigint(p.code)) === String(releve.personnel_id); });
         if (p1) return String(p1.id);
         var p2 = personnel.find(function(p) { return String(p.id) === String(releve.personnel_id); });
         if (p2) return String(p2.id);
@@ -11284,7 +11292,7 @@
         // Convertit l'id canonique du select en bigint hash attendu par la DB
         // (releves_heures.personnel_id stocke strToBigint(personnel.code))
         var pickedEmp = personnel.find(function(p) { return String(p.id) === String(f.personnel_id); });
-        var personnelIdForDb = pickedEmp && pickedEmp.code ? strToBigintMA(pickedEmp.code) : (parseInt(f.personnel_id) || f.personnel_id);
+        var personnelIdForDb = pickedEmp && pickedEmp.code ? _strToBigint(pickedEmp.code) : (parseInt(f.personnel_id) || f.personnel_id);
         var payload = {
           date_releve: f.date_releve,
           personnel_id: personnelIdForDb,
