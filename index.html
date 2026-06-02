@@ -11168,6 +11168,30 @@
       // Seuil atteint si on a fait au moins le seuil_metres OU si cout/metre < prix
       var seuilDepasse = seuilMois > 0 && totalMetresAll >= seuilMois;
 
+      // ── KPIs TEMPS REEL : ramene les couts/entrees aux jours reellement travailles ──
+      // jours_travailles = nb de dates distinctes avec au moins 1 rapport sur la periode filtree
+      var joursTravailles = (function() {
+        var set = {};
+        filtered.forEach(function(r) {
+          var d = String(r.date_rapport || "").substring(0,10);
+          if (d) set[d] = true;
+        });
+        return Object.keys(set).length;
+      }());
+      // Depenses temps reel :
+      //   - couts directs lies a l'activite (consos sondeuses, carburant VL, emprunts) : deja sur jours travailles
+      //   - couts bases sur le temps (personnel total, charges fixes) : prorata jours_travailles / jours_ouvres
+      var ratioJoursReels = joursOuvres > 0 ? Math.min(1, joursTravailles / joursOuvres) : 0;
+      var depensesTempsReel = coutConsoSondeusesAll + coutCarburantVL + coutEmpruntAll
+                            + (coutPersonnelTotal + coutChargesFixesTotal) * ratioJoursReels;
+      var entreesTempsReel = prixMetreEffectif * totalMetresAll;
+      var coutMetreReel = totalMetresAll > 0 ? depensesTempsReel / totalMetresAll : 0;
+      var gainMetreReel = totalMetresAll > 0 ? (entreesTempsReel - depensesTempsReel) / totalMetresAll : 0;
+      var margeReelPct = entreesTempsReel > 0 ? (entreesTempsReel - depensesTempsReel) / entreesTempsReel * 100 : 0;
+      var depensesParJourReel = joursTravailles > 0 ? depensesTempsReel / joursTravailles : 0;
+      var netParJourReel = joursTravailles > 0 ? (entreesTempsReel - depensesTempsReel) / joursTravailles : 0;
+      var metresParJourReel = joursTravailles > 0 ? totalMetresAll / joursTravailles : 0;
+
       // Pour ventiler les charges indirectes (carburant VL, salaires hors-equipe, charges fixes)
       // au prorata des metres realises par chaque sondeuse sur la periode.
       var sumPersonnelTerrainAll = 0;
@@ -11318,8 +11342,8 @@
             kpiCard("pink", "package-x", fmtXPF(totalCoutConso), "Cout consommables"),
             kpiCard("amber", "zap", productivite.toFixed(1) + " m/h", "Productivite foration")
           ),
-          // Barre compacte Rentabilite : seuil en metres + cout/metre colorise selon depassement
-          seuilMois > 0 ? h("div", { style: { display: "flex", gap: 10, marginBottom: 22, flexWrap: "wrap" } },
+          // Ligne 1 : Periode (compactes) — Seuil + Cout/m + Gain/m sur toute la periode
+          seuilMois > 0 ? h("div", { style: { display: "flex", gap: 10, marginBottom: 10, flexWrap: "wrap" } },
             // Seuil rentabilite (compact)
             h("div", { style: { flex: "1 1 220px", background: "rgba(251,191,36,0.10)", border: "1px solid rgba(251,191,36,0.30)", borderRadius: 10, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10 } },
               h(Icon, { name: "target", size: 18, color: "#fde68a" }),
@@ -11364,6 +11388,47 @@
                     (positif ? "+" : "") + fmtXPF(Math.round(gainMetre)) + " /m",
                     h("span", { style: { fontSize: 11, color: "#a1a1aa", fontWeight: 500, marginLeft: 6 } },
                       "(marge " + (positif ? "+" : "") + margePct.toFixed(1) + "%)")
+                  )
+                )
+              );
+            }())
+          ) : null,
+          // Ligne 2 : TEMPS REEL (jours travailles) — mises en avant, plus grosses
+          seuilMois > 0 && joursTravailles > 0 ? h("div", { style: { display: "flex", gap: 10, marginBottom: 22, flexWrap: "wrap" } },
+            // Cout/metre temps reel
+            (function() {
+              var positif = coutMetreReel <= prixMetreEffectif;
+              var col = positif ? { bg: "rgba(6,182,212,0.10)", br: "rgba(6,182,212,0.35)", txt: "#67e8f9", icon: "activity" }
+                                : { bg: "rgba(244,63,94,0.10)", br: "rgba(244,63,94,0.35)", txt: "#fda4af", icon: "activity" };
+              return h("div", { style: { flex: "2 1 320px", background: col.bg, border: "1px solid " + col.br, borderRadius: 12, padding: "14px 18px", display: "flex", alignItems: "center", gap: 12 } },
+                h(Icon, { name: col.icon, size: 22, color: col.txt }),
+                h("div", { style: { flex: 1 } },
+                  h("div", { style: { fontSize: 10.5, color: "#a1a1aa", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 } }, "Cout au metre TEMPS REEL"),
+                  h("div", { style: { fontSize: 20, fontWeight: 900, color: col.txt, lineHeight: 1.2 } },
+                    fmtXPF(Math.round(coutMetreReel)) + " /m"
+                  ),
+                  h("div", { style: { fontSize: 11, color: "#a1a1aa", fontWeight: 500, marginTop: 3 } },
+                    "Depenses " + fmtXPF(Math.round(depensesParJourReel)) + "/jour - " + Math.round(metresParJourReel) + " m/jour - " + joursTravailles + " jour" + (joursTravailles > 1 ? "s" : "") + " travaille" + (joursTravailles > 1 ? "s" : "")
+                  )
+                )
+              );
+            }()),
+            // Gain/metre temps reel
+            (function() {
+              var positif = gainMetreReel > 0;
+              var col = positif ? { bg: "rgba(168,85,247,0.10)", br: "rgba(168,85,247,0.35)", txt: "#d8b4fe", icon: "trending-up" }
+                                : { bg: "rgba(244,63,94,0.10)",  br: "rgba(244,63,94,0.35)",  txt: "#fda4af", icon: "trending-down" };
+              return h("div", { style: { flex: "2 1 320px", background: col.bg, border: "1px solid " + col.br, borderRadius: 12, padding: "14px 18px", display: "flex", alignItems: "center", gap: 12 } },
+                h(Icon, { name: col.icon, size: 22, color: col.txt }),
+                h("div", { style: { flex: 1 } },
+                  h("div", { style: { fontSize: 10.5, color: "#a1a1aa", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 } }, "Gain au metre TEMPS REEL"),
+                  h("div", { style: { fontSize: 20, fontWeight: 900, color: col.txt, lineHeight: 1.2 } },
+                    (positif ? "+" : "") + fmtXPF(Math.round(gainMetreReel)) + " /m",
+                    h("span", { style: { fontSize: 12, color: "#a1a1aa", fontWeight: 500, marginLeft: 8 } },
+                      "(marge " + (positif ? "+" : "") + margeReelPct.toFixed(1) + "%)")
+                  ),
+                  h("div", { style: { fontSize: 11, color: "#a1a1aa", fontWeight: 500, marginTop: 3 } },
+                    "Net " + (netParJourReel >= 0 ? "+" : "") + fmtXPF(Math.round(netParJourReel)) + "/jour - sur " + joursTravailles + " jour" + (joursTravailles > 1 ? "s" : "") + " travaille" + (joursTravailles > 1 ? "s" : "")
                   )
                 )
               );
