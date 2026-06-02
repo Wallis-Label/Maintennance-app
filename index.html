@@ -11378,8 +11378,8 @@
                 // SVG responsive : viewBox 100% width, pas de scroll horizontal.
                 // Le nombre de barres et leur largeur s'adaptent a la card.
                 var n = chartData.length;
-                var chartH = 220;
-                var topPad = isMonthlyView ? 12 : 32; // place pour pills "Sem" en vue journaliere
+                var chartH = 140;
+                var topPad = isMonthlyView ? 8 : 26; // place pour pills "Sem" en vue journaliere
                 var totalW = 600;
                 var paddingLR = 16;
                 var gap = 2;
@@ -11413,7 +11413,7 @@
                   return String(Math.round(v));
                 };
 
-                return h("svg", { viewBox: "0 0 " + totalW + " " + (chartH + topPad + 42), preserveAspectRatio: "none", style: { width: "100%", height: 320, display: "block" } },
+                return h("svg", { viewBox: "0 0 " + totalW + " " + (chartH + topPad + 42), preserveAspectRatio: "none", style: { width: "100%", height: 200, display: "block" } },
                   // Bandes de fond par semaine (vue jour seulement)
                   !isMonthlyView ? weeks.map(function(w, wi) {
                     var x1 = paddingLR + w.startIdx * (barW + gap) - 1;
