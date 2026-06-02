@@ -10957,6 +10957,45 @@
           if (eqId) sondeusesMap[code].coutEmprunt += metresR * getEmpruntTauxParMetreDedie(moisR, eqId);
         }
       });
+      // ── Seuil de rentabilite (breakeven en metres) ──
+      // Seuil_mois = couts totaux periode / prix moyen pondere au metre
+      // Seuil_jour = Seuil_mois / jours ouvres (Lun-Jeu) dans la periode
+      var totalCoutsAll = 0;
+      Object.keys(sondeusesMap).forEach(function(code) {
+        var s = sondeusesMap[code];
+        totalCoutsAll += s.coutConso + s.coutPersonnel * 1.30 + s.coutEmprunt;
+      });
+      // Prix moyen pondere par metres realises sur la periode filtree
+      var sumMetresPrix = 0, sumMetres = 0;
+      filtered.forEach(function(r) {
+        var m = parseFloat(r.total_metres) || 0;
+        var p = lookupPrixMetre(r);
+        if (m > 0 && p > 0) { sumMetresPrix += m * p; sumMetres += m; }
+      });
+      var prixMetreEffectif = sumMetres > 0 ? sumMetresPrix / sumMetres : 0;
+      var seuilMois = prixMetreEffectif > 0 ? totalCoutsAll / prixMetreEffectif : 0;
+      // Calcul jours ouvres (Lun-Jeu) dans la periode
+      var joursOuvres = (function() {
+        if (!periodStart) return 0;
+        var startD = new Date(periodStart.getFullYear(), periodStart.getMonth(), periodStart.getDate());
+        var endD = periodEnd ? new Date(periodEnd.getFullYear(), periodEnd.getMonth(), periodEnd.getDate()) : new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        var n = 0, safe = 0;
+        var cur = new Date(startD.getTime());
+        while (cur.getTime() <= endD.getTime() && safe < 400) {
+          var dow = cur.getDay(); // 0=dim 1=lun 2=mar 3=mer 4=jeu 5=ven 6=sam
+          if (dow >= 1 && dow <= 4) n++;
+          cur.setDate(cur.getDate() + 1);
+          safe++;
+        }
+        return n;
+      })();
+      var seuilJour = joursOuvres > 0 ? seuilMois / joursOuvres : 0;
+      // Cout/metre global (toutes machines)
+      var totalMetresAll = totalMetres; // deja calcule plus haut
+      var coutParMetreGlobal = totalMetresAll > 0 ? totalCoutsAll / totalMetresAll : 0;
+      // Seuil atteint si on a fait au moins le seuil_metres OU si cout/metre < prix
+      var seuilDepasse = seuilMois > 0 && totalMetresAll >= seuilMois;
+
       var sondeusesDetail = Object.keys(sondeusesMap).map(function(code) {
         var s = sondeusesMap[code];
         var coutCharges = s.coutPersonnel * 0.30;  // 30% charges patronales
@@ -11032,7 +11071,8 @@
           indigo: { bg: "rgba(129,140,248,0.15)", border: "rgba(129,140,248,0.35)", icon: "#818cf8", bar: "linear-gradient(90deg, #818cf8, #a78bfa)" },
           green:  { bg: "rgba(34,197,94,0.15)",  border: "rgba(34,197,94,0.35)",  icon: "#86efac", bar: "linear-gradient(90deg, #22c55e, #10b981)" },
           pink:   { bg: "rgba(236,72,153,0.15)", border: "rgba(236,72,153,0.35)", icon: "#f9a8d4", bar: "linear-gradient(90deg, #f9a8d4, #ec4899)" },
-          amber:  { bg: "rgba(251,191,36,0.15)", border: "rgba(251,191,36,0.35)", icon: "#fde68a", bar: "linear-gradient(90deg, #fde68a, #f59e0b)" }
+          amber:  { bg: "rgba(251,191,36,0.15)", border: "rgba(251,191,36,0.35)", icon: "#fde68a", bar: "linear-gradient(90deg, #fde68a, #f59e0b)" },
+          red:    { bg: "rgba(244,63,94,0.15)",  border: "rgba(244,63,94,0.35)",  icon: "#fda4af", bar: "linear-gradient(90deg, #f43f5e, #e11d48)" }
         };
         var c = colors[color] || colors.indigo;
         return h("div", { style: { background: "rgba(36,40,60,0.55)", backdropFilter: "blur(20px)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 14, padding: 18, boxShadow: "0 8px 24px rgba(0,0,0,0.2)", position: "relative", overflow: "hidden" } },
@@ -11089,12 +11129,22 @@
         )) :
         h(React.Fragment, null,
           // KPIs
-          h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14, marginBottom: 28 } },
+          h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14, marginBottom: 14 } },
             kpiCard("indigo", "rocket", Math.round(totalMetres).toLocaleString("fr-FR") + " m", "Metrage total"),
             kpiCard("green", "clock", (function(){ var hh = Math.floor(totalMinutes / 60); var mm = Math.round(totalMinutes - hh * 60); if (mm === 60) { hh += 1; mm = 0; } return hh.toLocaleString("fr-FR") + "H" + (mm < 10 ? "0" : "") + mm; }()), "Heures totales"),
             kpiCard("pink", "package-x", fmtXPF(totalCoutConso), "Cout consommables"),
             kpiCard("amber", "zap", productivite.toFixed(1) + " m/h", "Productivite foration")
           ),
+          // KPIs Rentabilite : seuil en metres + cout/metre colorise selon depassement
+          seuilMois > 0 ? h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14, marginBottom: 28 } },
+            kpiCard("amber", "target", Math.round(seuilMois).toLocaleString("fr-FR") + " m", "Seuil rentabilite" + (joursOuvres > 0 ? " (" + seuilJour.toFixed(1) + " m/jour ouvre)" : "")),
+            // Cout/metre colorise : rouge si seuil non atteint, vert sinon
+            kpiCard(seuilDepasse ? "green" : "red", seuilDepasse ? "check-circle" : "alert-triangle",
+              fmtXPF(Math.round(coutParMetreGlobal)) + " /m",
+              "Cout au metre" + (seuilDepasse
+                ? " (seuil depasse : +" + Math.round(totalMetresAll - seuilMois) + " m)"
+                : " (manque " + Math.round(seuilMois - totalMetresAll) + " m)"))
+          ) : null,
           // Evolution + Activites
           h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16, marginBottom: 16 } },
             h("div", { style: sectionStyle },
@@ -11171,7 +11221,27 @@
                       showLabel ? h("text", { x: x + barW / 2, y: chartH + 12, textAnchor: "middle", fontSize: 8, fill: (d.isWE ? "#a78bfa" : "#a1a1aa"), fontWeight: isMonthlyView ? 700 : 400 }, d.label) : null
                     );
                   }),
-                  h("line", { x1: paddingLR - 2, x2: totalW - paddingLR + 2, y1: chartH, y2: chartH, stroke: "rgba(255,255,255,0.1)", strokeWidth: 1 })
+                  h("line", { x1: paddingLR - 2, x2: totalW - paddingLR + 2, y1: chartH, y2: chartH, stroke: "rgba(255,255,255,0.1)", strokeWidth: 1 }),
+                  // Trait horizontal SEUIL RENTABILITE
+                  (function() {
+                    var seuilValeur = isMonthlyView ? seuilMois : seuilJour;
+                    if (!seuilValeur || seuilValeur <= 0 || !maxDay) return null;
+                    if (seuilValeur > maxDay * 1.5) return null; // hors graphique, on cache
+                    var seuilY = chartH - (seuilValeur / maxDay) * (chartH - topPad);
+                    if (seuilY < topPad || seuilY > chartH) return null;
+                    var tipText = isMonthlyView
+                      ? ("Seuil : " + Math.round(seuilValeur) + " m/mois")
+                      : ("Seuil : " + seuilValeur.toFixed(1) + " m/jour (" + Math.round(seuilMois) + " m/mois)");
+                    return h("g", null,
+                      // ligne en pointille
+                      h("line", { x1: paddingLR - 2, x2: totalW - paddingLR + 2, y1: seuilY, y2: seuilY, stroke: seuilDepasse ? "#22c55e" : "#f43f5e", strokeWidth: 1.5, strokeDasharray: "5 4", opacity: 0.85 }),
+                      // pastille a droite avec valeur
+                      h("rect", { x: totalW - paddingLR - 70, y: seuilY - 9, width: 70, height: 18, rx: 9, fill: seuilDepasse ? "rgba(34,197,94,0.95)" : "rgba(244,63,94,0.95)" }),
+                      h("text", { x: totalW - paddingLR - 35, y: seuilY + 3, textAnchor: "middle", fontSize: 9, fill: "#ffffff", fontWeight: 800 }, "Seuil " + (isMonthlyView ? Math.round(seuilValeur) + " m" : seuilValeur.toFixed(1) + " m/j")),
+                      // Tooltip cliquable/hover (title natif SVG)
+                      h("title", null, tipText)
+                    );
+                  }())
                 );
               }())
             ),
