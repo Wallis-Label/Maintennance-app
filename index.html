@@ -11219,6 +11219,113 @@
     var RF_TYPES_ACTIVITE_FALLBACK = ["TRAJET","MAINTENANCE","FORATION","DEPLACEMENT","PCC","REMPLISSAGE RAPPORT TABLETTE","ATTENTE","PAUSE","AUTRE"];
     var RF_ROLES = ["Sondeur", "Aide sondeur", "Chauffeur", "Mecanicien", "Atelier", "Bureau", "Autre"];
 
+    // ─── Modal d'edition complete d'un releve d'heures (admin) ──────────
+    // Permet de modifier TOUS les champs : date, employe (via dropdown personnel),
+    // heures, pause, route, eloignement, absence, prime panier, remarques.
+    function ReleveEditModal({ releve, personnelMap, onClose, onSaved }) {
+      var [f, setF] = useState({
+        date_releve: String(releve.date_releve || "").substring(0, 10),
+        personnel_id: releve.personnel_id,
+        sondeuse_code: releve.sondeuse_code || "",
+        fonction: releve.fonction || "",
+        heure_debut: releve.heure_debut || "",
+        heure_fin: releve.heure_fin || "",
+        pause_dejeuner: releve.pause_dejeuner || "",
+        route_chauffeur: releve.route_chauffeur || "",
+        route_passager: releve.route_passager || "",
+        eloignement: releve.eloignement || "",
+        absence_type: releve.absence_type || "",
+        prime_panier: releve.prime_panier != null ? releve.prime_panier : 0,
+        remarques: releve.remarques || ""
+      });
+      var [saving, setSaving] = useState(false);
+      var upd = function(k, v) { setF(function(p) { var n = Object.assign({}, p); n[k] = v; return n; }); };
+      var personnel = Object.values(personnelMap || {}).filter(Boolean);
+      personnel.sort(function(a, b) { return String(a.nom || "").localeCompare(String(b.nom || "")); });
+      // Calcule total minutes
+      var totMin = (function() {
+        try {
+          if (!f.heure_debut || !f.heure_fin) return 0;
+          var pd = f.heure_debut.split(":"), pf = f.heure_fin.split(":"), pp = (f.pause_dejeuner || "00:00").split(":");
+          var d = (parseInt(pd[0])||0)*60 + (parseInt(pd[1])||0);
+          var ff = (parseInt(pf[0])||0)*60 + (parseInt(pf[1])||0);
+          var p = (parseInt(pp[0])||0)*60 + (parseInt(pp[1])||0);
+          var m = ff - d - p;
+          if (m < 0) m += 24*60;
+          return Math.max(0, m);
+        } catch(e) { return 0; }
+      })();
+      function save() {
+        if (!f.date_releve) { alert("Date requise"); return; }
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(f.date_releve)) { alert("Format date invalide (AAAA-MM-JJ)"); return; }
+        setSaving(true);
+        var payload = {
+          date_releve: f.date_releve,
+          personnel_id: f.personnel_id,
+          sondeuse_code: f.sondeuse_code || null,
+          fonction: f.fonction || null,
+          heure_debut: f.heure_debut || null,
+          heure_fin: f.heure_fin || null,
+          total_minutes: totMin,
+          pause_dejeuner: f.pause_dejeuner || null,
+          route_chauffeur: f.route_chauffeur || null,
+          route_passager: f.route_passager || null,
+          eloignement: f.eloignement || null,
+          absence_type: f.absence_type || null,
+          prime_panier: parseInt(f.prime_panier) || 0,
+          remarques: f.remarques || null
+        };
+        supabase.from("releves_heures").update(payload).eq("id", releve.id).select().single().then(function(res) {
+          setSaving(false);
+          if (res.error) { alert("Erreur sauvegarde : " + res.error.message); return; }
+          if (onSaved) onSaved(res.data);
+        });
+      }
+      var inputS = { width: "100%", background: "rgba(0,0,0,0.30)", border: "1px solid rgba(255,255,255,0.10)", borderRadius: 8, padding: "8px 10px", color: "#fafafa", fontSize: 13, fontFamily: "inherit" };
+      var labelS = { display: "block", fontSize: 11, color: "#a1a1aa", marginBottom: 4, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 };
+      function row(label, content) {
+        return h("div", { style: { marginBottom: 12 } }, h("label", { style: labelS }, label), content);
+      }
+      return h(Modal, { title: "Edition releve d'heures #" + releve.id, onClose: onClose, size: 600 },
+        h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
+          row("Date", h("input", { type: "date", style: inputS, value: f.date_releve, onChange: function(e) { upd("date_releve", e.target.value); } })),
+          row("Employe", h("select", { style: inputS, value: f.personnel_id, onChange: function(e) { upd("personnel_id", e.target.value); } },
+            personnel.map(function(p) { return h("option", { key: p.id, value: p.id }, (p.prenom || "") + " " + (p.nom || "")); })
+          )),
+          row("Sondeuse", h("input", { type: "text", style: inputS, value: f.sondeuse_code, onChange: function(e) { upd("sondeuse_code", e.target.value.toUpperCase()); } })),
+          row("Fonction", h("input", { type: "text", style: inputS, value: f.fonction, onChange: function(e) { upd("fonction", e.target.value); } })),
+          row("Heure debut", h("input", { type: "time", step: "300", style: inputS, value: f.heure_debut, onChange: function(e) { upd("heure_debut", e.target.value); } })),
+          row("Heure fin", h("input", { type: "time", step: "300", style: inputS, value: f.heure_fin, onChange: function(e) { upd("heure_fin", e.target.value); } })),
+          row("Pause dejeuner (HH:MM)", h("input", { type: "time", step: "300", style: inputS, value: f.pause_dejeuner, onChange: function(e) { upd("pause_dejeuner", e.target.value); } })),
+          row("Total (calcule)", h("input", { type: "text", style: Object.assign({}, inputS, { background: "rgba(99,102,241,0.10)", color: "#a5b4fc" }), value: Math.floor(totMin/60) + "h" + ("0" + (totMin%60)).slice(-2), readOnly: true })),
+          row("Route chauffeur (HH:MM)", h("input", { type: "time", step: "300", style: inputS, value: f.route_chauffeur, onChange: function(e) { upd("route_chauffeur", e.target.value); } })),
+          row("Route passager (HH:MM)", h("input", { type: "time", step: "300", style: inputS, value: f.route_passager, onChange: function(e) { upd("route_passager", e.target.value); } })),
+          row("Eloignement", h("select", { style: inputS, value: f.eloignement || "", onChange: function(e) { upd("eloignement", e.target.value); } },
+            h("option", { value: "" }, "Aucun"),
+            h("option", { value: "oui" }, "Oui")
+          )),
+          row("Absence", h("select", { style: inputS, value: f.absence_type || "", onChange: function(e) { upd("absence_type", e.target.value); } },
+            h("option", { value: "" }, "Aucune"),
+            h("option", { value: "conge" }, "Conge"),
+            h("option", { value: "maladie" }, "Maladie"),
+            h("option", { value: "chomage" }, "Chomage technique"),
+            h("option", { value: "non_productif" }, "Non productif")
+          )),
+          row("Prime panier", h("select", { style: inputS, value: f.prime_panier, onChange: function(e) { upd("prime_panier", parseInt(e.target.value) || 0); } },
+            [0, 1, 2, 3].map(function(n) { return h("option", { key: n, value: n }, n === 0 ? "Aucune" : (n + (n > 1 ? " paniers" : " panier"))); })
+          ))
+        ),
+        h("div", { style: { marginTop: 8 } },
+          h("label", { style: labelS }, "Remarques"),
+          h("textarea", { rows: 3, style: Object.assign({}, inputS, { resize: "vertical" }), value: f.remarques, onChange: function(e) { upd("remarques", e.target.value); } })
+        ),
+        h("div", { style: { display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 20 } },
+          h(Button, { variant: "secondary", onClick: onClose }, "Annuler"),
+          h(Button, { onClick: save, disabled: saving }, saving ? "..." : "Enregistrer")
+        )
+      );
+    }
+
     function RapportEditView({ rapport, personnelMap, dbChantiers, equipements, pieces, onClose, onSaved, showToast }) {
       // Types dynamiques : lus depuis parametres (categories rf_types_sondage / rf_types_activite)
       var _parametres = useAppData().parametres || [];
@@ -11727,6 +11834,7 @@
       var _filtStatut = useState("tous"); var filtStatut = _filtStatut[0]; var setFiltStatut = _filtStatut[1];
       var _refresh = useState(0);     var refreshFlag = _refresh[0]; var setRefreshFlag = _refresh[1];
       var _editingRapportId = useState(null); var editingRapportId = _editingRapportId[0]; var setEditingRapportId = _editingRapportId[1];
+      var _editingReleve = useState(null); var editingReleve = _editingReleve[0]; var setEditingReleve = _editingReleve[1];
       // Switch dans l'onglet Rapports : "liste" (defaut) ou "recap_mensuel"
       var _rapportsView = useState("liste"); var rapportsView = _rapportsView[0]; var setRapportsView = _rapportsView[1];
       var _recapStart = useState(function() { var d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
@@ -12235,7 +12343,7 @@
               c.remarques ? h("div", null, sectionTitle("Remarques"), h("div", { style: { fontSize: 13, color: "#cbd5e1", padding: 12, background: "rgba(0,0,0,0.20)", borderRadius: 8, whiteSpace: "pre-wrap" } }, c.remarques)) : null,
               c.signature_png ? h("div", null, sectionTitle("Signature"), sigBox(c.signature_png)) : null,
               isAdmin ? h("div", { style: { display: "flex", gap: 10, marginTop: 16, flexWrap: "wrap" } },
-                actionBtn({ label: "Modifier la date", icon: "calendar", color: "indigo", onClick: function() { updateReleveDate(c); } }),
+                actionBtn({ label: "Edition complete", icon: "edit-3", color: "indigo", onClick: function() { setEditingReleve(c); } }),
                 actionBtn({ label: "Supprimer", icon: "trash-2", color: "red", onClick: function() { deleteReleveHeures(c); } })
               ) : null
             ]) : null
@@ -13327,6 +13435,16 @@
           tab === "soumissions_rapports" ? (rapportsView === "recap_mensuel" ? renderRapportsRecapMensuel() : renderRapports()) :
           h("div", null, "Aucun onglet selectionne.")
         ),
+        // Modal d'edition complete d'un releve d'heures (admin)
+        editingReleve ? h(ReleveEditModal, {
+          releve: editingReleve,
+          personnelMap: personnelMap,
+          onClose: function() { setEditingReleve(null); },
+          onSaved: function(updated) {
+            setRels(rels.map(function(x) { return x.id === updated.id ? updated : x; }));
+            setEditingReleve(null);
+          }
+        }) : null,
         // Modal "Ajouter aux Pieces detachees" depuis une soumission
         newPiece ? h(Modal, { title: "Ajouter aux Pieces detachees", onClose: function() { setNewPiece(null); } },
           h("div", { style: { display: "grid", gap: 12 } },
