@@ -2568,13 +2568,14 @@
     }
 
     // ─── Ecran Messages : messagerie admin -> employes ─────────────────
-    // Permet d'envoyer un message (broadcast tous OU 1 employe specifique).
-    // Affiche la liste des messages envoyes + le nombre d'employes qui ont lu.
+    // 2 onglets : "Envoi manuel" (form classique) + "Messages auto" (templates recurrents)
     function EcranMessages() {
       const ctx = useAppData();
       const parametres = ctx.parametres || [];
+      const [activeTab, setActiveTab] = useState("manuel");
       const [messages, setMessages] = useState([]);
       const [lectures, setLectures] = useState([]);
+      const [autoTemplates, setAutoTemplates] = useState([]);
       const [loading, setLoading] = useState(true);
       const [refreshFlag, setRefreshFlag] = useState(0);
       // Form state
@@ -2605,12 +2606,15 @@
         setLoading(true);
         Promise.all([
           supabase.from("messages").select("*").order("created_at", { ascending: false }),
-          supabase.from("message_lectures").select("*")
+          supabase.from("message_lectures").select("*"),
+          supabase.from("messages_automatiques").select("*").order("created_at", { ascending: false })
         ]).then(function(results) {
           if (results[0].error) console.warn("[messages] fetch:", results[0].error.message);
           if (results[1].error) console.warn("[lectures] fetch:", results[1].error.message);
+          if (results[2].error) console.warn("[auto] fetch:", results[2].error.message);
           setMessages(results[0].data || []);
           setLectures(results[1].data || []);
+          setAutoTemplates(results[2].data || []);
           setLoading(false);
         });
       }, [refreshFlag]);
@@ -2671,11 +2675,26 @@
         return { bg: "rgba(99,102,241,0.10)", br: "rgba(99,102,241,0.30)", txt: "#c7d2fe" };
       }
 
+      // Helper de rendu d'un template auto (form + liste)
+      var renderAutoTab = function() { return h(MessagesAutoTab, { templates: autoTemplates, setTemplates: setAutoTemplates, personnelData: personnelData, ctx: ctx, refresh: function() { setRefreshFlag(refreshFlag + 1); } }); };
+
       return h("div", null,
         h(PageHeader, {
           title: h(IconText, { icon: "mail", size: 20 }, "Messages aux employes"),
           subtitle: "Envoie des messages aux sondeurs (broadcast tous ou destinataire specifique). Accuses de reception traces.",
         }),
+        // Switch onglets
+        h("div", { style: { display: "flex", gap: 0, background: "rgba(0,0,0,0.25)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 999, padding: 3, marginBottom: 18, width: "fit-content" } },
+          [{ k: "manuel", label: "Envoi manuel", icon: "send" }, { k: "auto", label: "Messages auto", icon: "repeat" }].map(function(t) {
+            var active = activeTab === t.k;
+            return h("button", { key: t.k, onClick: function() { setActiveTab(t.k); },
+              style: { padding: "7px 16px", borderRadius: 999, fontSize: 12, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", border: "none", background: active ? "linear-gradient(135deg, #6366f1, #818cf8)" : "transparent", color: active ? "#ffffff" : "#a1a1aa", display: "inline-flex", alignItems: "center", gap: 6 } },
+              h(Icon, { name: t.icon, size: 13 }), t.label);
+          })
+        ),
+        activeTab === "auto" ? renderAutoTab() :
+        // ── ONGLET MANUEL ──
+        h("div", null,
         // Form composer
         h(Card, { style: { marginBottom: 20 } },
           h("h3", { style: { margin: "0 0 14px", fontSize: 14, fontWeight: 800, color: "#e0e7ff" } }, h(IconText, { icon: "send", size: 14, color: "#818cf8" }, "Nouveau message")),
@@ -2752,6 +2771,187 @@
             })
           )
         )
+        ) // fin onglet manuel
+      );
+    }
+
+    // ─── Sous-composant : onglet "Messages auto" ──────────────────────
+    // Permet de creer/modifier/supprimer des templates de messages automatiques.
+    function MessagesAutoTab({ templates, setTemplates, personnelData, ctx, refresh }) {
+      const [editing, setEditing] = useState(null);
+      const [showForm, setShowForm] = useState(false);
+
+      function newTemplate() {
+        setEditing({
+          type: "anniversaire",
+          jour_mois: "",
+          date_specifique: "",
+          interval_jours: 7,
+          sujet: "",
+          message: "",
+          importance: "normale",
+          destinataire_type: "broadcast",
+          actif: true
+        });
+        setShowForm(true);
+      }
+
+      function save(t) {
+        if (!t.message || !t.message.trim()) { alert("Le message ne peut pas etre vide."); return; }
+        if (t.type === "date_fixe_annuelle" && !t.jour_mois) { alert("Choisis une date (MM-DD)."); return; }
+        if (t.type === "date_specifique" && !t.date_specifique) { alert("Choisis une date."); return; }
+        if (t.type === "periodique" && (!t.interval_jours || t.interval_jours < 1)) { alert("Intervalle invalide."); return; }
+        var payload = {
+          type: t.type,
+          jour_mois: t.type === "date_fixe_annuelle" ? t.jour_mois : null,
+          date_specifique: t.type === "date_specifique" ? t.date_specifique : null,
+          interval_jours: t.type === "periodique" ? parseInt(t.interval_jours) : null,
+          sujet: t.sujet || null,
+          message: t.message,
+          importance: t.importance,
+          destinataire_type: t.destinataire_type || "broadcast",
+          actif: t.actif !== false
+        };
+        var p;
+        if (t.id) p = supabase.from("messages_automatiques").update(payload).eq("id", t.id).select().single();
+        else p = supabase.from("messages_automatiques").insert(payload).select().single();
+        p.then(function(res) {
+          if (res.error) { alert("Erreur : " + res.error.message); return; }
+          if (t.id) setTemplates(templates.map(function(x) { return x.id === t.id ? res.data : x; }));
+          else setTemplates([res.data].concat(templates));
+          setShowForm(false); setEditing(null);
+          if (ctx.showToast) ctx.showToast("Template enregistre", "success");
+        });
+      }
+
+      function remove(id) {
+        if (!confirm("Supprimer ce template ?")) return;
+        supabase.from("messages_automatiques").delete().eq("id", id).then(function(res) {
+          if (res.error) { alert("Erreur : " + res.error.message); return; }
+          setTemplates(templates.filter(function(x) { return x.id !== id; }));
+          if (ctx.showToast) ctx.showToast("Template supprime", "success");
+        });
+      }
+
+      function toggleActif(t) {
+        supabase.from("messages_automatiques").update({ actif: !t.actif }).eq("id", t.id).select().single().then(function(res) {
+          if (res.error) { alert("Erreur : " + res.error.message); return; }
+          setTemplates(templates.map(function(x) { return x.id === t.id ? res.data : x; }));
+        });
+      }
+
+      var TYPE_LABEL = {
+        anniversaire: "Anniversaire (auto par employe)",
+        date_fixe_annuelle: "Date fixe annuelle (ex: 25/12)",
+        date_specifique: "Date specifique (1x unique)",
+        periodique: "Periodique (tous les X jours)"
+      };
+      var TYPE_ICON = { anniversaire: "cake", date_fixe_annuelle: "calendar", date_specifique: "calendar-clock", periodique: "repeat" };
+      function describeTrigger(t) {
+        if (t.type === "anniversaire") return "Le jour de l'anniversaire de chaque employe";
+        if (t.type === "date_fixe_annuelle") return "Chaque annee le " + (t.jour_mois || "?");
+        if (t.type === "date_specifique") return "Le " + (t.date_specifique || "?") + " (1x)";
+        if (t.type === "periodique") return "Tous les " + (t.interval_jours || "?") + " jours";
+        return "-";
+      }
+
+      return h("div", null,
+        // KPIs + bouton +
+        h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 12 } },
+          h("div", { style: { fontSize: 13, color: "#a1a1aa" } },
+            h("strong", { style: { color: "#fafafa" } }, templates.length), " template(s) - ",
+            h("strong", { style: { color: "#86efac" } }, templates.filter(function(x) { return x.actif; }).length), " actif(s)"
+          ),
+          h(Button, { onClick: newTemplate }, h(IconText, { icon: "plus", size: 14 }, "Nouveau template"))
+        ),
+        // Info box variables
+        h("div", { style: { background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.25)", borderRadius: 10, padding: 12, marginBottom: 16, fontSize: 12, color: "#c7d2fe" } },
+          h("strong", null, "Variables utilisables dans le message : "),
+          h("code", { style: { background: "rgba(0,0,0,0.3)", padding: "1px 5px", borderRadius: 3, margin: "0 3px" } }, "{prenom}"),
+          h("code", { style: { background: "rgba(0,0,0,0.3)", padding: "1px 5px", borderRadius: 3, margin: "0 3px" } }, "{nom}"),
+          h("code", { style: { background: "rgba(0,0,0,0.3)", padding: "1px 5px", borderRadius: 3, margin: "0 3px" } }, "{age}"),
+          h("code", { style: { background: "rgba(0,0,0,0.3)", padding: "1px 5px", borderRadius: 3, margin: "0 3px" } }, "{date}"),
+          h("span", { style: { display: "block", marginTop: 4, color: "#a1a1aa" } }, "Ex : \"Joyeux anniversaire a {prenom} {nom} ({age} ans) !\""),
+        ),
+        // Liste templates
+        templates.length === 0 ? h(Card, null, h("div", { style: { padding: 40, textAlign: "center", color: "#71717a" } }, "Aucun template configure. Clique sur 'Nouveau template' pour creer ton premier message automatique.")) :
+        h("div", { style: { display: "flex", flexDirection: "column", gap: 10 } },
+          templates.map(function(t) {
+            return h("div", { key: t.id, style: { background: "rgba(36,40,60,0.55)", border: "1px solid " + (t.actif ? "rgba(129,140,248,0.30)" : "rgba(255,255,255,0.06)"), borderRadius: 10, padding: "12px 14px", opacity: t.actif ? 1 : 0.55 } },
+              h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 } },
+                h("div", { style: { flex: 1, minWidth: 0 } },
+                  h("div", { style: { display: "flex", alignItems: "center", gap: 6, marginBottom: 4 } },
+                    h(Icon, { name: TYPE_ICON[t.type] || "tag", size: 14, color: "#a78bfa" }),
+                    h("span", { style: { fontSize: 11, fontWeight: 700, color: "#a78bfa", textTransform: "uppercase", letterSpacing: 0.5 } }, TYPE_LABEL[t.type] || t.type)
+                  ),
+                  h("div", { style: { fontSize: 11, color: "#71717a", marginBottom: 6 } }, describeTrigger(t)),
+                  t.sujet ? h("div", { style: { fontSize: 14, fontWeight: 700, color: "#fafafa", marginBottom: 3 } }, t.sujet) : null,
+                  h("div", { style: { fontSize: 13, color: "#cbd5e1", whiteSpace: "pre-wrap" } }, t.message)
+                ),
+                h("div", { style: { display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-end" } },
+                  h("label", { style: { display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 11, color: "#a1a1aa" } },
+                    h("input", { type: "checkbox", checked: t.actif, onChange: function() { toggleActif(t); } }),
+                    "Actif"
+                  ),
+                  h("div", null,
+                    h("button", { onClick: function() { setEditing(Object.assign({}, t)); setShowForm(true); }, style: { background: "transparent", border: "none", cursor: "pointer", color: "#a1a1aa", padding: 4 }, title: "Modifier" }, h(Icon, { name: "pencil", size: 15 })),
+                    h("button", { onClick: function() { remove(t.id); }, style: { background: "transparent", border: "none", cursor: "pointer", color: "#f43f5e", padding: 4 }, title: "Supprimer" }, h(Icon, { name: "trash-2", size: 15 }))
+                  )
+                )
+              )
+            );
+          })
+        ),
+        // Modal edition
+        showForm && editing ? h(Modal, { title: editing.id ? "Modifier template" : "Nouveau template auto", onClose: function() { setShowForm(false); setEditing(null); }, size: 540 },
+          h("div", { style: { display: "grid", gap: 12 } },
+            h("div", null,
+              h("label", { style: { fontSize: 11, color: "#a1a1aa", display: "block", marginBottom: 4, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 } }, "Type"),
+              h("select", { value: editing.type, onChange: function(e) { setEditing(Object.assign({}, editing, { type: e.target.value })); }, style: inputStyle },
+                h("option", { value: "anniversaire" }, "Anniversaire (auto par dateNaissance)"),
+                h("option", { value: "date_fixe_annuelle" }, "Date fixe annuelle (ex: Noel)"),
+                h("option", { value: "date_specifique" }, "Date specifique (1x unique)"),
+                h("option", { value: "periodique" }, "Periodique (tous les X jours)")
+              )
+            ),
+            editing.type === "date_fixe_annuelle" ? h("div", null,
+              h("label", { style: { fontSize: 11, color: "#a1a1aa", display: "block", marginBottom: 4 } }, "Jour-Mois (format MM-DD)"),
+              h("input", { type: "text", placeholder: "12-25", value: editing.jour_mois || "", onChange: function(e) { setEditing(Object.assign({}, editing, { jour_mois: e.target.value })); }, style: inputStyle })
+            ) : null,
+            editing.type === "date_specifique" ? h("div", null,
+              h("label", { style: { fontSize: 11, color: "#a1a1aa", display: "block", marginBottom: 4 } }, "Date precise"),
+              h("input", { type: "date", value: editing.date_specifique || "", onChange: function(e) { setEditing(Object.assign({}, editing, { date_specifique: e.target.value })); }, style: inputStyle })
+            ) : null,
+            editing.type === "periodique" ? h("div", null,
+              h("label", { style: { fontSize: 11, color: "#a1a1aa", display: "block", marginBottom: 4 } }, "Intervalle en jours"),
+              h("input", { type: "number", min: 1, value: editing.interval_jours || 7, onChange: function(e) { setEditing(Object.assign({}, editing, { interval_jours: parseInt(e.target.value) || 0 })); }, style: inputStyle })
+            ) : null,
+            h("div", null,
+              h("label", { style: { fontSize: 11, color: "#a1a1aa", display: "block", marginBottom: 4 } }, "Sujet (optionnel)"),
+              h("input", { type: "text", value: editing.sujet || "", onChange: function(e) { setEditing(Object.assign({}, editing, { sujet: e.target.value })); }, style: inputStyle })
+            ),
+            h("div", null,
+              h("label", { style: { fontSize: 11, color: "#a1a1aa", display: "block", marginBottom: 4 } }, "Message (variables: {prenom}, {nom}, {age}, {date})"),
+              h("textarea", { value: editing.message || "", onChange: function(e) { setEditing(Object.assign({}, editing, { message: e.target.value })); }, rows: 5, style: Object.assign({}, inputStyle, { resize: "vertical", fontFamily: "inherit" }) })
+            ),
+            h("div", null,
+              h("label", { style: { fontSize: 11, color: "#a1a1aa", display: "block", marginBottom: 4 } }, "Importance"),
+              h("select", { value: editing.importance, onChange: function(e) { setEditing(Object.assign({}, editing, { importance: e.target.value })); }, style: inputStyle },
+                h("option", { value: "normale" }, "Normale"),
+                h("option", { value: "important" }, "Important"),
+                h("option", { value: "urgent" }, "Urgent")
+              )
+            ),
+            h("label", { style: { display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "rgba(255,255,255,0.04)", borderRadius: 6, cursor: "pointer" } },
+              h("input", { type: "checkbox", checked: editing.actif !== false, onChange: function(e) { setEditing(Object.assign({}, editing, { actif: e.target.checked })); } }),
+              h("span", { style: { fontSize: 13 } }, "Template actif (sera traite par le cron quotidien)")
+            ),
+            h("div", { style: { display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 8 } },
+              h(Button, { variant: "secondary", onClick: function() { setShowForm(false); setEditing(null); } }, "Annuler"),
+              h(Button, { onClick: function() { save(editing); } }, "Enregistrer")
+            )
+          )
+        ) : null
       );
     }
 
