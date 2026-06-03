@@ -2297,13 +2297,22 @@
               h("div", { style: { fontSize: 13, color: "#a1a1aa" } }, "Sous-total : ", h("strong", { style: { color: "#f97316" } }, fmtMoney(totalCat) + " / mois"))
             ),
             h("table", { style: { width: "100%", borderCollapse: "collapse", fontSize: 13 } },
+              h("colgroup", null,
+                h("col", { style: { width: 40 } }),
+                h("col", null), // libelle flex
+                h("col", { style: { width: 220 } }), // montant fixe
+                h("col", { style: { width: 90 } })   // actions fixe
+              ),
               h("tbody", null, list.map(function(c) {
                 return h("tr", { key: c.id, style: { borderTop: "1px solid rgba(255,255,255,0.04)", opacity: c.actif === false ? 0.4 : 1 } },
-                  h("td", { style: { padding: "10px 14px", width: 40 } },
+                  h("td", { style: { padding: "10px 14px" } },
                     h("input", { type: "checkbox", checked: c.actif !== false, onChange: function() { toggleActif(c); }, title: "Activer/desactiver", style: { width: 16, height: 16, cursor: "pointer" } })
                   ),
                   h("td", { style: { padding: "10px 14px", fontWeight: 600 } }, c.libelle, c.notes ? h("div", { style: { fontSize: 11, color: "#71717a", marginTop: 2 } }, c.notes) : null),
-                  h("td", { style: { padding: "10px 14px", textAlign: "right", fontFamily: "monospace", fontWeight: 700, color: "#fde68a" } }, fmtMoney(c.montant_mensuel) + " / mois"),
+                  h("td", { style: { padding: "10px 14px", textAlign: "right", fontFamily: "monospace", fontWeight: 700, color: "#fde68a", whiteSpace: "nowrap" } },
+                    fmtMoney(c.montant_mensuel),
+                    h("span", { style: { color: "#a1a1aa", fontWeight: 500, marginLeft: 4, fontFamily: "'Inter', sans-serif" } }, "/ mois")
+                  ),
                   h("td", { style: { padding: "10px 14px", textAlign: "right", whiteSpace: "nowrap" } },
                     h("button", { onClick: function() { setEditing(c); setShowForm(true); }, style: { background: "transparent", border: "none", cursor: "pointer", color: "#a1a1aa", padding: 4, marginRight: 4 }, title: "Modifier" }, h(Icon, { name: "pencil", size: 15 })),
                     h("button", { onClick: function() { remove(c.id); }, style: { background: "transparent", border: "none", cursor: "pointer", color: "#f43f5e", padding: 4 }, title: "Supprimer" }, h(Icon, { name: "trash-2", size: 15 }))
