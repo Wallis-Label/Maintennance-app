@@ -529,6 +529,223 @@
       return "normal";
     }
 
+    // ─── Helper module-level : calcul EXACT des primes de metrage ──────
+    // Replique la logique de calcPrimesForSitePeriod (ex-EcranPrimes) pour qu'elle soit
+    // reutilisable depuis EcranStatistiques (cout reel inclut les primes).
+    // Inputs : site (string), periodStart/End (Date), deps :
+    //   { chantiers, chantiersBySite, chantierToSite, paliers, affectations, saisies,
+    //     personnel, releves, rapportsForage }
+    function calcPrimesForSiteHelper(site, periodStart, periodEnd, deps) {
+      var siteCh = (deps.chantiersBySite && deps.chantiersBySite[site]) || [];
+      if (siteCh.length === 0) return [];
+      var siteChIds = siteCh.map(function(c) { return c.id; });
+      var paliers = deps.paliers || [];
+      var siteMoyenne = getMoyenneForSite(paliers, site);
+      var objectif = getObjectifForSite(paliers, site);
+
+      var chantiers = deps.chantiers || [];
+      var saisies = deps.saisies || {};
+      var affectations = deps.affectations || [];
+      var personnel = deps.personnel || [];
+      var releves = deps.releves || [];
+      var rapportsCtx = deps.rapportsForage || [];
+      var chantierToSite = deps.chantierToSite || {};
+
+      function isDateInPeriodFn(dateStr, start, end) {
+        var d = new Date(String(dateStr) + "T00:00:00");
+        return d >= start && d <= end;
+      }
+      function normNK(nm) {
+        return String(nm || "").toLowerCase().trim().split(/\s+/).filter(Boolean).sort().join(" ");
+      }
+      var codeToPid = {}, nameKeyToPid = {};
+      personnel.forEach(function(p) {
+        if (!p) return;
+        if (p.code && p.id != null) codeToPid[String(p.code)] = p.id;
+        var k = normNK(((p.prenom || "") + " " + (p.nom || "")));
+        if (k && p.id != null) nameKeyToPid[k] = p.id;
+      });
+      var siteByLieu = {};
+      chantiers.forEach(function(c) { if (c.site) siteByLieu[String(c.site).toUpperCase().trim()] = c.site; });
+      function siteOfRapport(r) {
+        if (r.chantier_id && chantierToSite[r.chantier_id]) return chantierToSite[r.chantier_id];
+        if (r.lieu) {
+          var lk = String(r.lieu).toUpperCase().trim();
+          if (siteByLieu[lk]) return siteByLieu[lk];
+          var keys = Object.keys(siteByLieu);
+          for (var i = 0; i < keys.length; i++) {
+            if (keys[i].indexOf(lk) >= 0 || lk.indexOf(keys[i]) >= 0) return siteByLieu[keys[i]];
+          }
+        }
+        return null;
+      }
+      var rapportByMachineDate = {};
+      var empRapportsList = {};
+      rapportsCtx.forEach(function(r) {
+        if (!r.date_rapport || !r.sondeuse_code) return;
+        var d = String(r.date_rapport).substring(0, 10);
+        var rSite = siteOfRapport(r);
+        if (!rapportByMachineDate[r.sondeuse_code]) rapportByMachineDate[r.sondeuse_code] = {};
+        rapportByMachineDate[r.sondeuse_code][d] = (rapportByMachineDate[r.sondeuse_code][d] || 0) + (parseFloat(r.total_metres) || 0);
+        (r.equipe || []).forEach(function(m) {
+          if (!m) return;
+          var pid = null;
+          if (m.id && codeToPid[String(m.id)]) pid = codeToPid[String(m.id)];
+          else if (m.nom) {
+            var nk = normNK(m.nom);
+            if (nameKeyToPid[nk]) pid = nameKeyToPid[nk];
+          }
+          if (!pid) return;
+          if (!empRapportsList[pid]) empRapportsList[pid] = [];
+          empRapportsList[pid].push({ date: d, sondeuse: r.sondeuse_code, site: rSite });
+        });
+      });
+      function getMachineEmpForDate(pid, dateStr) {
+        var listAll = empRapportsList[pid] || [];
+        if (listAll.length === 0) return null;
+        var list = listAll.filter(function(r) { return r.site === site; });
+        if (list.length === 0) return null;
+        var beforeOrEq = list.filter(function(r) { return r.date <= dateStr; });
+        if (beforeOrEq.length > 0) {
+          beforeOrEq.sort(function(a, b) { return a.date > b.date ? -1 : 1; });
+          return beforeOrEq[0].sondeuse;
+        }
+        var afterDate = list.slice().sort(function(a, b) { return a.date > b.date ? 1 : -1; });
+        return afterDate[0].sondeuse;
+      }
+      function getMetrageMachineForDate(sondeuse, dateStr) {
+        if (!sondeuse || !rapportByMachineDate[sondeuse]) return null;
+        var v = rapportByMachineDate[sondeuse][dateStr];
+        return (v != null) ? v : null;
+      }
+
+      var results = [];
+      personnel.forEach(function(emp) {
+        var empNom = ((emp.prenom || "") + " " + (emp.nom || "")).toUpperCase().trim();
+        var empNomRev = ((emp.nom || "") + " " + (emp.prenom || "")).toUpperCase().trim();
+        var empAffOnSite = affectations.filter(function(a) {
+          if (a.personnelId !== emp.id) return false;
+          if (!isDateInPeriodFn(a.dateAffectation, periodStart, periodEnd)) return false;
+          if (a.chantierId && siteChIds.indexOf(a.chantierId) >= 0) return true;
+          if (!a.chantierId) {
+            var lastWork = affectations.filter(function(af) {
+              return af.personnelId === emp.id && af.chantierId && af.dateAffectation < a.dateAffectation && (af.typeJour === "travail" || !af.typeJour);
+            }).sort(function(x, y) { return x.dateAffectation > y.dateAffectation ? -1 : 1; });
+            if (lastWork.length > 0) {
+              var lastCh = chantiers.find(function(c) { return c.id === lastWork[0].chantierId; });
+              var lastSite = lastCh ? lastCh.site || "" : "";
+              return lastSite === site;
+            }
+          }
+          return false;
+        });
+        if (empAffOnSite.length === 0) return;
+
+        var empReleves = releves.filter(function(r) {
+          if (!r.dateReleve) return false;
+          if (!isDateInPeriodFn(r.dateReleve, periodStart, periodEnd)) return false;
+          if (!r.chantierId || siteChIds.indexOf(r.chantierId) < 0) return false;
+          if (r.personnelId === emp.id) return true;
+          var rNom = (r.employeNom || "").toUpperCase().trim();
+          return rNom === empNom || rNom === empNomRev;
+        });
+        var releveByDate = {};
+        empReleves.forEach(function(r) {
+          if (!releveByDate[r.dateReleve]) releveByDate[r.dateReleve] = [];
+          releveByDate[r.dateReleve].push(r);
+        });
+
+        var adjMetrage = 0, adjJours = 0;
+        empAffOnSite.forEach(function(a) {
+          var tj = a.typeJour || "travail";
+          var dateStr = a.dateAffectation;
+          var chId = a.chantierId;
+          var saisieEntry = (chId && saisies[chId]) ? saisies[chId][dateStr] : null;
+          var saisieType = saisieEntry ? getSaisieType(saisieEntry) : "normal";
+          var saisieVal = saisieEntry ? (parseFloat(getSaisieVal(saisieEntry)) || 0) : 0;
+          var effectiveType = (saisieType === "panne" || saisieType === "intemperies" || saisieType === "non_productif" || saisieType === "arret") ? saisieType : tj;
+          if (effectiveType === "ferie") return;
+          if (effectiveType === "arret") { adjJours += 1; }
+          else if (effectiveType === "panne" || effectiveType === "intemperies") {
+            adjMetrage += siteMoyenne; adjJours += 1;
+          } else if (effectiveType === "non_productif" || effectiveType === "conge" || effectiveType === "chomage") {
+            var machineEmp = getMachineEmpForDate(emp.id, dateStr);
+            var metrageMachine = machineEmp ? getMetrageMachineForDate(machineEmp, dateStr) : null;
+            var rattrapage;
+            if (metrageMachine !== null) { rattrapage = Math.min(metrageMachine, siteMoyenne); }
+            else {
+              var chForSaisie = chId || (siteCh.length > 0 ? siteCh[0].id : null);
+              var saisieFallback = chForSaisie ? (saisies[chForSaisie] || {})[dateStr] : null;
+              var sVFb = saisieFallback ? (typeof saisieFallback === "object" ? (parseFloat(saisieFallback.valeur) || 0) : (parseFloat(saisieFallback) || 0)) : 0;
+              rattrapage = sVFb > 0 ? Math.min(sVFb, siteMoyenne) : siteMoyenne;
+            }
+            adjMetrage += rattrapage; adjJours += 1;
+          } else if (effectiveType === "maladie") { adjJours += 1; }
+          else {
+            var dayMetrage = 0;
+            var machineW = getMachineEmpForDate(emp.id, dateStr);
+            if (machineW) {
+              var vMachine = getMetrageMachineForDate(machineW, dateStr);
+              if (vMachine !== null) dayMetrage = vMachine;
+            }
+            if (dayMetrage === 0) {
+              if (releveByDate[dateStr] && releveByDate[dateStr].length > 0) {
+                releveByDate[dateStr].forEach(function(r) { dayMetrage += parseFloat(r.metrage) || 0; });
+              } else if (saisieVal > 0) { dayMetrage = saisieVal; }
+            }
+            adjMetrage += dayMetrage; adjJours += 1;
+          }
+        });
+        affectations.forEach(function(a) {
+          if (a.personnelId !== emp.id) return;
+          if (!isDateInPeriodFn(a.dateAffectation, periodStart, periodEnd)) return;
+          var tj = a.typeJour || "travail";
+          if (tj === "ferie" || tj === "arret" || tj === "maladie") return;
+          var alreadyOnSite = false;
+          if (a.chantierId && siteChIds.indexOf(a.chantierId) >= 0) alreadyOnSite = true;
+          if (!a.chantierId) {
+            var prevsX = affectations.filter(function(af) {
+              return af.personnelId === emp.id && af.chantierId && af.dateAffectation < a.dateAffectation && (af.typeJour === "travail" || !af.typeJour);
+            }).sort(function(x, y) { return x.dateAffectation > y.dateAffectation ? -1 : 1; });
+            if (prevsX.length > 0 && chantierToSite[prevsX[0].chantierId] === site) alreadyOnSite = true;
+          }
+          if (alreadyOnSite) return;
+          var otherSite = null;
+          if (a.chantierId) { otherSite = chantierToSite[a.chantierId]; }
+          else {
+            var prevsY = affectations.filter(function(af) {
+              return af.personnelId === emp.id && af.chantierId && af.dateAffectation < a.dateAffectation && (af.typeJour === "travail" || !af.typeJour);
+            }).sort(function(x, y) { return x.dateAffectation > y.dateAffectation ? -1 : 1; });
+            if (prevsY.length > 0) otherSite = chantierToSite[prevsY[0].chantierId];
+          }
+          if (!otherSite || otherSite === site) return;
+          adjMetrage += siteMoyenne; adjJours += 1;
+        });
+
+        var nbTravailReel = empAffOnSite.filter(function(a) { return (a.typeJour || "travail") === "travail"; }).length;
+        if (nbTravailReel === 0) return;
+        if (adjJours === 0) return;
+        var mhRealise = adjMetrage / (adjJours * 9);
+        var coef = lookupCoefficient(paliers, site, mhRealise);
+        var diff = mhRealise - objectif;
+        var primeFinale = diff > 0 && coef > 0 ? diff * coef : 0;
+        if (primeFinale > 0) results.push({ employe: emp, totalPrime: primeFinale });
+      });
+      return results;
+    }
+
+    // Calcule le total des primes pour une periode, tous sites confondus
+    function computeTotalPrimesForPeriod(periodStart, periodEnd, deps) {
+      var paliers = deps.paliers || [];
+      var sites = getAvailableSites(paliers);
+      var total = 0;
+      sites.forEach(function(site) {
+        var primes = calcPrimesForSiteHelper(site, periodStart, periodEnd, deps);
+        primes.forEach(function(p) { total += p.totalPrime || 0; });
+      });
+      return total;
+    }
+
     // ─── Contexte global ────────────────────────────────────────────────
     const AppContext = createContext();
     function useAppData() { return useContext(AppContext); }
@@ -11147,50 +11364,37 @@
         .filter(function(c) { return c && c.actif !== false; })
         .reduce(function(s, c) { return s + (parseFloat(c.montant_mensuel) || 0); }, 0);
       var coutChargesFixesTotal = chargesFixesMensuelles * nbMoisPeriode;
-      // ── Primes de metrage : estimation par rapport ──
-      // Pour chaque rapport, si m/h depasse l'objectif du site, applique le coefficient
-      // de palier et multiplie par le nb de sondeurs/aides dans l'equipe.
+      // ── Primes de metrage : calcul EXACT via le module computeTotalPrimesForPeriod ──
+      // Replique exactement la logique de la page Primes (rattrapages, multi-sites, etc.).
       // x 1.30 pour ajouter les charges patronales sur les primes (meme regle que salaires).
       var coutPrimesMetrageTotal = 0;
-      var chantierToSiteForPrimes = {};
-      (dbChantiers || []).forEach(function(c) { if (c && c.id != null) chantierToSiteForPrimes[c.id] = c.site || ""; });
-      var siteByLieuForPrimes = {};
-      (dbChantiers || []).forEach(function(c) {
-        if (c && c.site) siteByLieuForPrimes[String(c.site).toUpperCase().trim()] = c.site;
-      });
-      function siteOfRapportLocal(r) {
-        if (r.chantier_id && chantierToSiteForPrimes[r.chantier_id]) return chantierToSiteForPrimes[r.chantier_id];
-        if (r.lieu) {
-          var lk = String(r.lieu).toUpperCase().trim();
-          if (siteByLieuForPrimes[lk]) return siteByLieuForPrimes[lk];
-          var keys = Object.keys(siteByLieuForPrimes);
-          for (var i = 0; i < keys.length; i++) {
-            if (keys[i].indexOf(lk) >= 0 || lk.indexOf(keys[i]) >= 0) return siteByLieuForPrimes[keys[i]];
-          }
-        }
-        return null;
+      try {
+        var primesPaliers = ctx.dbPaliers || [];
+        var primesChantiers = ctx.dbChantiers || [];
+        var chantiersBySiteForPrimes = {};
+        (primesChantiers || []).filter(function(c) { return c.statut === "En cours" || c.statut === "Termine"; }).forEach(function(ch) {
+          if (!ch.site) return;
+          if (!chantiersBySiteForPrimes[ch.site]) chantiersBySiteForPrimes[ch.site] = [];
+          chantiersBySiteForPrimes[ch.site].push(ch);
+        });
+        var chantierToSiteForPrimes = {};
+        (primesChantiers || []).forEach(function(c) { if (c && c.id != null) chantierToSiteForPrimes[c.id] = c.site || ""; });
+        var totalPrimesBrutes = computeTotalPrimesForPeriod(periodStart, periodEnd, {
+          chantiers: primesChantiers,
+          chantiersBySite: chantiersBySiteForPrimes,
+          chantierToSite: chantierToSiteForPrimes,
+          paliers: primesPaliers,
+          affectations: ctx.dbAffectations || [],
+          saisies: ctx.dbSaisies || {},
+          personnel: loadPersonnelFromParametres(parametres),
+          releves: ctx.dbRelevesJourn || [],
+          rapportsForage: ctx.dbRapportsForage || []
+        });
+        coutPrimesMetrageTotal = totalPrimesBrutes * 1.30; // +30% charges patronales
+      } catch (e) {
+        console.warn("[Stats] calcul primes :", e.message);
+        coutPrimesMetrageTotal = 0;
       }
-      var dbPaliersForPrimes = (typeof dbPaliers !== "undefined" ? dbPaliers : (ctx.dbPaliers || []));
-      filtered.forEach(function(r) {
-        var rSite = siteOfRapportLocal(r);
-        if (!rSite) return;
-        var siteObjectif = getObjectifForSite(dbPaliersForPrimes, rSite);
-        if (!siteObjectif || siteObjectif <= 0) return;
-        var metres = parseFloat(r.total_metres) || 0;
-        if (metres <= 0) return;
-        var mhRealise = metres / 9; // base 9h de foration / jour de poste
-        if (mhRealise <= siteObjectif) return;
-        var coef = lookupCoefficient(dbPaliersForPrimes, rSite, mhRealise);
-        if (!coef || coef <= 0) return;
-        var primePersonne = (mhRealise - siteObjectif) * coef;
-        // Nb employes eligibles (sondeurs + aides) dans l'equipe du rapport
-        var nbBonus = (Array.isArray(r.equipe) ? r.equipe : []).filter(function(m) {
-          var role = String((m && m.role) || "").toLowerCase();
-          return role.indexOf("sondeur") >= 0 || role.indexOf("aide") >= 0;
-        }).length;
-        if (nbBonus === 0) nbBonus = 1; // fallback : on suppose au moins 1 sondeur
-        coutPrimesMetrageTotal += primePersonne * nbBonus * 1.30; // +30% charges patronales
-      });
       // TOTAL
       var totalCoutsAll = coutConsoSondeusesAll + coutCarburantVL + coutPersonnelTotal + coutEmpruntAll + coutChargesFixesTotal + coutPrimesMetrageTotal;
       // Prix moyen pondere par metres realises sur la periode filtree
