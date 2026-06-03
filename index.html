@@ -13638,11 +13638,45 @@
         return (hh < 10 ? "0" : "") + hh + ":" + (mm < 10 ? "0" : "") + mm;
       };
       var renderReleves = function() {
-        // Tri : date_releve desc (le plus recent en haut), puis par envoye_par (personnel_id) asc
-        var list = applyFilter(rels).slice().sort(function(a, b) {
+        // Identifie le responsable de chaque equipe (date + sondeuse) :
+        // c'est la ligne dont fonction = "Sondeur" (et non "Aide sondeur").
+        // Fallback : si aucun Sondeur trouve dans le groupe, on prend le 1er releve par id.
+        var rawList = applyFilter(rels);
+        var responsableByGroup = {}; // key = "date|sondeuse_code" -> personnel_id
+        var groups = {};
+        rawList.forEach(function(r) {
+          var k = String(r.date_releve || "").substring(0,10) + "|" + String(r.sondeuse_code || "");
+          if (!groups[k]) groups[k] = [];
+          groups[k].push(r);
+        });
+        Object.keys(groups).forEach(function(k) {
+          var rows = groups[k];
+          // Cherche un Sondeur (pas Aide)
+          var resp = rows.find(function(r) {
+            var f = String(r.fonction || "").toLowerCase();
+            return f.indexOf("sondeur") >= 0 && f.indexOf("aide") < 0;
+          });
+          if (!resp) {
+            // Fallback : 1er releve par id
+            resp = rows.slice().sort(function(a, b) { return (a.id || 0) - (b.id || 0); })[0];
+          }
+          responsableByGroup[k] = resp ? resp.personnel_id : null;
+        });
+        function responsableLabel(r) {
+          var k = String(r.date_releve || "").substring(0,10) + "|" + String(r.sondeuse_code || "");
+          var pid = responsableByGroup[k];
+          return pid ? personnelLabel(pid) : "-";
+        }
+
+        // Tri : date_releve desc, puis par responsable de l'equipe asc
+        var list = rawList.slice().sort(function(a, b) {
           var da = String(a.date_releve || "").substring(0, 10);
           var db = String(b.date_releve || "").substring(0, 10);
           if (da !== db) return da > db ? -1 : 1; // recent first
+          var ra = responsableLabel(a);
+          var rb = responsableLabel(b);
+          if (ra !== rb) return ra.localeCompare(rb);
+          // Tie-breaker : nom de l'employe de la ligne pour stabilite
           var na = personnelLabel(a.personnel_id) || "";
           var nb = personnelLabel(b.personnel_id) || "";
           return na.localeCompare(nb);
@@ -13659,7 +13693,7 @@
             rowHeader({
               name: name + " - " + sondLabel,
               sub: (c.fonction ? c.fonction + " - " : "") + (heureRange || "Heures non renseignees") + " (" + totalStr + ")" + (c.absence_type ? " - " + c.absence_type : ""),
-              sender: personnelLabel(c.personnel_id),
+              sender: responsableLabel(c),
               right: c.created_at ? "Envoye le " + fmtDateTime(c.created_at) : fmtDate(c.date_releve),
               statut: statut,
               isExpanded: isExp,
