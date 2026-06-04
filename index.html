@@ -303,7 +303,7 @@
       var desc = r.description || "";
       var extra = parseDescExtra(desc);
       var gamme = Array.isArray(extra.gamme) ? extra.gamme : [];
-      return { Id: r.id, Title: r.nom || "", Frequence: r.frequence_label || ((r.type_recurrence === "horametre" ? "Horametre " : r.type_recurrence === "km" ? "KM " : "") + r.frequence), Description: extra._text || "", SeuilAlerte: String(extra.seuilAlerte ?? 50), SeuilAlerteAvenir: String(extra.seuilAlerteAvenir ?? ""), Equipements: r.equipements_codes || "", ProchainIntervention: r.prochaine_execution_date || "", Statut: STATUT_PLAN_TO_UI[r.statut] || "Actif", Gamme: gamme };
+      return { Id: r.id, Title: r.nom || "", Frequence: r.frequence_label || ((r.type_recurrence === "horametre" ? "Horametre " : r.type_recurrence === "km" ? "KM " : "") + r.frequence), Description: extra._text || "", SeuilAlerte: String(extra.seuilAlerte ?? 50), SeuilAlerteAvenir: String(extra.seuilAlerteAvenir ?? ""), Equipements: r.equipements_codes || "", ProchainIntervention: r.prochaine_execution_date || "", Statut: STATUT_PLAN_TO_UI[r.statut] || "Actif", Gamme: gamme, DureeEstimeeMin: r.duree_estimee_min != null ? r.duree_estimee_min : null };
     }
     function planToDb(p) {
       const freq = p.Frequence || "";
@@ -318,7 +318,7 @@
       if (p.SeuilAlerteAvenir) descObj.seuilAlerteAvenir = parseInt(p.SeuilAlerteAvenir) || 0;
       if (Array.isArray(p.Gamme) && p.Gamme.length > 0) descObj.gamme = p.Gamme;
       var descStr = JSON.stringify(descObj);
-      return { nom: p.Title, description: descStr, frequence_label: p.Frequence, equipements_codes: p.Equipements, prochaine_execution_date: p.ProchainIntervention || null, statut: STATUT_PLAN_TO_DB[p.Statut] || "actif", type_recurrence: type_rec, frequence: freq_num || 1 };
+      return { nom: p.Title, description: descStr, frequence_label: p.Frequence, equipements_codes: p.Equipements, prochaine_execution_date: p.ProchainIntervention || null, statut: STATUT_PLAN_TO_DB[p.Statut] || "actif", type_recurrence: type_rec, frequence: freq_num || 1, duree_estimee_min: p.DureeEstimeeMin != null && p.DureeEstimeeMin !== "" ? parseInt(p.DureeEstimeeMin) : null };
     }
     function pieceFromDb(r) {
       return { Id: r.id, Reference: r.reference || "", Designation: r.designation || "", Categorie: r.categorie || "", Fournisseur: r.fournisseur || "", PrixUnitaire: String(r.prix_unitaire ?? 0), Stock: String(r.stock_actuel ?? 0), StockMin: String(r.stock_minimum ?? 0), Emplacement: r.emplacement || "", Compatible: r.compatible || "" };
@@ -1548,7 +1548,7 @@
     function PlanForm({ onSave, onCancel, editItem }) {
       const freqs = useParams("frequence_plan");
       const { isAdmin } = useAppData();
-      const [f, setF] = useState(editItem || { Title: "", Frequence: freqs[0] || "Mensuel", Description: "", SeuilAlerte: "50", SeuilAlerteAvenir: "", Equipements: "", ProchainIntervention: new Date().toISOString().split("T")[0], Statut: "Actif", Gamme: [] });
+      const [f, setF] = useState(editItem || { Title: "", Frequence: freqs[0] || "Mensuel", Description: "", SeuilAlerte: "50", SeuilAlerteAvenir: "", Equipements: "", ProchainIntervention: new Date().toISOString().split("T")[0], Statut: "Actif", Gamme: [], DureeEstimeeMin: "" });
       const [saving, setSaving] = useState(false);
       const upd = (k, v) => setF((p) => ({ ...p, [k]: v }));
       // Detecter l'unite du seuil depuis la frequence selectionnee
@@ -1569,7 +1569,8 @@
           h(FormField, { label: "Statut" }, h("select", { style: selectStyle, value: f.Statut, onChange: (e) => upd("Statut", e.target.value) },
             ["Actif", "En retard", "Suspendu"].map((x) => h("option", { key: x, value: x }, x)))),
           h(FormField, { label: "Declenchement (" + seuilUnite + " avant)" }, h("input", { type: "number", style: inputStyle, value: f.SeuilAlerte, onChange: (e) => upd("SeuilAlerte", e.target.value), placeholder: "Ex: 2000" })),
-          h(FormField, { label: "Alerte a venir (" + seuilUnite + " avant)" }, h("input", { type: "number", style: inputStyle, value: f.SeuilAlerteAvenir, onChange: (e) => upd("SeuilAlerteAvenir", e.target.value), placeholder: "Ex: 5000" }))),
+          h(FormField, { label: "Alerte a venir (" + seuilUnite + " avant)" }, h("input", { type: "number", style: inputStyle, value: f.SeuilAlerteAvenir, onChange: (e) => upd("SeuilAlerteAvenir", e.target.value), placeholder: "Ex: 5000" })),
+          h(FormField, { label: "Duree estimee (minutes)" }, h("input", { type: "number", min: 0, style: inputStyle, value: f.DureeEstimeeMin == null ? "" : f.DureeEstimeeMin, onChange: (e) => upd("DureeEstimeeMin", e.target.value), placeholder: "Ex: 120 pour 2h" }))),
         h(FormField, { label: "Description" }, h("textarea", { style: { ...inputStyle, minHeight: 70, resize: "vertical" }, value: f.Description, onChange: (e) => upd("Description", e.target.value), placeholder: "Description des operations..." })),
         h(FormField, { label: "Equipements concernes" }, h("input", { style: inputStyle, value: f.Equipements, onChange: (e) => upd("Equipements", e.target.value), placeholder: "Ex: 427 686 NC, AB-123-CD" })),
         h(FormField, { label: "Prochaine intervention" }, h("input", { type: "date", style: inputStyle, value: f.ProchainIntervention, onChange: (e) => upd("ProchainIntervention", e.target.value) })),
@@ -1948,80 +1949,100 @@
                     h("td", { style: { padding: "10px 12px" } },
                       h("button", { onClick: async () => { if (confirm("Retirer cette piece de l'equipement ?")) await unlinkPieceEquipement(p.Id, eq.Id); }, style: { background: "transparent", border: "none", cursor: "pointer", fontSize: 16, padding: 4, color: "#f43f5e" }, title: "Retirer" }, h(Icon, { name: "trash-2", size: 15, color: "#f43f5e" }))));
                 }))))),
-        // ── Intervalles moyens de maintenance preventive (vidange 250H/500H/1000H/...) ──
+        // ── Durees moyennes vs estimees de chaque maintenance ──
         (function() {
-          // Pour chaque intervention preventive de cet equipement, on retrouve son plan
-          // (par titre) et on regroupe par freq horametre. On calcule les intervalles
-          // reels entre executions successives + la moyenne.
-          var planByName = {};
-          (plans || []).forEach(function(p) {
-            if (!p || !p.Title) return;
-            // Extrait la frequence numerique du Frequence label (ex: "Horametre 250" -> 250)
-            var m = String(p.Frequence || "").match(/([0-9]+)/);
-            var freqNum = m ? parseInt(m[1], 10) : 0;
-            var isHoram = /horametre/i.test(p.Frequence || "");
-            planByName[String(p.Title).toUpperCase().trim()] = { plan: p, freq: freqNum, isHoram: isHoram };
-          });
-          // Map plan_name -> list of {horametre, date}
+          // Parse une duree texte (ex: "2h30", "2h", "2:30", "150") en minutes
+          function parseTempsMin(s) {
+            if (s == null) return null;
+            s = String(s).toLowerCase().trim().replace(/\s/g, '');
+            if (!s) return null;
+            // Format HH:MM
+            var hm = s.match(/^(\d+):(\d+)$/);
+            if (hm) return parseInt(hm[1]) * 60 + parseInt(hm[2]);
+            // Format 2h30 / 2h
+            var h1 = s.match(/^(\d+)h(\d*)$/);
+            if (h1) return parseInt(h1[1]) * 60 + (h1[2] ? parseInt(h1[2]) : 0);
+            // Format 30min / 30m
+            var m1 = s.match(/^(\d+)\s*m(in)?$/);
+            if (m1) return parseInt(m1[1]);
+            // Nombre brut : si <= 24 on suppose heures, sinon minutes
+            var n = parseFloat(s);
+            if (!isNaN(n)) return n <= 24 ? Math.round(n * 60) : Math.round(n);
+            return null;
+          }
+          function fmtMin(min) {
+            if (min == null || isNaN(min) || min <= 0) return "-";
+            var h = Math.floor(min / 60);
+            var m = Math.round(min - h * 60);
+            if (h === 0) return m + " min";
+            if (m === 0) return h + " h";
+            return h + "h" + (m < 10 ? "0" + m : m);
+          }
+          // Regroupe les interventions preventives par plan
           var groups = {};
           eqInterventions.forEach(function(i) {
             if (i.Type !== "Preventive") return;
-            var hm = parseFloat(i.Horametre);
-            if (!hm || isNaN(hm)) return;
-            var pname = String(i.Plan || i.Title || "").toUpperCase().trim();
+            var pname = String(i.Plan || i.Title || "").trim();
             if (!pname) return;
-            // On cherche un plan correspondant pour avoir sa freq
-            var info = planByName[pname];
-            // Fallback : cherche un plan dont le nom est inclus dans le titre de l'intervention
-            if (!info) {
-              var keys = Object.keys(planByName);
-              for (var k = 0; k < keys.length; k++) {
-                if (pname.indexOf(keys[k]) >= 0) { info = planByName[keys[k]]; break; }
-              }
+            if (!groups[pname]) groups[pname] = { name: pname, durees: [] };
+            var dm = parseTempsMin(i.Temps_Arret);
+            if (dm != null && dm > 0) groups[pname].durees.push(dm);
+          });
+          // Ajoute aussi les plans qui n'ont pas d'execution mais qui concernent cet equipement
+          (plans || []).forEach(function(p) {
+            if (!p || !p.Title) return;
+            // L'equipement est-il dans p.Equipements ? (string de codes separes par virgules)
+            var codes = String(p.Equipements || "").split(/[,;]/).map(function(s) { return s.toUpperCase().trim(); });
+            var isForEq = codes.indexOf(String(eq.Title || "").toUpperCase().trim()) >= 0;
+            if (!isForEq) return;
+            if (!groups[p.Title]) groups[p.Title] = { name: p.Title, durees: [] };
+            groups[p.Title].plan = p;
+          });
+          // Attache le plan a chaque groupe (si pas deja fait)
+          Object.keys(groups).forEach(function(k) {
+            if (groups[k].plan) return;
+            var found = (plans || []).find(function(p) { return p && String(p.Title).toUpperCase().trim() === k.toUpperCase().trim(); });
+            if (!found) {
+              // Match approximatif
+              found = (plans || []).find(function(p) { return p && k.toUpperCase().indexOf(String(p.Title).toUpperCase().trim()) >= 0; });
             }
-            if (!info || !info.isHoram || !info.freq) return;
-            var key = info.plan.Title + "||" + info.freq;
-            if (!groups[key]) groups[key] = { plan: info.plan, freq: info.freq, items: [] };
-            groups[key].items.push({ horametre: hm, date: i.Date_Intervention || "" });
+            if (found) groups[k].plan = found;
           });
           var rows = Object.keys(groups).map(function(k) { return groups[k]; })
-            .filter(function(g) { return g.items.length >= 1; })
-            .sort(function(a, b) { return a.freq - b.freq; });
+            .filter(function(g) { return g.durees.length > 0 || (g.plan && g.plan.DureeEstimeeMin); })
+            .sort(function(a, b) { return String(a.name).localeCompare(String(b.name)); });
           if (rows.length === 0) return null;
           return h(Card, { style: { marginBottom: 20 } },
             h("h3", { style: { margin: "0 0 14px", fontSize: 16, fontWeight: 700, color: "#fafafa" } },
-              h(IconText, { icon: "repeat", size: 16, color: "#a78bfa" }, "Intervalles moyens de maintenance")
+              h(IconText, { icon: "clock", size: 16, color: "#a78bfa" }, "Durees de maintenance")
             ),
-            h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 } },
+            h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 12 } },
               rows.map(function(g) {
-                // Calcul des intervalles
-                var sorted = g.items.slice().sort(function(a, b) { return a.horametre - b.horametre; });
-                var deltas = [];
-                for (var i = 1; i < sorted.length; i++) deltas.push(sorted[i].horametre - sorted[i - 1].horametre);
-                var moyenne = deltas.length > 0 ? deltas.reduce(function(s, x) { return s + x; }, 0) / deltas.length : 0;
-                var ecart = moyenne > 0 ? Math.round(((moyenne - g.freq) / g.freq) * 100) : 0;
-                var derniereH = sorted[sorted.length - 1].horametre;
-                var derniereD = sorted[sorted.length - 1].date;
-                // Couleur : vert si on respecte, ambre si on depasse de 0-20%, rouge si > 20%
-                var col = ecart <= 5 ? { fg: "#86efac", bg: "rgba(34,197,94,0.10)", br: "rgba(34,197,94,0.30)" }
-                       : ecart <= 20 ? { fg: "#fde68a", bg: "rgba(251,191,36,0.10)", br: "rgba(251,191,36,0.30)" }
-                       :              { fg: "#fda4af", bg: "rgba(244,63,94,0.10)",  br: "rgba(244,63,94,0.30)" };
-                return h("div", { key: g.plan.Title, style: { background: col.bg, border: "1px solid " + col.br, borderRadius: 10, padding: "12px 14px" } },
-                  h("div", { style: { fontSize: 11, fontWeight: 700, color: "#a1a1aa", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 } }, g.plan.Title),
-                  h("div", { style: { fontSize: 10.5, color: "#71717a", marginBottom: 8 } }, "Cible : tous les " + g.freq + " h"),
-                  deltas.length === 0
-                    ? h("div", { style: { fontSize: 12, color: "#71717a", fontStyle: "italic" } }, "Seulement 1 execution - intervalle bientot disponible")
-                    : h("div", null,
-                        h("div", { style: { display: "flex", alignItems: "baseline", gap: 6 } },
-                          h("span", { style: { fontSize: 22, fontWeight: 900, color: col.fg } }, Math.round(moyenne)),
-                          h("span", { style: { fontSize: 12, color: "#a1a1aa", fontWeight: 600 } }, "h moyen"),
-                          h("span", { style: { fontSize: 10.5, fontWeight: 700, color: col.fg, marginLeft: "auto" } }, (ecart >= 0 ? "+" : "") + ecart + "%")
-                        ),
-                        h("div", { style: { fontSize: 10.5, color: "#71717a", marginTop: 4 } },
-                          sorted.length + " execution" + (sorted.length > 1 ? "s" : "") +
-                          " - derniere a " + fmtNum(derniereH) + " h" + (derniereD ? " (" + derniereD + ")" : "")
-                        )
-                      )
+                var moyenne = g.durees.length > 0 ? g.durees.reduce(function(s, x) { return s + x; }, 0) / g.durees.length : null;
+                var estimee = g.plan && g.plan.DureeEstimeeMin != null && g.plan.DureeEstimeeMin !== "" ? parseInt(g.plan.DureeEstimeeMin) : null;
+                // Ecart moyen vs estime (si les 2 dispos)
+                var ecart = (moyenne != null && estimee != null && estimee > 0) ? Math.round(((moyenne - estimee) / estimee) * 100) : null;
+                var col = ecart == null ? { fg: "#c7d2fe", bg: "rgba(99,102,241,0.08)", br: "rgba(99,102,241,0.25)" }
+                       : Math.abs(ecart) <= 10 ? { fg: "#86efac", bg: "rgba(34,197,94,0.08)", br: "rgba(34,197,94,0.25)" }
+                       : Math.abs(ecart) <= 30 ? { fg: "#fde68a", bg: "rgba(251,191,36,0.08)", br: "rgba(251,191,36,0.25)" }
+                       :                         { fg: "#fda4af", bg: "rgba(244,63,94,0.08)",  br: "rgba(244,63,94,0.25)" };
+                return h("div", { key: g.name, style: { background: col.bg, border: "1px solid " + col.br, borderRadius: 10, padding: "12px 14px" } },
+                  h("div", { style: { fontSize: 11, fontWeight: 700, color: "#a1a1aa", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10, lineHeight: 1.3 } }, g.name),
+                  h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
+                    h("div", null,
+                      h("div", { style: { fontSize: 9.5, fontWeight: 700, color: "#71717a", textTransform: "uppercase", letterSpacing: 0.5 } }, "Moyen reel"),
+                      h("div", { style: { fontSize: 18, fontWeight: 800, color: moyenne != null ? col.fg : "#52525b", marginTop: 2 } }, moyenne != null ? fmtMin(moyenne) : "-"),
+                      h("div", { style: { fontSize: 10, color: "#71717a", marginTop: 2 } }, g.durees.length + " executions")
+                    ),
+                    h("div", null,
+                      h("div", { style: { fontSize: 9.5, fontWeight: 700, color: "#71717a", textTransform: "uppercase", letterSpacing: 0.5 } }, "Estime"),
+                      h("div", { style: { fontSize: 18, fontWeight: 800, color: estimee != null ? "#c7d2fe" : "#52525b", marginTop: 2 } }, estimee != null ? fmtMin(estimee) : "-"),
+                      h("div", { style: { fontSize: 10, color: "#71717a", marginTop: 2 } }, estimee == null ? "Non defini sur le plan" : "Plan de maintenance")
+                    )
+                  ),
+                  ecart != null ? h("div", { style: { marginTop: 10, paddingTop: 8, borderTop: "1px solid rgba(255,255,255,0.05)", fontSize: 10.5, color: col.fg, fontWeight: 700, textAlign: "center" } },
+                    ecart === 0 ? "Sur le temps estime" : (ecart > 0 ? "+" : "") + ecart + "% vs estimation"
+                  ) : null
                 );
               })
             )
