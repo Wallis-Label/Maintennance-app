@@ -1948,6 +1948,85 @@
                     h("td", { style: { padding: "10px 12px" } },
                       h("button", { onClick: async () => { if (confirm("Retirer cette piece de l'equipement ?")) await unlinkPieceEquipement(p.Id, eq.Id); }, style: { background: "transparent", border: "none", cursor: "pointer", fontSize: 16, padding: 4, color: "#f43f5e" }, title: "Retirer" }, h(Icon, { name: "trash-2", size: 15, color: "#f43f5e" }))));
                 }))))),
+        // ── Intervalles moyens de maintenance preventive (vidange 250H/500H/1000H/...) ──
+        (function() {
+          // Pour chaque intervention preventive de cet equipement, on retrouve son plan
+          // (par titre) et on regroupe par freq horametre. On calcule les intervalles
+          // reels entre executions successives + la moyenne.
+          var planByName = {};
+          (plans || []).forEach(function(p) {
+            if (!p || !p.Title) return;
+            // Extrait la frequence numerique du Frequence label (ex: "Horametre 250" -> 250)
+            var m = String(p.Frequence || "").match(/([0-9]+)/);
+            var freqNum = m ? parseInt(m[1], 10) : 0;
+            var isHoram = /horametre/i.test(p.Frequence || "");
+            planByName[String(p.Title).toUpperCase().trim()] = { plan: p, freq: freqNum, isHoram: isHoram };
+          });
+          // Map plan_name -> list of {horametre, date}
+          var groups = {};
+          eqInterventions.forEach(function(i) {
+            if (i.Type !== "Preventive") return;
+            var hm = parseFloat(i.Horametre);
+            if (!hm || isNaN(hm)) return;
+            var pname = String(i.Plan || i.Title || "").toUpperCase().trim();
+            if (!pname) return;
+            // On cherche un plan correspondant pour avoir sa freq
+            var info = planByName[pname];
+            // Fallback : cherche un plan dont le nom est inclus dans le titre de l'intervention
+            if (!info) {
+              var keys = Object.keys(planByName);
+              for (var k = 0; k < keys.length; k++) {
+                if (pname.indexOf(keys[k]) >= 0) { info = planByName[keys[k]]; break; }
+              }
+            }
+            if (!info || !info.isHoram || !info.freq) return;
+            var key = info.plan.Title + "||" + info.freq;
+            if (!groups[key]) groups[key] = { plan: info.plan, freq: info.freq, items: [] };
+            groups[key].items.push({ horametre: hm, date: i.Date_Intervention || "" });
+          });
+          var rows = Object.keys(groups).map(function(k) { return groups[k]; })
+            .filter(function(g) { return g.items.length >= 1; })
+            .sort(function(a, b) { return a.freq - b.freq; });
+          if (rows.length === 0) return null;
+          return h(Card, { style: { marginBottom: 20 } },
+            h("h3", { style: { margin: "0 0 14px", fontSize: 16, fontWeight: 700, color: "#fafafa" } },
+              h(IconText, { icon: "repeat", size: 16, color: "#a78bfa" }, "Intervalles moyens de maintenance")
+            ),
+            h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 } },
+              rows.map(function(g) {
+                // Calcul des intervalles
+                var sorted = g.items.slice().sort(function(a, b) { return a.horametre - b.horametre; });
+                var deltas = [];
+                for (var i = 1; i < sorted.length; i++) deltas.push(sorted[i].horametre - sorted[i - 1].horametre);
+                var moyenne = deltas.length > 0 ? deltas.reduce(function(s, x) { return s + x; }, 0) / deltas.length : 0;
+                var ecart = moyenne > 0 ? Math.round(((moyenne - g.freq) / g.freq) * 100) : 0;
+                var derniereH = sorted[sorted.length - 1].horametre;
+                var derniereD = sorted[sorted.length - 1].date;
+                // Couleur : vert si on respecte, ambre si on depasse de 0-20%, rouge si > 20%
+                var col = ecart <= 5 ? { fg: "#86efac", bg: "rgba(34,197,94,0.10)", br: "rgba(34,197,94,0.30)" }
+                       : ecart <= 20 ? { fg: "#fde68a", bg: "rgba(251,191,36,0.10)", br: "rgba(251,191,36,0.30)" }
+                       :              { fg: "#fda4af", bg: "rgba(244,63,94,0.10)",  br: "rgba(244,63,94,0.30)" };
+                return h("div", { key: g.plan.Title, style: { background: col.bg, border: "1px solid " + col.br, borderRadius: 10, padding: "12px 14px" } },
+                  h("div", { style: { fontSize: 11, fontWeight: 700, color: "#a1a1aa", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 } }, g.plan.Title),
+                  h("div", { style: { fontSize: 10.5, color: "#71717a", marginBottom: 8 } }, "Cible : tous les " + g.freq + " h"),
+                  deltas.length === 0
+                    ? h("div", { style: { fontSize: 12, color: "#71717a", fontStyle: "italic" } }, "Seulement 1 execution - intervalle bientot disponible")
+                    : h("div", null,
+                        h("div", { style: { display: "flex", alignItems: "baseline", gap: 6 } },
+                          h("span", { style: { fontSize: 22, fontWeight: 900, color: col.fg } }, Math.round(moyenne)),
+                          h("span", { style: { fontSize: 12, color: "#a1a1aa", fontWeight: 600 } }, "h moyen"),
+                          h("span", { style: { fontSize: 10.5, fontWeight: 700, color: col.fg, marginLeft: "auto" } }, (ecart >= 0 ? "+" : "") + ecart + "%")
+                        ),
+                        h("div", { style: { fontSize: 10.5, color: "#71717a", marginTop: 4 } },
+                          sorted.length + " execution" + (sorted.length > 1 ? "s" : "") +
+                          " - derniere a " + fmtNum(derniereH) + " h" + (derniereD ? " (" + derniereD + ")" : "")
+                        )
+                      )
+                );
+              })
+            )
+          );
+        }()),
         h(Card, { style: { marginBottom: 20 } },
           h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700, color: "#fafafa", display: "flex", alignItems: "center", justifyContent: "space-between" } },
             h(IconText, { icon: "timer", size: 16, color: "#a78bfa" }, "Historique Horametre / KM"),
