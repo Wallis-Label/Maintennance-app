@@ -1493,7 +1493,7 @@
 
       return h("div", null,
         h(PageHeader, { title: h(IconText, { icon: "home", size: 20 }, "Tableau de bord"), subtitle: "Vue d'ensemble de la maintenance" }),
-        _alertesCount > 0 ? h("div", { onClick: function() { onNavigate("alertes-saisies"); }, style: { cursor: "pointer", marginBottom: 18, padding: "12px 16px", borderRadius: 12, background: "linear-gradient(135deg, rgba(244, 63, 94, 0.15), rgba(244, 63, 94, 0.05))", border: "1px solid rgba(244, 63, 94, 0.35)", display: "flex", alignItems: "center", gap: 12 } },
+        _alertesCount > 0 ? h("div", { onClick: function() { onNavigate("administration", { tab: "alertes-saisies" }); }, style: { cursor: "pointer", marginBottom: 18, padding: "12px 16px", borderRadius: 12, background: "linear-gradient(135deg, rgba(244, 63, 94, 0.15), rgba(244, 63, 94, 0.05))", border: "1px solid rgba(244, 63, 94, 0.35)", display: "flex", alignItems: "center", gap: 12 } },
           h("div", { style: { width: 36, height: 36, borderRadius: 10, background: "rgba(244, 63, 94, 0.25)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } }, h(Icon, { name: "alert-triangle", size: 18, color: "#fb7185" })),
           h("div", { style: { flex: 1, minWidth: 0 } },
             h("div", { style: { fontSize: 13.5, fontWeight: 700, color: "#fafafa" } }, _alertesCount + " saisie(s) manquante(s) sur " + _alertesJours + " jour(s)"),
@@ -16080,14 +16080,20 @@
     }
 
     // ─── Ecran Administration (Parametres / Validations / Utilisateurs) ──
-    function EcranAdministration({ onNavigate, pendingCount }) {
+    function EcranAdministration({ onNavigate, pendingCount, initialTab }) {
       const ctx = useAppData();
       const isAdmin = ctx.isAdmin;
-      const [tab, setTab] = useState("parametres");
+      const [tab, setTab] = useState(initialTab || "parametres");
+      // Si initialTab change apres montage (navigation depuis la banniere Accueil), on l'applique
+      React.useEffect(function() {
+        if (initialTab) setTab(initialTab);
+      }, [initialTab]);
       const bugsUnresolved = (ctx.dbBugLogs || []).filter(function(b) { return !b.resolved; }).length;
+      const alertesSaisCount = (ctx.alertesSaisies && ctx.alertesSaisies.count) || 0;
       const tabs = [
         { key: "parametres", label: "Parametres", icon: "sliders-horizontal", adminOnly: false },
         { key: "validations", label: "Validations", icon: "shield-check", adminOnly: true, badge: pendingCount },
+        { key: "alertes-saisies", label: "Alertes saisies", icon: "alert-triangle", adminOnly: true, badge: alertesSaisCount },
         { key: "utilisateurs", label: "Utilisateurs", icon: "user-cog", adminOnly: true },
         { key: "connectes", label: "Qui est en ligne", icon: "users", adminOnly: true },
         { key: "corbeille", label: "Corbeille", icon: "trash-2", adminOnly: true },
@@ -16123,6 +16129,7 @@
         ),
         tab === "parametres" ? h(EcranParametres, null) : null,
         tab === "validations" && isAdmin ? h(EcranValidations, { onNavigate: onNavigate }) : null,
+        tab === "alertes-saisies" && isAdmin ? h(EcranAlertesSaisies, { onNavigate: onNavigate }) : null,
         tab === "utilisateurs" && isAdmin ? h(EcranAdminUtilisateurs, null) : null,
         tab === "connectes" && isAdmin ? h(EcranConnectes, null) : null,
         tab === "corbeille" && isAdmin ? h(EcranCorbeille, null) : null,
@@ -16752,7 +16759,6 @@
         { name: "Tableau de bord", pages: [
           { key: "statistiques", label: "Accueil", lucide: "bar-chart-3" },
           { key: "accueil", label: "Maintenance", lucide: "wrench" },
-          { key: "alertes-saisies", label: "Alertes saisies", lucide: "alert-triangle" },
         ]},
         { name: "Maintenance", pages: [
           { key: "equipements", label: "Equipements", lucide: "settings" },
@@ -16822,7 +16828,7 @@
                 p.key === "pieces" && piecesPending > 0 ? h("span", { style: { marginLeft: "auto", background: "linear-gradient(135deg, #06b6d4, #0891b2)", color: "#fff", fontSize: 10.5, fontWeight: 700, padding: "2px 7px", borderRadius: 999, minWidth: 20, textAlign: "center", boxShadow: "0 2px 8px rgba(6, 182, 212, 0.4)" }, title: "Pieces saisies par les sondeurs non reperees dans le catalogue" }, piecesPending) : null,
                 p.key === "financement" && demandesFinPending > 0 ? h("span", { style: { marginLeft: "auto", background: "linear-gradient(135deg, #f59e0b, #d97706)", color: "#fff", fontSize: 10.5, fontWeight: 700, padding: "2px 7px", borderRadius: 999, minWidth: 20, textAlign: "center", boxShadow: "0 2px 8px rgba(245, 158, 11, 0.4)" } }, demandesFinPending) : null,
                 p.key === "emprunts" && empruntsFinProche > 0 ? h("span", { style: { marginLeft: "auto", background: "linear-gradient(135deg, #fcd34d, #ca8a04)", color: "#1c1917", fontSize: 10.5, fontWeight: 700, padding: "2px 7px", borderRadius: 999, minWidth: 20, textAlign: "center", boxShadow: "0 2px 8px rgba(252, 211, 77, 0.4)" }, title: "Pret(s) arrivant a terme dans les 30 jours" }, empruntsFinProche) : null,
-                p.key === "alertes-saisies" && alertesSaisiesPending > 0 ? h("span", { style: { marginLeft: "auto", background: "linear-gradient(135deg, #f43f5e, #e11d48)", color: "#fff", fontSize: 10.5, fontWeight: 700, padding: "2px 7px", borderRadius: 999, minWidth: 20, textAlign: "center", boxShadow: "0 2px 8px rgba(244, 63, 94, 0.4)" }, title: "Saisies manquantes (rapport / carburant / heures) depuis le 1er juin (jours Avancement non productifs exclus)" }, alertesSaisiesPending) : null
+                p.key === "administration" && alertesSaisiesPending > 0 ? h("span", { style: { marginLeft: pendingCount > 0 ? 4 : "auto", background: "linear-gradient(135deg, #f43f5e, #e11d48)", color: "#fff", fontSize: 10.5, fontWeight: 700, padding: "2px 7px", borderRadius: 999, minWidth: 20, textAlign: "center", boxShadow: "0 2px 8px rgba(244, 63, 94, 0.4)" }, title: "Saisies manquantes (rapport / carburant / heures) depuis le 1er juin" }, alertesSaisiesPending) : null
               );
             })))),
         h("div", { style: { padding: "12px 16px", borderTop: "1px solid rgba(255,255,255,0.06)" } },
@@ -17909,7 +17915,6 @@
           return h(EcranAccueil, { onNavigate: navigate });
         }
         if (currentPage === "accueil") return h(EcranAccueil, { onNavigate: navigate });
-        if (currentPage === "alertes-saisies") return h(EcranAlertesSaisies, { onNavigate: navigate });
         if (currentPage === "plans") return h(EcranPlans, null);
         if (currentPage === "interventions") return h(EcranInterventions, { onNavigate: navigate, editItem: pageData });
         if (currentPage === "equipements") return h(EcranEquipements, { onNavigate: navigate });
@@ -17927,7 +17932,7 @@
         if (currentPage === "primes") return h(EcranPrimes, null);
         if (currentPage === "soumissions") return h(EcranSoumissions, null);
         if (currentPage === "statistiques") return h(EcranStatistiques, null);
-        if (currentPage === "administration") return h(EcranAdministration, { onNavigate: navigate, pendingCount: pendingValidations.length });
+        if (currentPage === "administration") return h(EcranAdministration, { onNavigate: navigate, pendingCount: pendingValidations.length, initialTab: pageData && pageData.tab });
         return h(EcranAccueil, { onNavigate: navigate });
       };
 
