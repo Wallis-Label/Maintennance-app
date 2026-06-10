@@ -1982,8 +1982,44 @@
       const piecesLieesIds = new Set((piecesEquipements || []).filter((l) => l.equipement_id === eq.Id).map((l) => l.piece_id));
       // Auto-match : pieces dont le champ Compatible matche le code de cet engin par prefixe
       const piecesCompatAuto = pieces.filter((p) => p.Compatible && pieceMatchesEquipement(p.Compatible, eq.Title) && !piecesLieesIds.has(p.Id));
-      // Liees = lien explicite (priorite) + auto-match (sans doublon)
-      const piecesLiees = pieces.filter((p) => piecesLieesIds.has(p.Id)).concat(piecesCompatAuto);
+      // Liees brutes = lien explicite (priorite) + auto-match
+      const piecesLieesRaw = pieces.filter((p) => piecesLieesIds.has(p.Id)).concat(piecesCompatAuto);
+      // ── Dedup d'affichage : on regroupe les pieces qui ont le meme nom/reference
+      //    normalise (casse + accents + ponctuation ignorees) pour eviter d'afficher
+      //    plusieurs lignes pour le meme consommable ecrit differemment par les
+      //    sondeurs. Stock somme. Le premier libelle rencontre est conserve.
+      function normalizePieceKey(p) {
+        function norm(s) {
+          return String(s || "").toLowerCase()
+            .normalize("NFD").replace(/[̀-ͯ]/g, "")
+            .replace(/[\s\-_./]+/g, " ")
+            .trim();
+        }
+        var ref = norm(p.Reference);
+        if (ref) return "ref:" + ref;
+        return "des:" + norm(p.Designation);
+      }
+      const piecesLiees = (function() {
+        var groups = {};
+        var order = [];
+        piecesLieesRaw.forEach(function(p) {
+          var k = normalizePieceKey(p);
+          if (!groups[k]) {
+            // On clone pour ne pas muter le state React
+            groups[k] = Object.assign({}, p, { _stockSomme: parseInt(p.Stock) || 0, _doublonsIds: [] });
+            order.push(k);
+          } else {
+            groups[k]._stockSomme += parseInt(p.Stock) || 0;
+            groups[k]._doublonsIds.push(p.Id);
+          }
+        });
+        return order.map(function(k) {
+          var g = groups[k];
+          // On expose Stock comme la somme pour l'affichage (compatible avec le rendu existant)
+          if (g._doublonsIds.length > 0) g.Stock = String(g._stockSomme);
+          return g;
+        });
+      }());
       const piecesNonLiees = pieces.filter((p) => !piecesLieesIds.has(p.Id) && !piecesCompatAuto.find((x) => x.Id === p.Id));
       const piecesNonLieesFilter = piecesNonLiees.filter((p) => !pieceSearch || p.Reference.toLowerCase().includes(pieceSearch.toLowerCase()) || p.Designation.toLowerCase().includes(pieceSearch.toLowerCase()));
 
@@ -2550,7 +2586,58 @@
 
     // ─── Ecran Pieces ───────────────────────────────────────────────────
     function EcranPieces() {
-      const { pieces, addPiece, updatePiece, deletePiece, equipements } = useAppData();
+      const { pieces, addPiece, updatePiece, deletePiece, equipements, showToast } = useAppData();
+      // ── Detection des doublons (nom/reference normalises) ──
+      function normalizePieceKeyPa(p) {
+        function n(s) {
+          return String(s || "").toLowerCase()
+            .normalize("NFD").replace(/[̀-ͯ]/g, "")
+            .replace(/[\s\-_./]+/g, " ").trim();
+        }
+        var r = n(p.Reference);
+        if (r) return "ref:" + r;
+        return "des:" + n(p.Designation);
+      }
+      const doublonsGroups = useMemo(function() {
+        var groups = {};
+        (pieces || []).forEach(function(p) {
+          var k = normalizePieceKeyPa(p);
+          if (!groups[k]) groups[k] = [];
+          groups[k].push(p);
+        });
+        return Object.keys(groups).filter(function(k) { return groups[k].length >= 2; }).map(function(k) {
+          var arr = groups[k].slice().sort(function(a, b) { return (parseInt(b.Stock) || 0) - (parseInt(a.Stock) || 0); });
+          return { key: k, pieces: arr };
+        });
+      }, [pieces]);
+      const nbDoublonsPa = doublonsGroups.reduce(function(s, g) { return s + g.pieces.length - 1; }, 0);
+      const [showFusionModal, setShowFusionModal] = useState(false);
+      const [fusionRunning, setFusionRunning] = useState(false);
+      async function runFusionDoublons() {
+        if (!doublonsGroups.length) return;
+        setFusionRunning(true);
+        try {
+          for (var i = 0; i < doublonsGroups.length; i++) {
+            var grp = doublonsGroups[i];
+            var keeper = grp.pieces[0]; // plus haut stock = keeper
+            var others = grp.pieces.slice(1);
+            var sumStock = grp.pieces.reduce(function(s, p) { return s + (parseInt(p.Stock) || 0); }, 0);
+            // Update keeper : somme des stocks
+            await updatePiece(Object.assign({}, keeper, { Stock: String(sumStock) }));
+            for (var j = 0; j < others.length; j++) {
+              // Reassigne les liens pieces_equipements vers le keeper
+              try { await supabase.from("pieces_equipements").update({ piece_id: keeper.Id }).eq("piece_id", others[j].Id); } catch (e) { console.warn("[fusion] reassign:", e.message); }
+              await deletePiece(others[j].Id);
+            }
+          }
+          if (showToast) showToast(nbDoublonsPa + " doublon(s) fusionne(s)", "success");
+          setShowFusionModal(false);
+        } catch (e) {
+          alert("Erreur fusion : " + e.message);
+        }
+        setFusionRunning(false);
+      }
+
       const allEquipCodes = (equipements || []).map(function(eq) { return eq.Title; }).filter(Boolean).sort();
       const [search, setSearch] = useState("");
       const [categorie, setCategorie] = useState("all");
@@ -2615,6 +2702,47 @@
 
       return h("div", null,
         h(PageHeader, { title: h(IconText, { icon: "package", size: 20 }, "Pieces detachees"), subtitle: pieces.length + " references \u2014 " + fmtMoney(totalValeur) + " en stock", action: tab === "liste" ? h(Button, { onClick: openNew }, "+ Nouvelle piece") : null }),
+        // Bandeau doublons (si detectes)
+        nbDoublonsPa > 0 ? h("div", { onClick: function() { setShowFusionModal(true); }, style: { cursor: "pointer", marginBottom: 18, padding: "12px 16px", borderRadius: 12, background: "linear-gradient(135deg, rgba(245,158,11,0.15), rgba(245,158,11,0.05))", border: "1px solid rgba(245,158,11,0.35)", display: "flex", alignItems: "center", gap: 12 } },
+          h("div", { style: { width: 36, height: 36, borderRadius: 10, background: "rgba(245,158,11,0.25)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } }, h(Icon, { name: "copy", size: 18, color: "#fde68a" })),
+          h("div", { style: { flex: 1, minWidth: 0 } },
+            h("div", { style: { fontSize: 13.5, fontWeight: 700, color: "#fafafa" } }, nbDoublonsPa + " doublon(s) detecte(s) dans " + doublonsGroups.length + " groupe(s)"),
+            h("div", { style: { fontSize: 12, color: "#cbd5e1", marginTop: 2 } }, "Pieces avec meme reference ou meme designation (casse / accents / tirets ignores). Touche pour voir et fusionner.")
+          ),
+          h("div", { style: { fontSize: 12, fontWeight: 600, color: "#fde68a" } }, "Voir > ")
+        ) : null,
+        // Modal fusion
+        showFusionModal ? h(Modal, { onClose: function() { setShowFusionModal(false); }, title: "Fusionner les doublons", size: 720 },
+          h("div", null,
+            h("p", { style: { fontSize: 13, color: "#cbd5e1", margin: "0 0 14px", lineHeight: 1.55 } },
+              "Voici les groupes de pieces qui semblent etre des doublons. Pour chaque groupe, la piece avec le plus haut stock est gardee (en premier), les autres sont fusionnees dans elle (stocks additionnes), puis supprimees. Les liens equipements sont reportes vers la piece gardee."
+            ),
+            h("div", { style: { maxHeight: 380, overflowY: "auto", marginBottom: 14 } },
+              doublonsGroups.map(function(grp, gi) {
+                var sumStock = grp.pieces.reduce(function(s, p) { return s + (parseInt(p.Stock) || 0); }, 0);
+                return h("div", { key: gi, style: { background: "rgba(36,40,60,0.55)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 10, padding: 12, marginBottom: 10 } },
+                  h("div", { style: { fontSize: 12, fontWeight: 700, color: "#a78bfa", marginBottom: 8 } }, "Groupe " + (gi + 1) + " - stock total apres fusion : " + sumStock),
+                  grp.pieces.map(function(p, pi) {
+                    var isKeeper = pi === 0;
+                    return h("div", { key: pi, style: { display: "grid", gridTemplateColumns: "auto 1fr auto auto", gap: 10, padding: "6px 0", borderTop: pi > 0 ? "1px solid rgba(255,255,255,0.05)" : "none", alignItems: "center" } },
+                      h("span", { style: { fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 4, background: isKeeper ? "rgba(34,197,94,0.15)" : "rgba(244,63,94,0.10)", color: isKeeper ? "#86efac" : "#fda4af" } }, isKeeper ? "Gardee" : "Fusionnee"),
+                      h("div", null,
+                        h("div", { style: { fontSize: 13, fontWeight: 600, color: "#fafafa" } }, p.Designation || "(sans designation)"),
+                        h("div", { style: { fontSize: 11, color: "#a1a1aa", marginTop: 2 } }, "Ref : " + (p.Reference || "(aucune)") + (p.Categorie ? " - " + p.Categorie : ""))
+                      ),
+                      h("div", { style: { fontSize: 12, color: "#cbd5e1", whiteSpace: "nowrap" } }, "Stock " + (p.Stock || 0)),
+                      h("div", { style: { fontSize: 11, color: "#71717a", whiteSpace: "nowrap" } }, "ID #" + p.Id)
+                    );
+                  })
+                );
+              })
+            ),
+            h("div", { style: { display: "flex", gap: 10, justifyContent: "flex-end" } },
+              h(Button, { variant: "secondary", onClick: function() { setShowFusionModal(false); } }, "Annuler"),
+              h(Button, { onClick: runFusionDoublons, disabled: fusionRunning }, fusionRunning ? "Fusion..." : h(IconText, { icon: "merge", size: 14 }, "Fusionner " + nbDoublonsPa + " doublon(s)"))
+            )
+          )
+        ) : null,
         h("div", { style: { display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" } },
           tabBtn("liste", "Liste", "list"),
           tabBtn("attente", "Pieces en attente", "inbox"),
