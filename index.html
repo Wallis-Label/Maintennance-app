@@ -9106,45 +9106,107 @@
                 ),
                 isExpanded && h("div", { style: { borderTop: "1px solid rgba(255,255,255,0.07)", paddingTop: 16, marginTop: 12 } },
                   // ── Bloc PREVISIONNEL CHANTIER ──
-                  // Base sur la vitesse moyenne des 14 derniers jours productifs.
-                  // Affiche : jours restants estimes, date fin estimee, CA restant, marge prevue + bandeau de sante.
+                  // Projection basee sur :
+                  //   1. Vitesse par machine = vitesse_14j / moyenne_machines_recente
+                  //   2. Pour chaque jour futur ouvre, on regarde chantier_equipements
+                  //      pour savoir combien de machines sont prevues.
+                  //      Metrage_jour_futur = vitesse_par_machine x nb_machines_prevues
+                  //   3. On accumule jusqu'a couvrir le metrage restant.
+                  // Fallback : si aucun chantier_equipement futur, on suppose le meme
+                  //   nb de machines que recemment.
                   (function() {
                     if (!chantier.metrage || chantier.statut === "A venir") return null;
                     var metresRestants = Math.max(0, chantier.metrage - realise);
                     if (metresRestants === 0) {
                       return h("div", { style: { background: "rgba(34,197,94,0.10)", border: "1px solid rgba(34,197,94,0.30)", borderRadius: 10, padding: 12, marginBottom: 16, color: "#86efac", fontWeight: 600, fontSize: 13, textAlign: "center" } }, "Objectif atteint - chantier termine cote metrage.");
                     }
-                    // Vitesse moyenne sur les 14 derniers jours ouvres (Lun-Jeu)
                     var today = new Date();
                     today.setHours(0, 0, 0, 0);
-                    var totalMet = 0, nbJoursActifs = 0;
+                    // ─ Vitesse moyenne sur les 14 derniers jours productifs (Lun-Jeu) ─
+                    // Recolte aussi le nb de machines actives chaque jour pour normaliser.
+                    function isoOfDate(dd) {
+                      return dd.getFullYear() + "-" + String(dd.getMonth() + 1).padStart(2, "0") + "-" + String(dd.getDate()).padStart(2, "0");
+                    }
+                    // Index machines par jour (relevés journaliers du chantier)
+                    var machinesByDateFut = {};
+                    (ctxAv.dbRelevesJourn || []).forEach(function(r) {
+                      if (!r || String(r.chantierId) !== String(chantier.id)) return;
+                      var d = String(r.dateReleve || "").substring(0, 10);
+                      if (!d) return;
+                      var mk = String(r.equipementId || r.sondeuseCode || "_no_machine").toUpperCase().trim();
+                      if (!machinesByDateFut[d]) machinesByDateFut[d] = {};
+                      machinesByDateFut[d][mk] = 1;
+                    });
+                    var totalMet = 0, nbJoursActifs = 0, sumMachinesRecent = 0;
                     var cursor = new Date(today.getTime());
                     var safe = 0;
                     while (nbJoursActifs < 14 && safe < 80) {
                       cursor.setDate(cursor.getDate() - 1);
                       var dow = cursor.getDay();
                       if (dow >= 1 && dow <= 4) {
-                        var dStr = cursor.getFullYear() + "-" + String(cursor.getMonth() + 1).padStart(2, "0") + "-" + String(cursor.getDate()).padStart(2, "0");
+                        var dStr = isoOfDate(cursor);
                         var v = getDailyMetrageChantier(chantier.id, dStr);
-                        if (v > 0) { totalMet += v; nbJoursActifs++; }
+                        if (v > 0) {
+                          totalMet += v;
+                          nbJoursActifs++;
+                          var ms = machinesByDateFut[dStr];
+                          sumMachinesRecent += (ms ? Object.keys(ms).length : 1);
+                        }
                       }
                       safe++;
                     }
                     var vitesse14j = nbJoursActifs > 0 ? totalMet / nbJoursActifs : 0;
+                    var moyMachinesRecent = nbJoursActifs > 0 ? (sumMachinesRecent / nbJoursActifs) : 1;
+                    var vitesseParMachine = moyMachinesRecent > 0 ? (vitesse14j / moyMachinesRecent) : 0;
                     if (vitesse14j === 0) {
                       return h("div", { style: { background: "rgba(245,158,11,0.10)", border: "1px solid rgba(245,158,11,0.30)", borderRadius: 10, padding: 12, marginBottom: 16, fontSize: 12.5, color: "#fde68a" } },
                         h("strong", null, "Previsionnel indisponible : "), "aucun jour productif sur les 14 derniers Lun-Jeu pour ce chantier. Ajoute des saisies pour activer la projection."
                       );
                     }
-                    var joursRestants = Math.ceil(metresRestants / vitesse14j);
-                    // Date fin estimee : on ajoute jours_restants en sautant Ven/Sam/Dim
+
+                    // ─ Affectations machines futures (chantier_equipements) ─
+                    var cesFuturs = (ctxAv.dbChantierEquipements || []).filter(function(ce) {
+                      return ce && String(ce.chantierId) === String(chantier.id);
+                    }).map(function(ce) {
+                      return {
+                        deb: ce.dateDebut ? new Date(String(ce.dateDebut).substring(0, 10) + "T00:00:00") : null,
+                        fin: ce.dateFin ? new Date(String(ce.dateFin).substring(0, 10) + "T00:00:00") : null,
+                        eq: ce.equipementId
+                      };
+                    }).filter(function(x) { return x.deb && x.fin && !isNaN(x.deb.getTime()) && !isNaN(x.fin.getTime()); });
+                    function nbMachinesPlanifieesLeJour(d) {
+                      if (cesFuturs.length === 0) return null; // pas de planning -> fallback
+                      var c = 0;
+                      var seen = {};
+                      for (var i = 0; i < cesFuturs.length; i++) {
+                        var x = cesFuturs[i];
+                        if (d >= x.deb && d <= x.fin) {
+                          var k = String(x.eq || ("anon-" + i));
+                          if (!seen[k]) { seen[k] = 1; c++; }
+                        }
+                      }
+                      return c;
+                    }
+
+                    // ─ Projection jour par jour : on accumule jusqu'au metrage restant ─
+                    var metresProjetes = 0;
+                    var joursRestants = 0;
                     var dateFinEst = new Date(today.getTime());
-                    var ajoutes = 0;
                     var safe2 = 0;
-                    while (ajoutes < joursRestants && safe2 < 500) {
+                    var useFallback = cesFuturs.length === 0;
+                    while (metresProjetes < metresRestants && safe2 < 800) {
                       dateFinEst.setDate(dateFinEst.getDate() + 1);
                       var dow2 = dateFinEst.getDay();
-                      if (dow2 >= 1 && dow2 <= 4) ajoutes++;
+                      if (dow2 >= 1 && dow2 <= 4) {
+                        var nbMach = useFallback ? moyMachinesRecent : nbMachinesPlanifieesLeJour(dateFinEst);
+                        // Si planning vide ce jour mais on a un planning sur d'autres
+                        // jours : on suppose 0 machine ce jour (pas de projection).
+                        // Pas d'ajout au metrage, mais le compteur avance quand meme.
+                        if (nbMach > 0) {
+                          metresProjetes += vitesseParMachine * nbMach;
+                          joursRestants++;
+                        }
+                      }
                       safe2++;
                     }
                     // Decalage vs date fin contractuelle
@@ -9159,9 +9221,6 @@
                     var prixMetre = chantier.prixMetre || 0;
                     var caTotal = chantier.metrage * prixMetre;
                     var caRestant = metresRestants * prixMetre;
-                    // ── Estimation des couts du chantier ──
-                    // Priorite : depensesPrevues du formulaire chantier si renseigne ;
-                    // sinon, on applique le cout/m global moyen aux metres prevus.
                     var coutTotalPrevu = parseFloat(chantier.depensesPrevues) || 0;
                     var coutSource = "Saisi dans le chantier (depenses prevues)";
                     if (coutTotalPrevu <= 0 && coutMetreGlobalEstime > 0) {
@@ -9173,12 +9232,21 @@
                     var margeEstimee = caTotal - coutTotalPrevu;
                     var margePct = caTotal > 0 ? Math.round((margeEstimee / caTotal) * 100) : 0;
 
-                    // Sante
+                    // ─ Sante : combine retard prevu (fin estimee vs fin contrat) ET
+                    //   avance/retard actuel (badge Total via avanceInfo) ─
+                    var retardMetres = (avanceInfo && avanceInfo.hasData && avanceInfo.avance < 0) ? Math.abs(avanceInfo.avance) : 0;
+                    var seuilRetardMetres = chantier.metrage * 0.05; // 5% du metrage total
+
                     var healthClass = "good", healthMsg = "Sur les rails", healthDetail = "Le chantier devrait tenir ses delais.";
                     if (decalageJ !== null && decalageJ > 7) {
                       healthClass = "warn";
                       healthMsg = "En retard de " + decalageJ + " jours";
                       healthDetail = "Fin estimee : " + dateFinEst.toLocaleDateString("fr-FR") + " au lieu de " + new Date(String(chantier.dateFin).substring(0, 10) + "T00:00:00").toLocaleDateString("fr-FR") + ". Considere renforcer l'equipe.";
+                    } else if (retardMetres > seuilRetardMetres) {
+                      // Retard significatif en metrage (>5% du contrat) meme si la fin estimee tient encore
+                      healthClass = "warn";
+                      healthMsg = "Retard de metrage : " + fmtNum(Math.round(retardMetres)) + " m sous l'objectif";
+                      healthDetail = "Le chantier est en retard sur le rythme contractuel. Si la productivite ne s'ameliore pas, la fin sera decalee.";
                     }
                     if (margePct < 10) {
                       healthClass = "bad";
@@ -9201,13 +9269,15 @@
                       ),
                       // Grid KPIs previsionnels
                       h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10, fontSize: 12 } },
-                        h("div", { style: { background: "rgba(255,255,255,0.04)", padding: 10, borderRadius: 6 } },
+                        h("div", { style: { background: "rgba(255,255,255,0.04)", padding: 10, borderRadius: 6 }, title: "Vitesse moyenne des 14 derniers jours productifs (Lun-Jeu).\nVitesse par machine : " + fmtNum(Math.round(vitesseParMachine)) + " m/jour/machine\nMoyenne machines recentes : " + moyMachinesRecent.toFixed(1) },
                           h("div", { style: { color: "#a1a1aa", marginBottom: 3, fontSize: 10.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4 } }, "Vitesse 14j"),
-                          h("div", { style: { fontWeight: 700, fontSize: 14, color: "#a5b4fc" } }, fmtNum(Math.round(vitesse14j)) + " m/jour")
+                          h("div", { style: { fontWeight: 700, fontSize: 14, color: "#a5b4fc" } }, fmtNum(Math.round(vitesse14j)) + " m/jour"),
+                          h("div", { style: { fontSize: 10, color: "#71717a", marginTop: 3 } }, fmtNum(Math.round(vitesseParMachine)) + " m / machine")
                         ),
-                        h("div", { style: { background: "rgba(255,255,255,0.04)", padding: 10, borderRadius: 6 } },
+                        h("div", { style: { background: "rgba(255,255,255,0.04)", padding: 10, borderRadius: 6 }, title: useFallback ? "Projection : meme nb de machines que recemment (" + moyMachinesRecent.toFixed(1) + ")\nAucun planning machines defini." : "Projection basee sur le planning machines (chantier_equipements)" },
                           h("div", { style: { color: "#a1a1aa", marginBottom: 3, fontSize: 10.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4 } }, "Jours restants"),
-                          h("div", { style: { fontWeight: 700, fontSize: 14, color: healthColor } }, joursRestants + " j ouvres")
+                          h("div", { style: { fontWeight: 700, fontSize: 14, color: healthColor } }, joursRestants + " j ouvres"),
+                          h("div", { style: { fontSize: 10, color: "#71717a", marginTop: 3 } }, useFallback ? "rythme actuel" : "selon planning")
                         ),
                         h("div", { style: { background: "rgba(255,255,255,0.04)", padding: 10, borderRadius: 6 } },
                           h("div", { style: { color: "#a1a1aa", marginBottom: 3, fontSize: 10.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4 } }, "Fin estimee"),
