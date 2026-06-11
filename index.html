@@ -8938,23 +8938,59 @@
                   }
                   return n;
                 }
+                // Helper : compte les jours Lun-Jeu PRODUCTIFS entre 2 dates.
+                // On exclut les jours marques sur Avancement avec un typeJour
+                // != "normal" (ferie, intemperie, panne, conge, maladie, arret,
+                // chommage, non productif). Cela rend l'attendu coherent avec
+                // la realite operationnelle du chantier.
+                function isJourNonProductif(dayStr) {
+                  var byChant = saisies[chantier.id] || saisies[String(chantier.id)];
+                  if (!byChant) return false;
+                  var entry = byChant[dayStr];
+                  if (entry == null) return false;
+                  if (typeof entry === "object") {
+                    var tj = entry.typeJour || "normal";
+                    return tj !== "normal";
+                  }
+                  return false;
+                }
+                function countLunJeuProductifs(d1, d2) {
+                  var n = 0, safe = 0;
+                  var cur = new Date(d1.getTime());
+                  while (cur.getTime() <= d2.getTime() && safe < 5000) {
+                    var dow = cur.getDay();
+                    if (dow >= 1 && dow <= 4) {
+                      var dStr = cur.getFullYear() + "-" + String(cur.getMonth() + 1).padStart(2, "0") + "-" + String(cur.getDate()).padStart(2, "0");
+                      if (!isJourNonProductif(dStr)) n++;
+                    }
+                    cur.setDate(cur.getDate() + 1);
+                    safe++;
+                  }
+                  return n;
+                }
+                // Total : on garde tous les Lun-Jeu calendaires comme cible
+                // contractuelle (on ne peut pas prevoir les intemperies futures)
                 var totalJoursOuvres = countLunJeu(start, end);
                 if (totalJoursOuvres === 0) return { total: null, mois: null };
                 var objectifJour = chantier.metrage / totalJoursOuvres;
 
-                // ── Avance globale (depuis dateDebut jusqu'a min(today, dateFin)) ──
+                // ── Avance globale (depuis date_ref jusqu'a min(today, dateFin)) ──
                 var today = new Date();
                 today.setHours(0, 0, 0, 0);
                 var dateRefGlobal = today < end ? today : end;
                 var totalInfo = null;
                 if (dateRefGlobal >= start) {
-                  var joursEcoules = countLunJeu(start, dateRefGlobal);
-                  var attendu = objectifJour * joursEcoules;
+                  // Jours ecoules PRODUCTIFS (Lun-Jeu - jours marques non productifs sur Avancement)
+                  var joursEcoulesProd = countLunJeuProductifs(start, dateRefGlobal);
+                  var joursEcoulesBrut = countLunJeu(start, dateRefGlobal);
+                  var attendu = objectifJour * joursEcoulesProd;
                   totalInfo = {
                     avance: realise - attendu,
                     attendu: attendu,
                     objectifJour: objectifJour,
-                    joursOuvresEcoules: joursEcoules,
+                    joursOuvresEcoules: joursEcoulesProd,
+                    joursOuvresBruts: joursEcoulesBrut,
+                    joursNonProductifs: joursEcoulesBrut - joursEcoulesProd,
                     totalJoursOuvres: totalJoursOuvres
                   };
                 }
@@ -8974,13 +9010,13 @@
                   var dateRefMois = effEnd;
                   if (today >= effStart && today < effEnd) dateRefMois = today;
                   if (dateRefMois >= effStart) {
-                    var joursMois = countLunJeu(effStart, dateRefMois);
-                    var attenduMois = objectifJour * joursMois;
+                    var joursMoisProd = countLunJeuProductifs(effStart, dateRefMois);
+                    var attenduMois = objectifJour * joursMoisProd;
                     moisInfo = {
                       avance: monthMet - attenduMois,
                       attendu: attenduMois,
                       objectifJour: objectifJour,
-                      joursOuvresMois: joursMois
+                      joursOuvresMois: joursMoisProd
                     };
                   }
                 }
@@ -9011,7 +9047,7 @@
                         style: { fontWeight: 700, padding: "2px 10px", borderRadius: 999, fontSize: 11.5, background: avanceMoisInfo.avance >= 0 ? "rgba(34,197,94,0.15)" : "rgba(244,63,94,0.15)", border: "1px solid " + (avanceMoisInfo.avance >= 0 ? "rgba(34,197,94,0.35)" : "rgba(244,63,94,0.35)"), color: avanceMoisInfo.avance >= 0 ? "#86efac" : "#fda4af" }
                       }, "Mois " + (avanceMoisInfo.avance >= 0 ? "+" : "") + fmtNum(Math.round(avanceMoisInfo.avance)) + " m") : null,
                       avanceInfo ? h("span", {
-                        title: "Objectif " + Math.round(avanceInfo.objectifJour) + " m/jour ouvre (4j/semaine, Lun-Jeu). Attendu a ce jour : " + Math.round(avanceInfo.attendu) + " m sur " + avanceInfo.joursOuvresEcoules + " jours ecoules sur " + avanceInfo.totalJoursOuvres + " jours du chantier.",
+                        title: "Objectif " + Math.round(avanceInfo.objectifJour) + " m/jour ouvre productif (Lun-Jeu).\nAttendu a ce jour : " + Math.round(avanceInfo.attendu) + " m sur " + avanceInfo.joursOuvresEcoules + " jours productifs (" + avanceInfo.joursOuvresBruts + " Lun-Jeu calendaires - " + avanceInfo.joursNonProductifs + " marques non productifs sur Avancement) / " + avanceInfo.totalJoursOuvres + " jours contractuels.",
                         style: { fontWeight: 700, padding: "2px 10px", borderRadius: 999, fontSize: 11.5, background: avanceInfo.avance >= 0 ? "rgba(34,197,94,0.15)" : "rgba(244,63,94,0.15)", border: "1px solid " + (avanceInfo.avance >= 0 ? "rgba(34,197,94,0.35)" : "rgba(244,63,94,0.35)"), color: avanceInfo.avance >= 0 ? "#86efac" : "#fda4af" }
                       }, "Total " + (avanceInfo.avance >= 0 ? "+" : "") + fmtNum(Math.round(avanceInfo.avance)) + " m") : null
                     ),
