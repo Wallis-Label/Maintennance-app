@@ -18210,12 +18210,29 @@
 
         // ─ Machines actives sur ce chantier ─
         var machinesActives = Object.keys(allMachineKeys).map(function(mk) {
-          // Cherche l'equipement correspondant (par sondeuseCode ou id)
           var eq = (ctx.equipements || []).find(function(e) {
             return String(e.Id) === mk || String(e.Title || "").toUpperCase().trim() === mk || String(e.Code || "").toUpperCase().trim() === mk;
           });
           return { key: mk, equipement: eq };
         }).filter(function(x) { return x.equipement; });
+
+        // ─ Sparkline : metrage cumulé des 30 derniers jours ─
+        var spark = [];
+        var sparkCursor = new Date(today.getTime());
+        for (var sk = 0; sk < 30; sk++) {
+          var ds = isoOf(sparkCursor);
+          spark.unshift({ date: ds, val: dailyMet(ds) });
+          sparkCursor.setDate(sparkCursor.getDate() - 1);
+        }
+        // Sparkline vitesse mobile 7j (lisse)
+        var sparkVitesse = spark.map(function(p, i) {
+          var sumV = 0, nb = 0;
+          for (var k = Math.max(0, i - 6); k <= i; k++) {
+            if (spark[k].val > 0) { sumV += spark[k].val; nb++; }
+          }
+          return { date: p.date, val: nb > 0 ? sumV / nb : 0 };
+        });
+        var maxSpark = Math.max.apply(null, spark.map(function(p) { return p.val; })) || 1;
 
         return {
           dDeb: dDeb, dFin: dFin, realise: realise, metresRestants: metresRestants,
@@ -18228,7 +18245,8 @@
           joursOuvresRestants: joursOuvresRestants, joursEffectifsRestants: joursEffectifsRestants,
           cadenceRequise: cadenceRequise, nbMachinesExact: nbMachinesExact, nbMachinesEntier: nbMachinesEntier,
           dateFinEst: dateFinEst, decalageJ: decalageJ, projectionImpossible: projectionImpossible,
-          hasPlanning: hasPlanning, machinesActives: machinesActives
+          hasPlanning: hasPlanning, machinesActives: machinesActives,
+          spark: spark, sparkVitesse: sparkVitesse, maxSpark: maxSpark
         };
       })();
 
@@ -18243,9 +18261,36 @@
       var cardStyle = { background: "rgba(255,255,255,0.04)", padding: 14, borderRadius: 8, border: "1px solid rgba(255,255,255,0.05)" };
 
       // ─ Render ─
-      // Helper : KPI tile (gradient, gros chiffre, icone, hint)
+      // Animation CSS injectee une seule fois (pulsation + shimmer)
+      useEffect(function() {
+        if (document.getElementById("prev-anim-css")) return;
+        var st = document.createElement("style");
+        st.id = "prev-anim-css";
+        st.textContent = "@keyframes prevPulse{0%,100%{opacity:.85}50%{opacity:1}}@keyframes prevShimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}@keyframes prevFadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}.prev-card{animation:prevFadeUp .4s ease-out both}.prev-shimmer{background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,0.06) 50%,transparent 100%);background-size:200% 100%;animation:prevShimmer 3s linear infinite}.prev-pulse{animation:prevPulse 2.4s ease-in-out infinite}";
+        document.head.appendChild(st);
+      }, []);
+
+      // Sparkline SVG (h = React.createElement est dans le scope, on utilise hh/ww pour les dimensions)
+      function Sparkline(points, color, height, width) {
+        if (!points || points.length === 0) return null;
+        var hh = height || 32, ww = width || 100;
+        var max = Math.max.apply(null, points) || 1;
+        var step = ww / Math.max(1, points.length - 1);
+        var pts = points.map(function(v, i) { return (i * step) + "," + (hh - (v / max) * (hh - 2) - 1); }).join(" ");
+        var areaPts = "0," + hh + " " + pts + " " + ww + "," + hh;
+        var lastX = (points.length - 1) * step;
+        var lastY = hh - (points[points.length - 1] / max) * (hh - 2) - 1;
+        return h("svg", { width: ww, height: hh, viewBox: "0 0 " + ww + " " + hh, style: { display: "block" } },
+          h("polyline", { points: areaPts, fill: color, opacity: 0.18, stroke: "none" }),
+          h("polyline", { points: pts, fill: "none", stroke: color, strokeWidth: 1.8, strokeLinejoin: "round", strokeLinecap: "round" }),
+          h("circle", { cx: lastX, cy: lastY, r: 2.5, fill: color })
+        );
+      }
+
+      // Helper : KPI tile (gradient, gros chiffre, icone, mini sparkline)
       function KpiTile(opts) {
         return h("div", {
+          className: "prev-card",
           style: {
             background: opts.gradient || "linear-gradient(135deg, rgba(99,102,241,0.18), rgba(99,102,241,0.04))",
             border: "1px solid " + (opts.border || "rgba(99,102,241,0.30)"),
@@ -18253,21 +18298,30 @@
             padding: "16px 18px",
             position: "relative",
             overflow: "hidden",
-            minHeight: 110,
+            minHeight: 130,
             display: "flex",
             flexDirection: "column",
-            justifyContent: "space-between"
-          }
+            justifyContent: "space-between",
+            transition: "transform 0.2s, box-shadow 0.2s"
+          },
+          onMouseEnter: function(e) { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 12px 24px rgba(0,0,0,0.25)"; },
+          onMouseLeave: function(e) { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = ""; }
         },
-          h("div", { style: { display: "flex", alignItems: "center", gap: 8 } },
-            h("div", { style: { width: 28, height: 28, borderRadius: 8, background: opts.iconBg || "rgba(99,102,241,0.25)", display: "flex", alignItems: "center", justifyContent: "center" } },
-              h(Icon, { name: opts.icon || "circle", size: 14, color: opts.iconColor || "#c4b5fd" })
+          h("div", { style: { display: "flex", alignItems: "center", gap: 8, justifyContent: "space-between" } },
+            h("div", { style: { display: "flex", alignItems: "center", gap: 8 } },
+              h("div", { style: { width: 30, height: 30, borderRadius: 9, background: opts.iconBg || "rgba(99,102,241,0.25)", display: "flex", alignItems: "center", justifyContent: "center" } },
+                h(Icon, { name: opts.icon || "circle", size: 15, color: opts.iconColor || "#c4b5fd" })
+              ),
+              h("div", { style: { fontSize: 10.5, fontWeight: 700, color: opts.labelColor || "#a5b4fc", textTransform: "uppercase", letterSpacing: 0.6 } }, opts.label)
             ),
-            h("div", { style: { fontSize: 10.5, fontWeight: 700, color: opts.labelColor || "#a5b4fc", textTransform: "uppercase", letterSpacing: 0.6 } }, opts.label)
+            opts.badge ? h("span", { style: { fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 999, background: opts.badgeBg || "rgba(255,255,255,0.08)", color: opts.badgeColor || "#cbd5e1" } }, opts.badge) : null
           ),
-          h("div", null,
-            h("div", { style: { fontSize: opts.bigSize || 26, fontWeight: 800, color: opts.valueColor || "#fafafa", lineHeight: 1.1, letterSpacing: "-0.02em" } }, opts.value),
-            opts.hint ? h("div", { style: { fontSize: 11, color: opts.hintColor || "#94a3b8", marginTop: 4 } }, opts.hint) : null
+          h("div", { style: { display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 10 } },
+            h("div", null,
+              h("div", { style: { fontSize: opts.bigSize || 28, fontWeight: 800, color: opts.valueColor || "#fafafa", lineHeight: 1, letterSpacing: "-0.02em" } }, opts.value),
+              opts.hint ? h("div", { style: { fontSize: 11, color: opts.hintColor || "#94a3b8", marginTop: 5 } }, opts.hint) : null
+            ),
+            opts.sparkline ? h("div", { style: { opacity: 0.85 } }, Sparkline(opts.sparkline, opts.sparklineColor || opts.iconColor || "#c4b5fd", 36, 80)) : null
           )
         );
       }
@@ -18306,83 +18360,193 @@
         !chantier ? h("div", { style: { padding: 24, textAlign: "center", color: "#94a3b8" } }, "Aucun chantier disponible.")
         : !data ? h("div", { style: { padding: 24, textAlign: "center", color: "#94a3b8" } }, "Donnees insuffisantes.")
         : h("div", null,
-          // ─ HERO : carte chantier (titre + jauge + barre santé) ─
-          h("div", {
-            style: {
-              background: "linear-gradient(135deg, rgba(99,102,241,0.22) 0%, rgba(192,132,252,0.12) 50%, rgba(34,197,94,0.10) 100%)",
-              border: "1px solid rgba(192,132,252,0.30)",
-              borderRadius: 16,
-              padding: 20,
-              marginBottom: 18,
-              boxShadow: "0 8px 32px rgba(99,102,241,0.15)",
-              display: "flex",
-              flexWrap: "wrap",
-              alignItems: "center",
-              gap: 24,
-              justifyContent: "space-between"
-            }
-          },
-            h("div", { style: { display: "flex", alignItems: "center", gap: 18, flex: "1 1 auto" } },
-              CircleGauge(avancementPct, avancementPct >= 80 ? "#22c55e" : avancementPct >= 50 ? "#a78bfa" : "#fbbf24"),
-              h("div", null,
-                h("div", { style: { fontSize: 11, fontWeight: 700, color: "#c4b5fd", letterSpacing: 0.6, textTransform: "uppercase", marginBottom: 4 } }, "Chantier"),
-                h("div", { style: { fontSize: 22, fontWeight: 800, color: "#fafafa", marginBottom: 2, letterSpacing: "-0.01em" } }, chantier.titre),
-                h("div", { style: { fontSize: 12.5, color: "#a5b4fc", display: "flex", gap: 12, flexWrap: "wrap" } },
-                  h("span", null, chantier.dateDebut ? new Date(chantier.dateDebut).toLocaleDateString("fr-FR") : "?", " → ", chantier.dateFin ? new Date(chantier.dateFin).toLocaleDateString("fr-FR") : "?"),
-                  h("span", { style: { color: "#86efac" } }, "Site : " + (chantier.site || "—")),
-                  h("span", { style: { color: "#fde68a" } }, chantier.statut)
+          // ─ HERO : grande carte immersive avec sparkline en fond + KPIs ─
+          (function() {
+            // Tendance : vitesse moyenne semaine actuelle vs semaine precedente
+            var sparkValsAll = data.sparkVitesse.map(function(p) { return p.val; });
+            var lastWeek = sparkValsAll.slice(-7);
+            var prevWeek = sparkValsAll.slice(-14, -7);
+            var lwAvg = lastWeek.reduce(function(s, v) { return s + v; }, 0) / Math.max(1, lastWeek.filter(function(v) { return v > 0; }).length || 1);
+            var pwAvg = prevWeek.reduce(function(s, v) { return s + v; }, 0) / Math.max(1, prevWeek.filter(function(v) { return v > 0; }).length || 1);
+            var trendPct = pwAvg > 0 ? Math.round((lwAvg - pwAvg) / pwAvg * 100) : 0;
+            var trendUp = trendPct >= 0;
+            var trendColor = trendUp ? "#86efac" : "#fda4af";
+            var trendBg = trendUp ? "rgba(34,197,94,0.18)" : "rgba(244,63,94,0.18)";
+
+            return h("div", {
+              className: "prev-card",
+              style: {
+                position: "relative",
+                overflow: "hidden",
+                background: "linear-gradient(135deg, rgba(99,102,241,0.25) 0%, rgba(192,132,252,0.16) 45%, rgba(34,197,94,0.12) 100%)",
+                border: "1px solid rgba(192,132,252,0.35)",
+                borderRadius: 20,
+                padding: "24px 26px",
+                marginBottom: 18,
+                boxShadow: "0 12px 48px rgba(99,102,241,0.20)"
+              }
+            },
+              // Sparkline 30j en arrière-plan (decoratif)
+              h("div", { style: { position: "absolute", inset: 0, opacity: 0.25, pointerEvents: "none" } },
+                Sparkline(data.spark.map(function(p) { return p.val; }), "#a78bfa", 200, 1200)
+              ),
+              // Shimmer en bandeau haut (anime)
+              h("div", { className: "prev-shimmer", style: { position: "absolute", top: 0, left: 0, right: 0, height: 2 } }),
+              // Contenu principal au-dessus
+              h("div", { style: { position: "relative", display: "flex", flexWrap: "wrap", alignItems: "center", gap: 28, justifyContent: "space-between" } },
+                h("div", { style: { display: "flex", alignItems: "center", gap: 22, flex: "1 1 auto" } },
+                  CircleGauge(avancementPct, avancementPct >= 80 ? "#22c55e" : avancementPct >= 50 ? "#a78bfa" : "#fbbf24"),
+                  h("div", null,
+                    h("div", { style: { fontSize: 10.5, fontWeight: 700, color: "#c4b5fd", letterSpacing: 0.9, textTransform: "uppercase", marginBottom: 6, display: "flex", alignItems: "center", gap: 8 } },
+                      h(Icon, { name: "hard-hat", size: 12, color: "#c4b5fd" }), "Chantier suivi"
+                    ),
+                    h("div", { style: { fontSize: 26, fontWeight: 800, color: "#fafafa", marginBottom: 4, letterSpacing: "-0.02em", lineHeight: 1.1 } }, chantier.titre),
+                    h("div", { style: { fontSize: 12.5, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" } },
+                      h("span", { style: { padding: "3px 9px", borderRadius: 999, background: "rgba(167,139,250,0.18)", color: "#c4b5fd", fontWeight: 600 } }, (chantier.dateDebut ? new Date(chantier.dateDebut).toLocaleDateString("fr-FR") : "?") + " → " + (chantier.dateFin ? new Date(chantier.dateFin).toLocaleDateString("fr-FR") : "?")),
+                      h("span", { style: { padding: "3px 9px", borderRadius: 999, background: "rgba(34,197,94,0.18)", color: "#86efac", fontWeight: 600 } }, "Site : " + (chantier.site || "—")),
+                      h("span", { style: { padding: "3px 9px", borderRadius: 999, background: "rgba(251,191,36,0.18)", color: "#fde68a", fontWeight: 600 } }, chantier.statut),
+                      h("span", { style: { padding: "3px 9px", borderRadius: 999, background: trendBg, color: trendColor, fontWeight: 700, display: "flex", alignItems: "center", gap: 3 } },
+                        h(Icon, { name: trendUp ? "trending-up" : "trending-down", size: 12, color: trendColor }),
+                        (trendUp ? "+" : "") + trendPct + "% vs sem. précedente"
+                      )
+                    )
+                  )
+                ),
+                h("div", { style: { display: "flex", gap: 22, flexWrap: "wrap" } },
+                  h("div", { style: { textAlign: "right", borderRight: "1px solid rgba(255,255,255,0.08)", paddingRight: 22 } },
+                    h("div", { style: { fontSize: 10.5, color: "#94a3b8", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 } }, "Réalisé"),
+                    h("div", { style: { fontSize: 24, fontWeight: 800, color: "#86efac", lineHeight: 1 } }, fmtNum(Math.round(data.realise))),
+                    h("div", { style: { fontSize: 11, color: "#86efac", opacity: 0.75, marginTop: 2 } }, "metres")
+                  ),
+                  h("div", { style: { textAlign: "right", borderRight: "1px solid rgba(255,255,255,0.08)", paddingRight: 22 } },
+                    h("div", { style: { fontSize: 10.5, color: "#94a3b8", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 } }, "Reste"),
+                    h("div", { style: { fontSize: 24, fontWeight: 800, color: "#fde68a", lineHeight: 1 } }, fmtNum(Math.round(data.metresRestants))),
+                    h("div", { style: { fontSize: 11, color: "#fde68a", opacity: 0.75, marginTop: 2 } }, "metres")
+                  ),
+                  h("div", { style: { textAlign: "right" } },
+                    h("div", { style: { fontSize: 10.5, color: "#94a3b8", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 } }, "CA restant"),
+                    h("div", { style: { fontSize: 24, fontWeight: 800, color: "#93c5fd", lineHeight: 1 } }, fmtNum(Math.round(data.metresRestants * (chantier.prixMetre || 0) / 1000))),
+                    h("div", { style: { fontSize: 11, color: "#93c5fd", opacity: 0.75, marginTop: 2 } }, "k XPF")
+                  )
                 )
               )
-            ),
-            h("div", { style: { display: "flex", gap: 18, flexWrap: "wrap" } },
-              h("div", { style: { textAlign: "right" } },
-                h("div", { style: { fontSize: 11, color: "#94a3b8", marginBottom: 2 } }, "Realise"),
-                h("div", { style: { fontSize: 18, fontWeight: 800, color: "#86efac" } }, fmtNum(Math.round(data.realise)) + " m")
-              ),
-              h("div", { style: { textAlign: "right" } },
-                h("div", { style: { fontSize: 11, color: "#94a3b8", marginBottom: 2 } }, "Reste"),
-                h("div", { style: { fontSize: 18, fontWeight: 800, color: "#fde68a" } }, fmtNum(Math.round(data.metresRestants)) + " m")
-              ),
-              h("div", { style: { textAlign: "right" } },
-                h("div", { style: { fontSize: 11, color: "#94a3b8", marginBottom: 2 } }, "CA restant"),
-                h("div", { style: { fontSize: 18, fontWeight: 800, color: "#93c5fd" } }, fmtMoney(data.metresRestants * (chantier.prixMetre || 0)))
-              )
-            )
-          ),
+            );
+          }()),
 
-          // ─ Section 1 : KPIs visuels ─
-          h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12, marginBottom: 18 } },
+          // ─ Section 1 : KPIs visuels (avec sparklines et badges) ─
+          h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 12, marginBottom: 18 } },
             KpiTile({
-              icon: "zap", iconBg: "rgba(168,85,247,0.25)", iconColor: "#d8b4fe",
-              label: "Vitesse actuelle", gradient: "linear-gradient(135deg, rgba(168,85,247,0.15), rgba(168,85,247,0.04))", border: "rgba(168,85,247,0.30)",
+              icon: "zap", iconBg: "rgba(168,85,247,0.30)", iconColor: "#d8b4fe",
+              label: "Vitesse actuelle",
+              gradient: "linear-gradient(135deg, rgba(168,85,247,0.18), rgba(168,85,247,0.04))",
+              border: "rgba(168,85,247,0.35)",
               value: fmtNum(Math.round(data.vitesse14j)) + " m/j",
-              hint: fmtNum(Math.round(data.vitesseParMachine)) + " m/j par machine" + (data.jSolo >= 3 ? " (mesure solo)" : "")
+              hint: fmtNum(Math.round(data.vitesseParMachine)) + " m/j/machine" + (data.jSolo >= 3 ? " (solo)" : ""),
+              badge: "14 j",
+              badgeColor: "#d8b4fe",
+              badgeBg: "rgba(168,85,247,0.20)",
+              sparkline: data.sparkVitesse.map(function(p) { return p.val; }).filter(function(v) { return v > 0; }).slice(-14),
+              sparklineColor: "#d8b4fe"
             }),
             KpiTile({
-              icon: "gauge", iconBg: "rgba(251,191,36,0.25)", iconColor: "#fde68a",
-              label: "Cadence requise", gradient: "linear-gradient(135deg, rgba(251,191,36,0.15), rgba(251,191,36,0.04))", border: "rgba(251,191,36,0.30)",
+              icon: "gauge", iconBg: "rgba(251,191,36,0.30)", iconColor: "#fde68a",
+              label: "Cadence requise",
+              gradient: "linear-gradient(135deg, rgba(251,191,36,0.18), rgba(251,191,36,0.04))",
+              border: "rgba(251,191,36,0.35)",
               value: data.cadenceRequise !== null ? fmtNum(Math.round(data.cadenceRequise)) + " m/j" : "—",
               valueColor: data.cadenceRequise && data.cadenceRequise > data.vitesse14j ? "#fde68a" : "#86efac",
-              hint: "apres " + Math.round(data.tauxAbsence * 100) + " % d'absences hist."
+              hint: "apres " + Math.round(data.tauxAbsence * 100) + " % d'aleas hist.",
+              badge: data.cadenceRequise && data.cadenceRequise > data.vitesse14j * 1.2 ? "⚠ TENDU" : "OK",
+              badgeColor: data.cadenceRequise && data.cadenceRequise > data.vitesse14j * 1.2 ? "#fda4af" : "#86efac",
+              badgeBg: data.cadenceRequise && data.cadenceRequise > data.vitesse14j * 1.2 ? "rgba(244,63,94,0.20)" : "rgba(34,197,94,0.20)"
             }),
             KpiTile({
-              icon: "settings", iconBg: "rgba(99,102,241,0.30)", iconColor: "#c4b5fd",
-              label: "Machines requises", gradient: "linear-gradient(135deg, rgba(99,102,241,0.18), rgba(99,102,241,0.04))", border: "rgba(99,102,241,0.30)",
+              icon: "settings", iconBg: "rgba(99,102,241,0.35)", iconColor: "#c4b5fd",
+              label: "Machines requises",
+              gradient: "linear-gradient(135deg, rgba(99,102,241,0.22), rgba(99,102,241,0.04))",
+              border: "rgba(99,102,241,0.35)",
               value: data.nbMachinesExact !== null ? data.nbMachinesExact.toFixed(2) : "—",
               valueColor: data.nbMachinesEntier > Math.ceil(data.moyMachinesRecent) ? "#fde68a" : "#86efac",
-              hint: data.nbMachinesEntier ? "min " + data.nbMachinesEntier + " machine(s)" : ""
+              hint: data.nbMachinesEntier ? "min " + data.nbMachinesEntier + " machine(s) actives" : "",
+              badge: "actuel : " + data.moyMachinesRecent.toFixed(1),
+              badgeColor: "#c4b5fd",
+              badgeBg: "rgba(99,102,241,0.22)"
             }),
             KpiTile({
-              icon: "calendar-check", iconBg: data.decalageJ > 5 ? "rgba(244,63,94,0.25)" : data.decalageJ < -5 ? "rgba(34,197,94,0.25)" : "rgba(99,102,241,0.25)",
+              icon: "calendar-check",
+              iconBg: data.decalageJ > 5 ? "rgba(244,63,94,0.30)" : data.decalageJ < -5 ? "rgba(34,197,94,0.30)" : "rgba(99,102,241,0.30)",
               iconColor: data.decalageJ > 5 ? "#fda4af" : data.decalageJ < -5 ? "#86efac" : "#c4b5fd",
               label: "Fin estimee",
-              gradient: data.decalageJ > 5 ? "linear-gradient(135deg, rgba(244,63,94,0.15), rgba(244,63,94,0.04))" : data.decalageJ < -5 ? "linear-gradient(135deg, rgba(34,197,94,0.15), rgba(34,197,94,0.04))" : "linear-gradient(135deg, rgba(99,102,241,0.15), rgba(99,102,241,0.04))",
-              border: data.decalageJ > 5 ? "rgba(244,63,94,0.30)" : data.decalageJ < -5 ? "rgba(34,197,94,0.30)" : "rgba(99,102,241,0.30)",
+              gradient: data.decalageJ > 5 ? "linear-gradient(135deg, rgba(244,63,94,0.18), rgba(244,63,94,0.04))" : data.decalageJ < -5 ? "linear-gradient(135deg, rgba(34,197,94,0.18), rgba(34,197,94,0.04))" : "linear-gradient(135deg, rgba(99,102,241,0.18), rgba(99,102,241,0.04))",
+              border: data.decalageJ > 5 ? "rgba(244,63,94,0.35)" : data.decalageJ < -5 ? "rgba(34,197,94,0.35)" : "rgba(99,102,241,0.35)",
               value: data.projectionImpossible ? "—" : data.dateFinEst.toLocaleDateString("fr-FR"),
-              bigSize: 20,
+              bigSize: 21,
               valueColor: data.decalageJ > 5 ? "#fda4af" : data.decalageJ < -5 ? "#86efac" : "#fafafa",
-              hint: data.decalageJ !== null ? (data.decalageJ >= 0 ? "+" + data.decalageJ : data.decalageJ) + " j ouvres vs contrat" : "projection impossible"
+              hint: data.decalageJ !== null ? (data.decalageJ >= 0 ? "+" + data.decalageJ : data.decalageJ) + " j ouvres vs contrat" : "projection impossible",
+              badge: data.decalageJ > 0 ? "RETARD" : data.decalageJ < 0 ? "AVANCE" : "OK",
+              badgeColor: data.decalageJ > 5 ? "#fda4af" : data.decalageJ < -5 ? "#86efac" : "#fde68a",
+              badgeBg: data.decalageJ > 5 ? "rgba(244,63,94,0.22)" : data.decalageJ < -5 ? "rgba(34,197,94,0.22)" : "rgba(251,191,36,0.20)"
             })
+          ),
+
+          // ─ Section : Graphique d'avancement 30 jours (visuel central) ─
+          h("div", {
+            className: "prev-card",
+            style: {
+              background: "rgba(30, 33, 50, 0.55)",
+              border: "1px solid rgba(255,255,255,0.07)",
+              borderRadius: 16,
+              padding: 18,
+              marginBottom: 18,
+              backdropFilter: "blur(20px)",
+              WebkitBackdropFilter: "blur(20px)"
+            }
+          },
+            h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 } },
+              h("div", { style: { display: "flex", alignItems: "center", gap: 10 } },
+                h("div", { style: { width: 32, height: 32, borderRadius: 10, background: "rgba(168,85,247,0.20)", display: "flex", alignItems: "center", justifyContent: "center" } },
+                  h(Icon, { name: "activity", size: 16, color: "#d8b4fe" })
+                ),
+                h("div", null,
+                  h("div", { style: { fontSize: 14, fontWeight: 800, color: "#fafafa" } }, "Activite des 30 derniers jours"),
+                  h("div", { style: { fontSize: 11, color: "#94a3b8" } }, "Metrage quotidien + moyenne mobile 7 jours")
+                )
+              ),
+              h("div", { style: { display: "flex", gap: 14, fontSize: 11, color: "#94a3b8" } },
+                h("span", { style: { display: "flex", alignItems: "center", gap: 4 } }, h("span", { style: { width: 10, height: 10, borderRadius: 2, background: "#818cf8" } }), "Quotidien"),
+                h("span", { style: { display: "flex", alignItems: "center", gap: 4 } }, h("span", { style: { width: 14, height: 2, background: "#86efac" } }), "Moyenne 7j")
+              )
+            ),
+            // Mini bar chart
+            (function() {
+              var W = 600, H = 130;
+              var n = data.spark.length;
+              var bw = (W - 8) / n;
+              var maxV = data.maxSpark;
+              var barCells = data.spark.map(function(p, i) {
+                var bh = maxV > 0 ? (p.val / maxV) * (H - 20) : 0;
+                var x = 4 + i * bw;
+                var col = p.val === 0 ? "rgba(100,116,139,0.20)" : "url(#barGrad)";
+                return h("rect", { key: i, x: x, y: H - 6 - bh, width: bw - 1, height: Math.max(2, bh), fill: col, rx: 1.5 });
+              });
+              // Ligne moyenne 7j
+              var maxAvg = Math.max.apply(null, data.sparkVitesse.map(function(p) { return p.val; })) || 1;
+              var sParts = data.sparkVitesse.map(function(p, i) {
+                var x = 4 + i * bw + bw / 2;
+                var y = H - 6 - (p.val / Math.max(maxV, maxAvg)) * (H - 20);
+                return (i === 0 ? "M" : "L") + x + " " + y;
+              }).join(" ");
+              return h("svg", { width: "100%", height: H, viewBox: "0 0 " + W + " " + H, preserveAspectRatio: "none", style: { display: "block" } },
+                h("defs", null,
+                  h("linearGradient", { id: "barGrad", x1: 0, y1: 0, x2: 0, y2: 1 },
+                    h("stop", { offset: "0%", stopColor: "#a78bfa" }),
+                    h("stop", { offset: "100%", stopColor: "#6366f1" })
+                  )
+                ),
+                barCells,
+                h("path", { d: sParts, stroke: "#86efac", strokeWidth: 2, fill: "none", strokeLinejoin: "round", strokeLinecap: "round" })
+              );
+            }())
           ),
 
           // ─ Section 2 : Pannes potentielles ─
