@@ -4506,8 +4506,47 @@
         if (!nv || nv === p.valeur) return;
         await updateParametre(p.id, { valeur: nv.trim() });
       };
+      // ── Toggle Geolocalisation (parametre system) ──
+      const gpsEnabledParam = parametres.find(function(p) { return p.categorie === "gps_enabled"; });
+      const gpsEnabled = gpsEnabledParam && String(gpsEnabledParam.valeur || "").toLowerCase() === "true";
+      function toggleGpsEnabled() {
+        var nextVal = gpsEnabled ? "false" : "true";
+        if (!gpsEnabled) {
+          var warn = "Activer la geolocalisation des sondeurs ?\n\n" +
+                     "Avant d'activer, verifie que tes salaries sont informes par ecrit (clause contrat ou note signee). " +
+                     "La geoloc se declenche silencieusement a l'ouverture de l'app + a chaque saisie (rapport, heures, etc.). " +
+                     "La premiere fois, le navigateur demandera la permission OS sur le tel du sondeur (obligatoire W3C).\n\nContinuer ?";
+          if (!window.confirm(warn)) return;
+        }
+        if (gpsEnabledParam) {
+          updateParametre(gpsEnabledParam.id, { valeur: nextVal });
+        } else {
+          addParametre({ categorie: "gps_enabled", valeur: nextVal });
+        }
+      }
+
       return h("div", null,
         h(PageHeader, { title: h(IconText, { icon: "settings", size: 20 }, "Parametres"), subtitle: "Gerer les listes deroulantes de l'application" }),
+        // Toggle Geolocalisation
+        h("div", { style: { background: gpsEnabled ? "linear-gradient(135deg, rgba(34,197,94,0.10), rgba(34,197,94,0.04))" : "rgba(36,40,60,0.55)", border: "1px solid " + (gpsEnabled ? "rgba(34,197,94,0.30)" : "rgba(255,255,255,0.07)"), borderRadius: 12, padding: 16, marginBottom: 18, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" } },
+          h("div", { style: { width: 40, height: 40, borderRadius: 10, background: gpsEnabled ? "rgba(34,197,94,0.20)" : "rgba(99,102,241,0.18)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } },
+            h(Icon, { name: "map-pin", size: 20, color: gpsEnabled ? "#86efac" : "#a5b4fc" })
+          ),
+          h("div", { style: { flex: 1, minWidth: 200 } },
+            h("div", { style: { fontSize: 14, fontWeight: 700, color: "#fafafa" } },
+              "Geolocalisation des sondeurs : " + (gpsEnabled ? "ACTIVEE" : "DESACTIVEE")
+            ),
+            h("div", { style: { fontSize: 12, color: "#cbd5e1", marginTop: 3, lineHeight: 1.5 } },
+              gpsEnabled
+                ? "Position capturee a l'ouverture de l'app et a chaque saisie. Avant d'activer en prod, informe tes salaries par ecrit (clause contrat)."
+                : "Tant que ce toggle est OFF, aucune position n'est captee. Quand tu activeras, la 1ere fois le sondeur autorise sur son tel, puis tout est silencieux."
+            )
+          ),
+          h("button", {
+            onClick: toggleGpsEnabled,
+            style: { padding: "10px 18px", borderRadius: 10, border: "1px solid " + (gpsEnabled ? "rgba(244,63,94,0.40)" : "rgba(34,197,94,0.50)"), background: gpsEnabled ? "rgba(244,63,94,0.15)" : "linear-gradient(135deg, #16a34a, #22c55e)", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }
+          }, gpsEnabled ? "Desactiver" : "Activer la geoloc")
+        ),
         h("div", { style: { display: "grid", gridTemplateColumns: "240px 1fr", gap: 16 } },
           // Colonne gauche : categories regroupees par app (Employes / Admin)
           h(Card, { style: { padding: 12 } },
@@ -12389,6 +12428,134 @@
     }
 
     // ─── Ecran Statistiques (dashboard business : forage, productivite, consommables) ──
+    // ─── Carte geoloc sondeurs (Accueil) ──────────────────────────────
+    // Affichee uniquement si parametre gps_enabled = true. Sinon retourne null.
+    function CarteGeolocSondeurs() {
+      var ctx = useAppData();
+      var parametres = ctx.parametres || [];
+      var gpsParam = parametres.find(function(p) { return p.categorie === "gps_enabled"; });
+      var gpsEnabled = gpsParam && String(gpsParam.valeur || "").toLowerCase() === "true";
+      var _positions = useState([]); var positions = _positions[0]; var setPositions = _positions[1];
+      var _personnel = useState([]); var personnel = _personnel[0]; var setPersonnel = _personnel[1];
+      var mapRef = React.useRef(null);
+      var mapInstance = React.useRef(null);
+      var markersRef = React.useRef([]);
+
+      // Fetch positions (les plus recentes par personne) toutes les 30s
+      useEffect(function() {
+        if (!gpsEnabled) return;
+        function fetchPositions() {
+          // Recupere les 24 dernieres heures, dedup par personnel_id (on garde la plus recente)
+          var since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+          supabase.from("gps_positions")
+            .select("personnel_id,personnel_code,latitude,longitude,accuracy_m,sondeuse_code,recorded_at")
+            .gte("recorded_at", since)
+            .order("recorded_at", { ascending: false })
+            .then(function(res) {
+              if (res.error) { console.warn("[carte] fetch:", res.error.message); return; }
+              var seen = {};
+              var lastByPers = [];
+              (res.data || []).forEach(function(p) {
+                var k = String(p.personnel_id || p.personnel_code);
+                if (seen[k]) return;
+                seen[k] = true;
+                lastByPers.push(p);
+              });
+              setPositions(lastByPers);
+            });
+        }
+        // Personnel data depuis parametres pour matcher les noms
+        var persParam = parametres.find(function(p) { return p.categorie === "personnel_data"; });
+        if (persParam && persParam.valeur) {
+          try { setPersonnel(JSON.parse(persParam.valeur) || []); } catch(e) {}
+        }
+        fetchPositions();
+        var t = setInterval(fetchPositions, 30000);
+        return function() { clearInterval(t); };
+      }, [gpsEnabled]);
+
+      // Lookup nom employe via personnel_code (qui matche personnel.code) ou personnel_id (hash)
+      function lookupNom(pos) {
+        if (pos.personnel_code) {
+          var p = personnel.find(function(x) { return x && x.code === pos.personnel_code; });
+          if (p) return ((p.prenom || "") + " " + (p.nom || "")).trim();
+        }
+        if (pos.personnel_id) {
+          var p2 = personnel.find(function(x) { return x && x.code && (typeof strToBigint === "function" ? strToBigint(x.code) === Number(pos.personnel_id) : false); });
+          if (p2) return ((p2.prenom || "") + " " + (p2.nom || "")).trim();
+        }
+        return pos.personnel_code || ("#" + pos.personnel_id);
+      }
+      function statusOf(pos) {
+        var ageMs = Date.now() - new Date(pos.recorded_at).getTime();
+        if (ageMs < 4 * 3600 * 1000) return "active";
+        if (ageMs < 12 * 3600 * 1000) return "pause";
+        return "inactif";
+      }
+      function fmtAgo(pos) {
+        var diff = Math.floor((Date.now() - new Date(pos.recorded_at).getTime()) / 1000);
+        if (diff < 60) return "il y a " + diff + "s";
+        if (diff < 3600) return "il y a " + Math.floor(diff / 60) + " min";
+        if (diff < 86400) return "il y a " + Math.floor(diff / 3600) + "h";
+        return "il y a " + Math.floor(diff / 86400) + "j";
+      }
+
+      // Init Leaflet apres mount
+      useEffect(function() {
+        if (!gpsEnabled || !mapRef.current || typeof L === "undefined") return;
+        if (mapInstance.current) return;
+        mapInstance.current = L.map(mapRef.current, { zoomControl: true }).setView([-21.3, 165.6], 7);
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+          attribution: 'Esri World Imagery', maxZoom: 18
+        }).addTo(mapInstance.current);
+        return function() {
+          if (mapInstance.current) { mapInstance.current.remove(); mapInstance.current = null; }
+        };
+      }, [gpsEnabled, positions.length]);
+
+      // Render markers
+      useEffect(function() {
+        if (!mapInstance.current || typeof L === "undefined") return;
+        markersRef.current.forEach(function(m) { mapInstance.current.removeLayer(m); });
+        markersRef.current = [];
+        positions.forEach(function(pos) {
+          var st = statusOf(pos);
+          var color = st === "active" ? "#22c55e" : st === "pause" ? "#f59e0b" : "#ef4444";
+          var nom = lookupNom(pos);
+          var html = '<div style="width:16px;height:16px;border-radius:50%;background:' + color + ';border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.5);"></div>';
+          var icon = L.divIcon({ html: html, className: '', iconSize: [16, 16], iconAnchor: [8, 8] });
+          var marker = L.marker([pos.latitude, pos.longitude], { icon: icon }).addTo(mapInstance.current);
+          marker.bindPopup(
+            '<div style="color:#222;font-family:Inter,sans-serif;min-width:180px;">' +
+            '<div style="font-weight:700;font-size:14px;margin-bottom:4px;">' + nom + '</div>' +
+            (pos.sondeuse_code ? '<div style="font-size:12px;color:#555;">Machine : <strong>' + pos.sondeuse_code + '</strong></div>' : '') +
+            '<div style="font-size:11px;color:#888;margin-top:6px;">' + fmtAgo(pos) + (pos.accuracy_m ? ' &middot; precision ' + Math.round(pos.accuracy_m) + 'm' : '') + '</div>' +
+            '</div>'
+          );
+          markersRef.current.push(marker);
+        });
+      }, [positions, personnel]);
+
+      if (!gpsEnabled) return null;
+
+      return h("div", { style: { background: "rgba(36, 40, 60, 0.55)", backdropFilter: "blur(20px) saturate(180%)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 14, padding: 20, marginBottom: 24, boxShadow: "0 8px 24px rgba(0,0,0,0.2)" } },
+        h("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, flexWrap: "wrap", gap: 8 } },
+          h("h3", { style: { fontSize: 15, fontWeight: 700, margin: 0, color: "#e5e7eb", display: "flex", alignItems: "center", gap: 8 } },
+            h(Icon, { name: "map-pin", size: 16, color: "#86efac" }),
+            "Sondeurs sur le terrain (" + positions.length + ")"
+          ),
+          h("div", { style: { display: "flex", gap: 12, fontSize: 11.5, color: "#a1a1aa", alignItems: "center" } },
+            h("span", { style: { display: "flex", alignItems: "center", gap: 4 } }, h("span", { style: { width: 10, height: 10, borderRadius: "50%", background: "#22c55e" } }), "Actif <4h"),
+            h("span", { style: { display: "flex", alignItems: "center", gap: 4 } }, h("span", { style: { width: 10, height: 10, borderRadius: "50%", background: "#f59e0b" } }), "Pause"),
+            h("span", { style: { display: "flex", alignItems: "center", gap: 4 } }, h("span", { style: { width: 10, height: 10, borderRadius: "50%", background: "#ef4444" } }), "Inactif >12h")
+          )
+        ),
+        positions.length === 0
+          ? h("div", { style: { padding: 30, textAlign: "center", color: "#71717a", fontSize: 13 } }, "Aucune position recue dans les dernieres 24h. Les sondeurs envoient leur position automatiquement a la prochaine ouverture de l'app.")
+          : h("div", { ref: mapRef, style: { width: "100%", height: 360, borderRadius: 10, border: "1px solid rgba(255,255,255,0.06)" } })
+      );
+    }
+
     function EcranStatistiques() {
       var ctx = useAppData();
       var pieces = ctx.pieces || [];
@@ -13302,6 +13469,8 @@
           subtitle: "Vue d'ensemble des rapports de forage, activites et consommables",
           action: h(Button, { onClick: function() { setRefreshFlag(refreshFlag + 1); }, variant: "secondary" }, h(IconText, { icon: "refresh-cw", size: 14 }, "Actualiser"))
         }),
+        // Carte geolocalisation sondeurs (visible uniquement si gps_enabled = true)
+        h(CarteGeolocSondeurs, null),
         // Filtres
         h("div", { style: { display: "flex", gap: 10, marginBottom: 24, flexWrap: "wrap", alignItems: "center" } },
           h("span", { style: lblStyle }, "Periode"),
