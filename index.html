@@ -7554,42 +7554,34 @@
       var roBg = isSpecial ? TYPE_COLORS[typeJour] || "#f59e0b" : val ? "rgba(34,197,94,0.18)" : isWeekend ? "rgba(255,255,255,0.04)" : "rgba(255,255,255,0.03)";
       var roColor = isSpecial ? "white" : val ? "#86efac" : "#a1a1aa";
       var roBorder = isSpecial ? "1px solid " + (TYPE_COLORS[typeJour] || "#f59e0b") : val ? "1px solid rgba(34,197,94,0.35)" : isWeekend ? "1px solid rgba(255,255,255,0.06)" : "1px solid rgba(255,255,255,0.07)";
-      // ─ Meteo : remplace la ligne 'machineLabel' (souvent vide) par l'emoji
-      //   meteo bien visible + petite teinte de fond si intemperies
+      // ─ Meteo : badge en coin (absolute) pour NE PAS toucher au layout existant
+      //   -> tous les chantiers gardent la meme structure de cellule
+      //   La teinte de fond intemperies reste mais devient tres subtile.
       var meteoDay = props.meteoDay || null;
       var meteoBgColor = meteoDay ? meteoBg(meteoDay) : null;
       var cellBg = meteoBgColor || bgColor;
       var meteoTitle = meteoDay ? ("Meteo : " + meteoEmoji(meteoDay.code, meteoDay.prec) + " · " + (meteoDay.prec || 0).toFixed(1) + " mm pluie · " + (meteoDay.tMax != null ? Math.round(meteoDay.tMax) + "°C · " : "") + Math.round(meteoDay.wind || 0) + " km/h vent") : "";
-
-      // Contenu de la 1ere ligne (haut de cellule) :
-      // - Si meteoDay + pas de machineLabel : emoji meteo centre
-      // - Si machineLabel : nom machine (priorite, l'emoji va a cote en mini)
-      // - Sinon : vide
-      var topRowContent;
-      if (meteoDay && !machineLabel) {
-        topRowContent = h("div", {
-          style: { fontSize: 13, lineHeight: "14px", color: "#e5e7eb" }
-        }, meteoEmoji(meteoDay.code, meteoDay.prec));
-      } else if (machineLabel) {
-        topRowContent = h("div", {
-          title: "Sondeuse: " + machineLabel,
-          style: { display: "flex", alignItems: "center", justifyContent: "center", gap: 2, fontSize: 9, fontWeight: 700, lineHeight: "14px", color: "#a5b4fc", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", letterSpacing: 0.3 }
-        },
-          meteoDay ? h("span", { style: { fontSize: 9, marginRight: 2 } }, meteoEmoji(meteoDay.code, meteoDay.prec)) : null,
-          machineLabel
-        );
-      } else {
-        topRowContent = h("div", { style: { height: 14, color: "rgba(255,255,255,0.04)" } }, "—");
-      }
 
       return h("div", {
         onClick: effectiveBrush ? handleBrushClick : undefined,
         onMouseDown: effectiveBrush ? function(e) { e.preventDefault(); if (props.onPaintStart) props.onPaintStart(); handleBrushClick(); } : undefined,
         onMouseEnter: effectiveBrush && props.isPainting ? handleBrushClick : undefined,
         title: meteoTitle,
-        style: { width: 48, flexShrink: 0, borderRight: "1px solid rgba(255,255,255,0.06)", background: cellBg, textAlign: "center", cursor: effectiveBrush ? "pointer" : "default" }
+        style: { width: 48, flexShrink: 0, borderRight: "1px solid rgba(255,255,255,0.06)", background: cellBg, textAlign: "center", cursor: effectiveBrush ? "pointer" : "default", position: "relative" }
       },
-        h("div", { style: { height: 14, lineHeight: "14px" } }, topRowContent),
+        // Badge meteo en coin haut-droit, absolute -> n'affecte jamais le layout
+        meteoDay ? h("div", {
+          style: {
+            position: "absolute",
+            top: 1,
+            right: 2,
+            fontSize: 11,
+            lineHeight: "12px",
+            pointerEvents: "none",
+            opacity: 0.95
+          }
+        }, meteoEmoji(meteoDay.code, meteoDay.prec)) : null,
+        h("div", { title: machineLabel ? "Sondeuse: " + machineLabel : "", style: { height: 14, fontSize: 9, fontWeight: 700, lineHeight: "14px", color: machineLabel ? "#a5b4fc" : "rgba(255,255,255,0.04)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", letterSpacing: 0.3 } }, machineLabel || "—"),
         h("div", { style: { height: 20, fontSize: 9, fontWeight: 600, lineHeight: "20px", color: isWeekend ? "#71717a" : isToday ? "#7c3aed" : "#a1a1aa" } }, dayLetter),
         h("div", { style: { height: 18, fontSize: 11, fontWeight: 700, lineHeight: "18px", borderBottom: "1px solid rgba(255,255,255,0.07)", color: isToday ? "#7c3aed" : "#e5e7eb" } }, String(dayNum)),
         readOnly ?
