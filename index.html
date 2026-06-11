@@ -8100,6 +8100,64 @@
       );
     }
 
+    // ─── Helpers visuels reutilisables (KpiTile, Sparkline) ───────────────
+    // Utilises sur les ecrans Avancement et Previsionnel pour avoir le meme look.
+    // Sparkline SVG : ligne lissee + zone, point au dernier point
+    function Sparkline(points, color, height, width) {
+      if (!points || points.length < 2) return null;
+      var hh = height || 30, ww = width || 60;
+      var max = Math.max.apply(null, points) || 1;
+      var step = ww / Math.max(1, points.length - 1);
+      var pts = points.map(function(v, i) { return (i * step) + "," + (hh - (v / max) * (hh - 2) - 1); }).join(" ");
+      var areaPts = "0," + hh + " " + pts + " " + ww + "," + hh;
+      var lastX = (points.length - 1) * step;
+      var lastY = hh - (points[points.length - 1] / max) * (hh - 2) - 1;
+      return h("svg", { width: ww, height: hh, viewBox: "0 0 " + ww + " " + hh, style: { display: "block" } },
+        h("polyline", { points: areaPts, fill: color, opacity: 0.18, stroke: "none" }),
+        h("polyline", { points: pts, fill: "none", stroke: color, strokeWidth: 1.8, strokeLinejoin: "round", strokeLinecap: "round" }),
+        h("circle", { cx: lastX, cy: lastY, r: 2.5, fill: color })
+      );
+    }
+
+    // KPI tile glassmorphism (accent gauche colore + valeur + hint + badge + sparkline)
+    function KpiTile(opts) {
+      return h("div", {
+        style: {
+          background: "rgba(36, 40, 60, 0.55)",
+          backdropFilter: "blur(20px) saturate(180%)",
+          WebkitBackdropFilter: "blur(20px) saturate(180%)",
+          border: "1px solid rgba(255,255,255,0.07)",
+          borderLeft: "3px solid " + (opts.accent || "#818cf8"),
+          borderRadius: 12,
+          padding: "14px 16px",
+          minHeight: 110,
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "space-between",
+          boxShadow: "0 8px 24px rgba(0,0,0,0.2)",
+          transition: "transform 0.2s, box-shadow 0.2s"
+        },
+        onMouseEnter: function(e) { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 12px 32px rgba(0,0,0,0.3)"; },
+        onMouseLeave: function(e) { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = "0 8px 24px rgba(0,0,0,0.2)"; },
+        title: opts.tooltip || ""
+      },
+        h("div", { style: { display: "flex", alignItems: "center", gap: 8, justifyContent: "space-between" } },
+          h("div", { style: { display: "flex", alignItems: "center", gap: 6 } },
+            h(Icon, { name: opts.icon || "circle", size: 13, color: opts.accent || "#a1a1aa" }),
+            h("div", { style: { fontSize: 10, fontWeight: 600, color: "#a1a1aa", textTransform: "uppercase", letterSpacing: 0.5 } }, opts.label)
+          ),
+          opts.badge ? h("span", { style: { fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 3, background: opts.badgeBg || "rgba(255,255,255,0.05)", color: opts.badgeColor || "#cbd5e1", border: "1px solid " + (opts.badgeBg || "rgba(255,255,255,0.08)") } }, opts.badge) : null
+        ),
+        h("div", { style: { display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 10 } },
+          h("div", null,
+            h("div", { style: { fontSize: opts.bigSize || 22, fontWeight: 700, color: opts.valueColor || "#fafafa", lineHeight: 1, letterSpacing: "-0.01em" } }, opts.value),
+            opts.hint ? h("div", { style: { fontSize: 11, color: "#a1a1aa", marginTop: 5 } }, opts.hint) : null
+          ),
+          opts.sparkline && opts.sparkline.length > 1 ? h("div", { style: { opacity: 0.85 } }, Sparkline(opts.sparkline, opts.accent || "#818cf8", 30, 60)) : null
+        )
+      );
+    }
+
     // ─── EcranAvancement ────────────────────────────────────────────────
     function EcranAvancement() {
       var ctxAv = useAppData();
@@ -9457,66 +9515,98 @@
                         h("div", { style: { fontWeight: 700, marginBottom: 2 } }, healthMsg),
                         h("div", { style: { fontSize: 11.5, opacity: 0.9 } }, healthDetail)
                       ),
-                      // Grid KPIs previsionnels
-                      h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10, fontSize: 12 } },
-                        h("div", { style: { background: "rgba(255,255,255,0.04)", padding: 10, borderRadius: 6 }, title: "Vitesse moyenne des 14 derniers jours productifs (Lun-Jeu).\n" +
-                          "Vitesse par machine : " + fmtNum(Math.round(vitesseParMachine)) + " m/jour/machine\n" +
-                          (jSolo >= 3 ? "  -> mesuree sur " + jSolo + " jours avec 1 seule machine" : "  -> mesuree en repartissant les jours multi-machines") + "\n" +
-                          (jSolo > 0 ? "Jours-solo (1 machine) : " + jSolo + " j, vitesse = " + fmtNum(Math.round(vitesseParMachineSolo || 0)) + " m/j\n" : "") +
-                          (machinesMulti > 0 ? "Jours-multi (>=2 machines) : " + (nbJoursActifs - jSolo) + " j, vitesse/machine = " + fmtNum(Math.round(vitesseParMachineMulti || 0)) + " m/j\n" : "") +
-                          "Moyenne machines recentes : " + moyMachinesRecent.toFixed(1) },
-                          h("div", { style: { color: "#a1a1aa", marginBottom: 3, fontSize: 10.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4 } }, "Vitesse 14j"),
-                          h("div", { style: { fontWeight: 700, fontSize: 14, color: "#a5b4fc" } }, fmtNum(Math.round(vitesse14j)) + " m/jour"),
-                          h("div", { style: { fontSize: 10, color: "#71717a", marginTop: 3 } }, fmtNum(Math.round(vitesseParMachine)) + " m / machine")
-                        ),
-                        h("div", { style: { background: "rgba(255,255,255,0.04)", padding: 10, borderRadius: 6 }, title: useFallback ? "Projection : meme nb de machines que recemment (" + moyMachinesRecent.toFixed(1) + ")\nAucun planning machines defini." : "Projection basee sur le planning machines (chantier_equipements)" },
-                          h("div", { style: { color: "#a1a1aa", marginBottom: 3, fontSize: 10.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4 } }, "Jours restants"),
-                          h("div", { style: { fontWeight: 700, fontSize: 14, color: healthColor } }, joursRestants + " j ouvres"),
-                          h("div", { style: { fontSize: 10, color: "#71717a", marginTop: 3 } }, useFallback ? "rythme actuel" : "selon planning")
-                        ),
-                        // ── Cadence requise pour tenir la deadline contractuelle ──
-                        cadenceRequise !== null ? h("div", {
-                          style: { background: "rgba(255,255,255,0.04)", padding: 10, borderRadius: 6 },
-                          title: "Combien de metres / jour productif il faut produire pour finir avant la date contractuelle (" + (chantier.dateFin ? new Date(String(chantier.dateFin).substring(0, 10) + "T00:00:00").toLocaleDateString("fr-FR") : "?") + ").\n" +
-                            "- Metres restants : " + fmtNum(Math.round(metresRestants)) + " m\n" +
-                            "- Jours ouvres restants jusqu'a date contrat : " + joursOuvresRestantsContrat + " j (Lun-Jeu bruts)\n" +
-                            "- Taux d'absence historique : " + Math.round(tauxAbsence * 100) + "% (feries/intemperies/pannes/arrets observes sur le chantier)\n" +
-                            "- Jours productifs effectifs estimes : " + Math.round(joursOuvresRestantsContrat * (1 - tauxAbsence)) + " j\n" +
-                            "- Machines moyenne prevues d'ici la fin : " + nbMachinesMoyenFutur.toFixed(1) + "\n" +
-                            "- Vitesse actuelle 14j : " + fmtNum(Math.round(vitesse14j)) + " m/jour\n" +
-                            (cadenceCommentaire ? "Statut : " + cadenceCommentaire : "")
-                        },
-                          h("div", { style: { color: "#a1a1aa", marginBottom: 3, fontSize: 10.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4 } }, "Cadence requise"),
-                          h("div", { style: { fontWeight: 700, fontSize: 14, color: cadenceColor } }, fmtNum(Math.round(cadenceRequise)) + " m/jour"),
-                          h("div", { style: { fontSize: 10, color: "#71717a", marginTop: 3 } }, cadenceParMachine !== null ? fmtNum(Math.round(cadenceParMachine)) + " m / machine" : "pour tenir le delai")
-                        ) : null,
-                        // ── Nb de machines requises pour tenir la deadline ──
-                        nbMachinesRequises !== null ? h("div", {
-                          style: { background: "rgba(255,255,255,0.04)", padding: 10, borderRadius: 6 },
-                          title: "Nombre de sondeuses a maintenir d'ici la date contractuelle (" + (chantier.dateFin ? new Date(String(chantier.dateFin).substring(0, 10) + "T00:00:00").toLocaleDateString("fr-FR") : "?") + ").\n" +
-                            "Formule : ceil(cadence_requise / vitesse_par_machine)\n" +
-                            "- Cadence requise : " + fmtNum(Math.round(cadenceRequise)) + " m/jour productif (apres deduction " + Math.round(tauxAbsence * 100) + "% d'absences historiques)\n" +
-                            "- Vitesse par machine : " + fmtNum(Math.round(vitesseParMachine)) + " m/jour/machine " + (jSolo >= 3 ? "(mesuree sur " + jSolo + " jours solo)" : "(moyenne ponderee)") + "\n" +
-                            "- Valeur exacte (decimale) : " + nbMachinesRequisesExact.toFixed(2) + "\n" +
-                            (machinesCommentaire ? "Statut : " + machinesCommentaire : "")
-                        },
-                          h("div", { style: { color: "#a1a1aa", marginBottom: 3, fontSize: 10.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4 } }, "Machines requises"),
-                          h("div", { style: { fontWeight: 700, fontSize: 14, color: machinesColor } }, nbMachinesRequisesExact.toFixed(2)),
-                          h("div", { style: { fontSize: 10, color: "#71717a", marginTop: 3 } }, "min " + nbMachinesRequises + (nbMachinesRequises > 1 ? " machines" : " machine") + " a maintenir")
-                        ) : null,
-                        h("div", { style: { background: "rgba(255,255,255,0.04)", padding: 10, borderRadius: 6 } },
-                          h("div", { style: { color: "#a1a1aa", marginBottom: 3, fontSize: 10.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4 } }, "Fin estimee"),
-                          h("div", { style: { fontWeight: 700, fontSize: 13.5, color: healthColor } }, projectionImpossible ? "—" : dateFinEst.toLocaleDateString("fr-FR"))
-                        ),
-                        h("div", { style: { background: "rgba(255,255,255,0.04)", padding: 10, borderRadius: 6 } },
-                          h("div", { style: { color: "#a1a1aa", marginBottom: 3, fontSize: 10.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4 } }, "CA restant"),
-                          h("div", { style: { fontWeight: 700, fontSize: 14, color: "#86efac" } }, fmtMoney(caRestant))
-                        ),
-                        h("div", { style: { background: "rgba(255,255,255,0.04)", padding: 10, borderRadius: 6 }, title: "Cout total estime : " + fmtMoney(coutTotalPrevu) + "\nSource : " + coutSource },
-                          h("div", { style: { color: "#a1a1aa", marginBottom: 3, fontSize: 10.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4 } }, "Marge prevue"),
-                          h("div", { style: { fontWeight: 700, fontSize: 14, color: margePct >= 20 ? "#86efac" : margePct >= 10 ? "#fde68a" : "#fda4af" } }, coutTotalPrevu > 0 ? fmtMoney(margeEstimee) + " (" + margePct + "%)" : "N/A"),
-                          h("div", { style: { fontSize: 10, color: "#71717a", marginTop: 3 } }, "Cout total : " + (coutTotalPrevu > 0 ? fmtMoney(coutTotalPrevu) : "indispo"))
-                        )
+                      // Grid KPIs previsionnels (style KpiTile glassmorphism, identique a EcranPrevisionnel)
+                      // Sparkline 14j construite a la volee
+                      (function() {
+                        var sparkPts = [];
+                        var cursor = new Date(today.getTime());
+                        for (var i = 0; i < 14; i++) {
+                          cursor.setDate(cursor.getDate() - 1);
+                          var dow = cursor.getDay();
+                          if (dow >= 1 && dow <= 4) {
+                            var dStr = cursor.getFullYear() + "-" + String(cursor.getMonth() + 1).padStart(2, "0") + "-" + String(cursor.getDate()).padStart(2, "0");
+                            var v = getDailyMetrageChantier(chantier.id, dStr);
+                            if (v > 0) sparkPts.unshift(v);
+                          }
+                        }
+                        return h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 } },
+                          KpiTile({
+                            icon: "zap", accent: "#a78bfa",
+                            label: "Vitesse actuelle",
+                            value: fmtNum(Math.round(vitesse14j)) + " m/j",
+                            valueColor: "#a5b4fc",
+                            hint: fmtNum(Math.round(vitesseParMachine)) + " m/j/machine" + (jSolo >= 3 ? " (solo)" : ""),
+                            badge: "14 j",
+                            badgeColor: "#a5b4fc",
+                            badgeBg: "rgba(99,102,241,0.15)",
+                            sparkline: sparkPts
+                          }),
+                          cadenceRequise !== null ? KpiTile({
+                            icon: "gauge", accent: "#fbbf24",
+                            label: "Cadence requise",
+                            value: fmtNum(Math.round(cadenceRequise)) + " m/j",
+                            valueColor: cadenceColor,
+                            hint: "après " + Math.round(tauxAbsence * 100) + " % d'aléas hist.",
+                            badge: cadenceRequise > vitesse14j * 1.2 ? "Tendu" : "OK",
+                            badgeColor: cadenceRequise > vitesse14j * 1.2 ? "#fda4af" : "#86efac",
+                            badgeBg: cadenceRequise > vitesse14j * 1.2 ? "rgba(244,63,94,0.15)" : "rgba(34,197,94,0.15)"
+                          }) : null,
+                          nbMachinesRequises !== null ? KpiTile({
+                            icon: "settings", accent: "#818cf8",
+                            label: "Machines requises",
+                            value: nbMachinesRequisesExact.toFixed(2),
+                            valueColor: machinesColor,
+                            hint: "min " + nbMachinesRequises + " machine(s)",
+                            badge: "actuel : " + moyMachinesRecent.toFixed(1),
+                            badgeColor: "#a5b4fc",
+                            badgeBg: "rgba(99,102,241,0.15)"
+                          }) : null,
+                          KpiTile({
+                            icon: "calendar-check",
+                            accent: decalageJ != null && decalageJ > 5 ? "#f43f5e" : decalageJ != null && decalageJ < -5 ? "#22c55e" : "#818cf8",
+                            label: "Fin estimée",
+                            value: projectionImpossible ? "—" : dateFinEst.toLocaleDateString("fr-FR"),
+                            bigSize: 16,
+                            valueColor: decalageJ != null && decalageJ > 5 ? "#fda4af" : decalageJ != null && decalageJ < -5 ? "#86efac" : "#fafafa",
+                            hint: decalageJ !== null ? (decalageJ >= 0 ? "+" + decalageJ : decalageJ) + " j ouvrés vs contrat" : "projection impossible",
+                            badge: decalageJ > 0 ? "Retard" : decalageJ < 0 ? "Avance" : "OK",
+                            badgeColor: decalageJ > 5 ? "#fda4af" : decalageJ < -5 ? "#86efac" : "#fde68a",
+                            badgeBg: decalageJ > 5 ? "rgba(244,63,94,0.15)" : decalageJ < -5 ? "rgba(34,197,94,0.15)" : "rgba(251,191,36,0.15)"
+                          }),
+                          KpiTile({
+                            icon: "clock", accent: "#22c55e",
+                            label: "Jours restants",
+                            value: joursRestants + " j",
+                            valueColor: healthColor,
+                            hint: useFallback ? "rythme actuel" : "selon planning",
+                            badge: useFallback ? "estimation" : "planifié",
+                            badgeColor: useFallback ? "#a1a1aa" : "#86efac",
+                            badgeBg: useFallback ? "rgba(255,255,255,0.04)" : "rgba(34,197,94,0.15)"
+                          }),
+                          KpiTile({
+                            icon: "wallet", accent: "#22d3ee",
+                            label: "CA restant",
+                            value: fmtNum(Math.round(caRestant / 1000)) + " k",
+                            valueColor: "#67e8f9",
+                            hint: "XPF (" + fmtNum(Math.round(metresRestants)) + " m × " + fmtNum(prixMetre) + ")",
+                            badge: "à facturer",
+                            badgeColor: "#67e8f9",
+                            badgeBg: "rgba(34,211,238,0.15)"
+                          }),
+                          KpiTile({
+                            icon: "trending-up",
+                            accent: margePct >= 20 ? "#22c55e" : margePct >= 10 ? "#fbbf24" : "#f43f5e",
+                            label: "Marge prévue",
+                            value: coutTotalPrevu > 0 ? fmtNum(Math.round(margeEstimee / 1000)) + " k" : "N/A",
+                            valueColor: margePct >= 20 ? "#86efac" : margePct >= 10 ? "#fde68a" : "#fda4af",
+                            hint: coutTotalPrevu > 0 ? margePct + " % · coût " + fmtNum(Math.round(coutTotalPrevu / 1000)) + " k" : "renseigne dépenses prévues",
+                            badge: coutTotalPrevu > 0 ? (margePct >= 20 ? "Bonne" : margePct >= 10 ? "Limite" : "Risque") : "—",
+                            badgeColor: margePct >= 20 ? "#86efac" : margePct >= 10 ? "#fde68a" : "#fda4af",
+                            badgeBg: margePct >= 20 ? "rgba(34,197,94,0.15)" : margePct >= 10 ? "rgba(251,191,36,0.15)" : "rgba(244,63,94,0.15)",
+                            tooltip: coutSource
+                          })
+                        );
+                      }())
                       )
                     );
                   }()),
@@ -18273,61 +18363,8 @@
       // ─ Hover state pour le chart ─
       var _hover = useState(null); var hoverIdx = _hover[0]; var setHoverIdx = _hover[1];
 
-      // Sparkline SVG (h = React.createElement est dans le scope, on utilise hh/ww pour les dimensions)
-      function Sparkline(points, color, height, width) {
-        if (!points || points.length === 0) return null;
-        var hh = height || 32, ww = width || 100;
-        var max = Math.max.apply(null, points) || 1;
-        var step = ww / Math.max(1, points.length - 1);
-        var pts = points.map(function(v, i) { return (i * step) + "," + (hh - (v / max) * (hh - 2) - 1); }).join(" ");
-        var areaPts = "0," + hh + " " + pts + " " + ww + "," + hh;
-        var lastX = (points.length - 1) * step;
-        var lastY = hh - (points[points.length - 1] / max) * (hh - 2) - 1;
-        return h("svg", { width: ww, height: hh, viewBox: "0 0 " + ww + " " + hh, style: { display: "block" } },
-          h("polyline", { points: areaPts, fill: color, opacity: 0.18, stroke: "none" }),
-          h("polyline", { points: pts, fill: "none", stroke: color, strokeWidth: 1.8, strokeLinejoin: "round", strokeLinecap: "round" }),
-          h("circle", { cx: lastX, cy: lastY, r: 2.5, fill: color })
-        );
-      }
-
-      // Helper : KPI tile - thème glassmorphism cohérent avec le reste de l'app
-      function KpiTile(opts) {
-        return h("div", {
-          className: "prev-card",
-          style: {
-            background: "rgba(36, 40, 60, 0.55)",
-            backdropFilter: "blur(20px) saturate(180%)",
-            WebkitBackdropFilter: "blur(20px) saturate(180%)",
-            border: "1px solid rgba(255,255,255,0.07)",
-            borderLeft: "3px solid " + (opts.accent || "#818cf8"),
-            borderRadius: 12,
-            padding: "14px 16px",
-            minHeight: 110,
-            display: "flex",
-            flexDirection: "column",
-            justifyContent: "space-between",
-            boxShadow: "0 8px 24px rgba(0,0,0,0.2)",
-            transition: "transform 0.2s, box-shadow 0.2s"
-          },
-          onMouseEnter: function(e) { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 12px 32px rgba(0,0,0,0.3)"; },
-          onMouseLeave: function(e) { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = "0 8px 24px rgba(0,0,0,0.2)"; }
-        },
-          h("div", { style: { display: "flex", alignItems: "center", gap: 8, justifyContent: "space-between" } },
-            h("div", { style: { display: "flex", alignItems: "center", gap: 6 } },
-              h(Icon, { name: opts.icon || "circle", size: 13, color: opts.accent || "#a1a1aa" }),
-              h("div", { style: { fontSize: 10, fontWeight: 600, color: "#a1a1aa", textTransform: "uppercase", letterSpacing: 0.5 } }, opts.label)
-            ),
-            opts.badge ? h("span", { style: { fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 3, background: opts.badgeBg || "rgba(255,255,255,0.05)", color: opts.badgeColor || "#cbd5e1", border: "1px solid " + (opts.badgeBg || "rgba(255,255,255,0.08)") } }, opts.badge) : null
-          ),
-          h("div", { style: { display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 10 } },
-            h("div", null,
-              h("div", { style: { fontSize: opts.bigSize || 22, fontWeight: 700, color: opts.valueColor || "#fafafa", lineHeight: 1, letterSpacing: "-0.01em" } }, opts.value),
-              opts.hint ? h("div", { style: { fontSize: 11, color: "#a1a1aa", marginTop: 5 } }, opts.hint) : null
-            ),
-            opts.sparkline && opts.sparkline.length > 1 ? h("div", { style: { opacity: 0.85 } }, Sparkline(opts.sparkline, opts.accent || "#818cf8", 30, 60)) : null
-          )
-        );
-      }
+      // Note : KpiTile et Sparkline sont definis au niveau module (avant
+      // EcranAvancement) pour etre reutilises ici sans duplication.
 
       // Helper : jauge circulaire (% completion)
       function CircleGauge(pct, color) {
