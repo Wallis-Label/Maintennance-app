@@ -9820,7 +9820,8 @@
                       if (!pMachByDate[dk]) pMachByDate[dk] = {};
                       pMachByDate[dk][mk] = 1;
                     });
-                    var pCursor = new Date(today.getTime()); var pSafe = 0;
+                    var bcToday = new Date(todayDate.getTime()); bcToday.setHours(0, 0, 0, 0);
+                    var pCursor = new Date(bcToday.getTime()); var pSafe = 0;
                     while (pNb < 14 && pSafe < 80) {
                       pCursor.setDate(pCursor.getDate() - 1);
                       var pDow = pCursor.getDay();
@@ -9842,13 +9843,10 @@
                     // ─ Calcul previsions futures ajustees meteo ─
                     var meteoMapBC = meteoByChantier[chantier.id] || {};
                     var forecastVals = []; // { idx, val, isWE, intemp }
-                    var todayDateNum = today.getDate();
-                    var todayMonth = today.getMonth();
-                    var todayYear = today.getFullYear();
                     for (var fd = 1; fd <= daysInMonth; fd++) {
                       var fDate = new Date(year, monthIdx, fd);
                       // Pas de prevision pour les jours passes ou aujourd'hui (deja sur dayVals)
-                      var isFuture = (fDate.getTime() > today.getTime());
+                      var isFuture = (fDate.getTime() > bcToday.getTime());
                       if (!isFuture) { forecastVals.push(null); continue; }
                       var fDow = fDate.getDay();
                       var fIsWE = fDow === 0 || fDow === 5 || fDow === 6;
