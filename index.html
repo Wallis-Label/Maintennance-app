@@ -8802,28 +8802,92 @@
       var todayDate = new Date();
 
       // ─── Build chart data: metrage & CA par jour du mois ───
+      // Pour chaque chantier actif, calcule sa vitesse quotidienne moyenne 14j
+      // (utilisee pour les previsions futures ajustees meteo)
+      function buildVitesseChantier(c) {
+        var pTot = 0, pNb = 0, pSumMach = 0;
+        var pMachByDate = {};
+        (ctxAv.dbRelevesJourn || []).forEach(function(r) {
+          if (!r || String(r.chantierId) !== String(c.id) || !r.dateReleve) return;
+          var dk = String(r.dateReleve).substring(0, 10);
+          var mk = String(r.equipementId || r.sondeuseCode || "_no").toUpperCase().trim();
+          if (!pMachByDate[dk]) pMachByDate[dk] = {};
+          pMachByDate[dk][mk] = 1;
+        });
+        var pCursor = new Date(todayDate.getTime()); pCursor.setHours(0, 0, 0, 0); var pSafe = 0;
+        while (pNb < 14 && pSafe < 80) {
+          pCursor.setDate(pCursor.getDate() - 1);
+          var pDow = pCursor.getDay();
+          if (pDow >= 1 && pDow <= 4) {
+            var pIso = pCursor.getFullYear() + "-" + String(pCursor.getMonth() + 1).padStart(2, "0") + "-" + String(pCursor.getDate()).padStart(2, "0");
+            var pV = getDailyMetrageChantier(c.id, pIso);
+            if (pV > 0) { pTot += pV; pNb++; }
+          }
+          pSafe++;
+        }
+        return pNb > 0 ? pTot / pNb : 0;
+      }
+
       function buildChartData() {
         var pts = [];
+        var bcToday = new Date(todayDate.getTime()); bcToday.setHours(0, 0, 0, 0);
+        // Pre-calcule la vitesse quotidienne par chantier (pour previsions)
+        var vitesseParChantier = {};
+        activeChantiers.forEach(function(c) {
+          vitesseParChantier[c.id] = buildVitesseChantier(c);
+        });
         for (var d = 1; d <= daysInMonth; d++) {
           var ds = year + "-" + (monthIdx + 1 < 10 ? "0" : "") + (monthIdx + 1) + "-" + (d < 10 ? "0" : "") + d;
           var dayMet = 0;
           var dayCA = 0;
+          var forecastMet = 0;     // metrage prevu pour ce jour (somme chantiers)
+          var forecastCA = 0;
+          var hasForecast = false; // au moins un chantier a une prevision
+          var anyIntemp = false;   // au moins un chantier en intemperies
+          var anyReduced = false;  // au moins un chantier en pluie reduite
+          var cellDate = new Date(year, monthIdx, d);
+          var dow = cellDate.getDay();
+          var isWE = dow === 0 || dow === 6;
+          var isFuture = cellDate.getTime() > bcToday.getTime();
+          var isWorkDay = dow >= 1 && dow <= 4;
           activeChantiers.forEach(function(c) {
             var val = getDailyMetrageChantier(c.id, ds);
             if (val > 0) {
               dayMet += val;
               dayCA += val * c.prixMetre;
+            } else if (isFuture && isWorkDay) {
+              // Prevision pour ce chantier ce jour
+              var vQuot = vitesseParChantier[c.id] || 0;
+              if (vQuot > 0) {
+                var mMap = meteoByChantier[c.id];
+                var mDay = mMap ? mMap[ds] : null;
+                var fact = meteoMetrageFactor(mDay);
+                var fcVal = vQuot * fact;
+                if (fcVal > 0) {
+                  forecastMet += fcVal;
+                  forecastCA += fcVal * c.prixMetre;
+                  hasForecast = true;
+                  if (fact === 0) anyIntemp = true;
+                  else if (fact < 1) anyReduced = true;
+                } else {
+                  // perdu : on considere quand meme qu'on a une prevision
+                  hasForecast = true;
+                  anyIntemp = true;
+                }
+              }
             }
           });
-          var cellDate = new Date(year, monthIdx, d);
-          var dow = cellDate.getDay();
-          pts.push({ day: d, metrage: dayMet, ca: dayCA, isWE: dow === 0 || dow === 6 });
+          pts.push({
+            day: d, metrage: dayMet, ca: dayCA, isWE: isWE,
+            forecast: forecastMet, forecastCA: forecastCA, hasForecast: hasForecast,
+            anyIntemp: anyIntemp, anyReduced: anyReduced, isFuture: isFuture
+          });
         }
         return pts;
       }
 
       var chartData = buildChartData();
-      var chartHasData = chartData.some(function(p) { return p.metrage > 0; });
+      var chartHasData = chartData.some(function(p) { return p.metrage > 0 || p.forecast > 0; });
 
       function renderChart() {
         if (!chartHasData) {
@@ -8848,25 +8912,31 @@
         if (barW < 6) barW = 6;
 
         var maxMet = 0;
-        for (var i = 0; i < n; i++) { if (chartData[i].metrage > maxMet) maxMet = chartData[i].metrage; }
+        for (var i = 0; i < n; i++) {
+          var v = Math.max(chartData[i].metrage, chartData[i].forecast);
+          if (v > maxMet) maxMet = v;
+        }
         // Arrondir au palier superieur
         if (maxMet <= 50) maxMet = Math.ceil(maxMet / 10) * 10 || 10;
         else if (maxMet <= 500) maxMet = Math.ceil(maxMet / 50) * 50;
         else maxMet = Math.ceil(maxMet / 100) * 100;
 
         // Construction des semaines (lundi -> dimanche, debordement borne au mois)
+        // CA semaine integre les forecasts pour donner une vision projetee
         var weeks = [];
         var curW = null;
         for (var wi = 0; wi < n; wi++) {
           var dD = new Date(year, monthIdx, chartData[wi].day);
           var dow = dD.getDay(); // 0=Dim, 1=Lun, ..., 6=Sam
+          var weekCA = chartData[wi].ca + chartData[wi].forecastCA;
+          var weekMet = chartData[wi].metrage + chartData[wi].forecast;
           if (curW === null || dow === 1) {
             if (curW) weeks.push(curW);
-            curW = { startIdx: wi, endIdx: wi, caSum: chartData[wi].ca, metSum: chartData[wi].metrage };
+            curW = { startIdx: wi, endIdx: wi, caSum: weekCA, metSum: weekMet };
           } else {
             curW.endIdx = wi;
-            curW.caSum += chartData[wi].ca;
-            curW.metSum += chartData[wi].metrage;
+            curW.caSum += weekCA;
+            curW.metSum += weekMet;
           }
         }
         if (curW) weeks.push(curW);
@@ -8901,27 +8971,52 @@
         // Bars
         var bars = [];
         var xLabels = [];
+        // Pattern hachuré pour les previsions (defini une fois)
+        var stripeId = "globalStripe-" + currentMonth.getMonth() + "-" + currentMonth.getFullYear();
+        bars.push(h("defs", { key: "defs" },
+          h("pattern", { id: stripeId, width: 6, height: 6, patternUnits: "userSpaceOnUse", patternTransform: "rotate(45)" },
+            h("rect", { width: 6, height: 6, fill: "transparent" }),
+            h("line", { x1: 0, y1: 0, x2: 0, y2: 6, stroke: "rgba(255,255,255,0.18)", strokeWidth: 1.5 })
+          )
+        ));
         for (var i = 0; i < n; i++) {
           var x = padL + i * (barW + gap);
-          var barH = maxMet > 0 ? (chartData[i].metrage / maxMet) * chartHt : 0;
+          var realH = maxMet > 0 ? (chartData[i].metrage / maxMet) * chartHt : 0;
+          var fcH = maxMet > 0 ? (chartData[i].forecast / maxMet) * chartHt : 0;
+          // Barre reelle (saisie) — couleur normale
           var barColor = chartData[i].isWE ? "#c4b5fd" : "#7c3aed";
-          bars.push(h("rect", { key: "b" + i, x: x, y: padT + chartHt - barH, width: barW, height: Math.max(barH, 0), rx: 2, fill: barColor, opacity: chartData[i].metrage > 0 ? 1 : 0.12 }));
-          if (chartData[i].metrage > 0 && barH > 14) {
-            bars.push(h("text", { key: "bv" + i, x: x + barW / 2, y: padT + chartHt - barH + 13, textAnchor: "middle", fontSize: 9, fill: "white", fontWeight: 700 }, chartData[i].metrage));
+          bars.push(h("rect", { key: "b" + i, x: x, y: padT + chartHt - realH, width: barW, height: Math.max(realH, 0), rx: 2, fill: barColor, opacity: chartData[i].metrage > 0 ? 1 : 0.12 }));
+          if (chartData[i].metrage > 0 && realH > 14) {
+            bars.push(h("text", { key: "bv" + i, x: x + barW / 2, y: padT + chartHt - realH + 13, textAnchor: "middle", fontSize: 9, fill: "white", fontWeight: 700 }, chartData[i].metrage));
+          }
+          // Barre previsionnelle (jours futurs) — couleur graduee selon meteo
+          if (chartData[i].hasForecast && chartData[i].forecast > 0) {
+            var fcBase, fcLight;
+            if (chartData[i].anyIntemp) { fcBase = "#dc2626"; fcLight = "#fda4af"; }
+            else if (chartData[i].anyReduced) { fcBase = "#3b82f6"; fcLight = "#93c5fd"; }
+            else { fcBase = "#7c3aed"; fcLight = "#c4b5fd"; }
+            bars.push(h("g", { key: "fc" + i, style: { opacity: 0.65 } },
+              h("rect", { x: x, y: padT + chartHt - fcH, width: barW, height: Math.max(fcH, 0), rx: 2, fill: fcLight, stroke: fcBase, strokeWidth: 1, strokeDasharray: "2 2" }),
+              h("rect", { x: x, y: padT + chartHt - fcH, width: barW, height: Math.max(fcH, 0), rx: 2, fill: "url(#" + stripeId + ")" }),
+              fcH > 14 ? h("text", { x: x + barW / 2, y: padT + chartHt - fcH + 13, textAnchor: "middle", fontSize: 9, fill: "white", fontWeight: 700, fontStyle: "italic", opacity: 0.85 }, Math.round(chartData[i].forecast)) : null
+            ));
           }
           xLabels.push(h("text", { key: "xl" + i, x: x + barW / 2, y: H - 10, textAnchor: "middle", fontSize: 9, fill: chartData[i].isWE ? "#a78bfa" : "#a1a1aa", fontWeight: 600 }, String(chartData[i].day)));
         }
 
-        // Total du mois
+        // Total du mois (realise + previsionnel)
         var totalMoisMet = chartData.reduce(function(s, p) { return s + p.metrage; }, 0);
         var totalMoisCA = chartData.reduce(function(s, p) { return s + p.ca; }, 0);
+        var totalForecastMet = chartData.reduce(function(s, p) { return s + (p.forecast || 0); }, 0);
+        var totalForecastCA = chartData.reduce(function(s, p) { return s + (p.forecastCA || 0); }, 0);
 
         return h("div", { style: { background: "rgba(36, 40, 60, 0.55)", backdropFilter: "blur(20px) saturate(180%)", WebkitBackdropFilter: "blur(20px) saturate(180%)", borderRadius: 12, padding: 20, border: "1px solid rgba(255,255,255,0.07)", boxShadow: "0 8px 24px rgba(0,0,0,0.3)", marginBottom: 24 } },
           h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 12 } },
             h("h3", { style: { fontSize: 15, fontWeight: 700, margin: 0, color: "#e5e7eb" } }, h(IconText, { icon: "bar-chart-3", size: 16 }, "Progression globale - " + currentMonth.toLocaleDateString("fr-FR", { month: "long", year: "numeric" }))),
-            h("div", { style: { display: "flex", gap: 16, fontSize: 12, fontWeight: 600, alignItems: "center" } },
-              h("span", { style: { color: "#a78bfa" } }, "Total : " + fmtNum(totalMoisMet) + " m"),
-              h("span", { style: { display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 12px", borderRadius: 999, background: "rgba(37,99,235,0.15)", border: "1px solid rgba(37,99,235,0.45)", color: "#93c5fd", fontWeight: 800 } }, h(Icon, { name: "wallet", size: 12, color: "#93c5fd" }), "CA mois : " + fmtNum(totalMoisCA) + " XPF")
+            h("div", { style: { display: "flex", gap: 12, fontSize: 12, fontWeight: 600, alignItems: "center", flexWrap: "wrap" } },
+              h("span", { style: { color: "#a78bfa" } }, "Réalisé : " + fmtNum(totalMoisMet) + " m"),
+              totalForecastMet > 0 ? h("span", { style: { color: "#93c5fd" } }, "Prévu : +" + fmtNum(Math.round(totalForecastMet)) + " m") : null,
+              h("span", { style: { display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 12px", borderRadius: 999, background: "rgba(37,99,235,0.15)", border: "1px solid rgba(37,99,235,0.45)", color: "#93c5fd", fontWeight: 800 } }, h(Icon, { name: "wallet", size: 12, color: "#93c5fd" }), "CA mois projeté : " + fmtNum(totalMoisCA + totalForecastCA) + " XPF")
             )
           ),
           h("div", { style: { overflowX: "auto" } },
@@ -8935,7 +9030,14 @@
               h("line", { x1: padL, x2: padL, y1: padT, y2: padT + chartHt, stroke: "rgba(255,255,255,0.1)", strokeWidth: 1 }),
               h("line", { x1: padL, x2: W - padR, y1: padT + chartHt, y2: padT + chartHt, stroke: "rgba(255,255,255,0.1)", strokeWidth: 1 })
             )
-          )
+          ),
+          // Legende
+          totalForecastMet > 0 ? h("div", { style: { display: "flex", gap: 14, fontSize: 11, color: "#94a3b8", marginTop: 10, flexWrap: "wrap" } },
+            h("span", { style: { display: "flex", alignItems: "center", gap: 5 } }, h("span", { style: { width: 10, height: 10, borderRadius: 2, background: "#7c3aed" } }), "Réalisé (saisies)"),
+            h("span", { style: { display: "flex", alignItems: "center", gap: 5 } }, h("span", { style: { width: 10, height: 10, borderRadius: 2, background: "#c4b5fd", border: "1px dashed #7c3aed" } }), "Prévision météo OK"),
+            h("span", { style: { display: "flex", alignItems: "center", gap: 5 } }, h("span", { style: { width: 10, height: 10, borderRadius: 2, background: "#93c5fd", border: "1px dashed #3b82f6" } }), "Pluie (réduit)"),
+            h("span", { style: { display: "flex", alignItems: "center", gap: 5 } }, h("span", { style: { width: 10, height: 10, borderRadius: 2, background: "#fda4af", border: "1px dashed #dc2626" } }), "Intempéries (perdu)")
+          ) : null
         );
       }
 
