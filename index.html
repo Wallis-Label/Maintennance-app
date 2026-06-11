@@ -18290,37 +18290,41 @@
         );
       }
 
-      // Helper : KPI tile sobre type SaaS pro (Vercel/Linear)
+      // Helper : KPI tile - thème glassmorphism cohérent avec le reste de l'app
       function KpiTile(opts) {
         return h("div", {
           className: "prev-card",
           style: {
-            background: "#13172a",
-            border: "1px solid rgba(255,255,255,0.08)",
+            background: "rgba(36, 40, 60, 0.55)",
+            backdropFilter: "blur(20px) saturate(180%)",
+            WebkitBackdropFilter: "blur(20px) saturate(180%)",
+            border: "1px solid rgba(255,255,255,0.07)",
+            borderLeft: "3px solid " + (opts.accent || "#818cf8"),
             borderRadius: 12,
-            padding: "16px 18px",
-            minHeight: 120,
+            padding: "14px 16px",
+            minHeight: 110,
             display: "flex",
             flexDirection: "column",
             justifyContent: "space-between",
-            transition: "border-color 0.15s, background 0.15s"
+            boxShadow: "0 8px 24px rgba(0,0,0,0.2)",
+            transition: "transform 0.2s, box-shadow 0.2s"
           },
-          onMouseEnter: function(e) { e.currentTarget.style.borderColor = "rgba(255,255,255,0.16)"; e.currentTarget.style.background = "#171b30"; },
-          onMouseLeave: function(e) { e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)"; e.currentTarget.style.background = "#13172a"; }
+          onMouseEnter: function(e) { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 12px 32px rgba(0,0,0,0.3)"; },
+          onMouseLeave: function(e) { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = "0 8px 24px rgba(0,0,0,0.2)"; }
         },
           h("div", { style: { display: "flex", alignItems: "center", gap: 8, justifyContent: "space-between" } },
-            h("div", { style: { display: "flex", alignItems: "center", gap: 8 } },
-              h(Icon, { name: opts.icon || "circle", size: 14, color: "#64748b" }),
-              h("div", { style: { fontSize: 11, fontWeight: 500, color: "#94a3b8", letterSpacing: 0.1 } }, opts.label)
+            h("div", { style: { display: "flex", alignItems: "center", gap: 6 } },
+              h(Icon, { name: opts.icon || "circle", size: 13, color: opts.accent || "#a1a1aa" }),
+              h("div", { style: { fontSize: 10, fontWeight: 600, color: "#a1a1aa", textTransform: "uppercase", letterSpacing: 0.5 } }, opts.label)
             ),
-            opts.badge ? h("span", { style: { fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 4, background: opts.badgeBg || "rgba(255,255,255,0.06)", color: opts.badgeColor || "#cbd5e1", border: "1px solid " + (opts.badgeBorder || "rgba(255,255,255,0.08)") } }, opts.badge) : null
+            opts.badge ? h("span", { style: { fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 3, background: opts.badgeBg || "rgba(255,255,255,0.05)", color: opts.badgeColor || "#cbd5e1", border: "1px solid " + (opts.badgeBg || "rgba(255,255,255,0.08)") } }, opts.badge) : null
           ),
           h("div", { style: { display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 10 } },
             h("div", null,
-              h("div", { style: { fontSize: opts.bigSize || 28, fontWeight: 600, color: opts.valueColor || "#f8fafc", lineHeight: 1, letterSpacing: "-0.02em", fontFamily: "'SF Mono', Consolas, monospace" } }, opts.value),
-              opts.hint ? h("div", { style: { fontSize: 11, color: "#64748b", marginTop: 6 } }, opts.hint) : null
+              h("div", { style: { fontSize: opts.bigSize || 22, fontWeight: 700, color: opts.valueColor || "#fafafa", lineHeight: 1, letterSpacing: "-0.01em" } }, opts.value),
+              opts.hint ? h("div", { style: { fontSize: 11, color: "#a1a1aa", marginTop: 5 } }, opts.hint) : null
             ),
-            opts.sparkline && opts.sparkline.length > 1 ? h("div", { style: { opacity: 0.85 } }, Sparkline(opts.sparkline, opts.sparklineColor || "#818cf8", 32, 64)) : null
+            opts.sparkline && opts.sparkline.length > 1 ? h("div", { style: { opacity: 0.85 } }, Sparkline(opts.sparkline, opts.accent || "#818cf8", 30, 60)) : null
           )
         );
       }
@@ -18359,7 +18363,7 @@
         !chantier ? h("div", { style: { padding: 24, textAlign: "center", color: "#94a3b8" } }, "Aucun chantier disponible.")
         : !data ? h("div", { style: { padding: 24, textAlign: "center", color: "#94a3b8" } }, "Donnees insuffisantes.")
         : h("div", null,
-          // ─ HERO : sobre, structure, type Vercel/Linear ─
+          // ─ HERO : thème glassmorphism violet (cohérent avec le reste de l'app) ─
           (function() {
             var sparkValsAll = data.sparkVitesse.map(function(p) { return p.val; });
             var lastWeek = sparkValsAll.slice(-7);
@@ -18372,47 +18376,51 @@
             return h("div", {
               className: "prev-card",
               style: {
-                background: "#13172a",
-                border: "1px solid rgba(255,255,255,0.08)",
+                background: "rgba(36, 40, 60, 0.55)",
+                backdropFilter: "blur(20px) saturate(180%)",
+                WebkitBackdropFilter: "blur(20px) saturate(180%)",
+                border: "1px solid rgba(255,255,255,0.07)",
+                borderLeft: "4px solid #818cf8",
                 borderRadius: 12,
-                padding: "20px 24px",
+                padding: 20,
                 marginBottom: 16,
+                boxShadow: "0 8px 24px rgba(0,0,0,0.2)",
                 display: "flex",
                 flexWrap: "wrap",
                 alignItems: "center",
-                gap: 32,
+                gap: 24,
                 justifyContent: "space-between"
               }
             },
               h("div", { style: { display: "flex", alignItems: "center", gap: 18, flex: "1 1 auto", minWidth: 280 } },
-                CircleGauge(avancementPct, avancementPct >= 80 ? "#22c55e" : avancementPct >= 50 ? "#818cf8" : "#fbbf24"),
+                CircleGauge(avancementPct, avancementPct >= 80 ? "#059669" : avancementPct >= 50 ? "#818cf8" : "#d97706"),
                 h("div", null,
-                  h("div", { style: { fontSize: 11, fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 4 } }, "Chantier"),
-                  h("div", { style: { fontSize: 22, fontWeight: 700, color: "#f8fafc", marginBottom: 6, letterSpacing: "-0.01em", lineHeight: 1.1 } }, chantier.titre),
-                  h("div", { style: { fontSize: 12, color: "#64748b", display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center" } },
-                    h("span", null, (chantier.dateDebut ? new Date(chantier.dateDebut).toLocaleDateString("fr-FR") : "?") + " → " + (chantier.dateFin ? new Date(chantier.dateFin).toLocaleDateString("fr-FR") : "?")),
-                    h("span", { style: { color: "#475569" } }, "·"),
-                    h("span", null, chantier.site || "—"),
-                    h("span", { style: { color: "#475569" } }, "·"),
-                    h("span", { style: { color: "#94a3b8" } }, chantier.statut)
+                  h("div", { style: { fontSize: 10, fontWeight: 600, color: "#a1a1aa", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4, display: "flex", alignItems: "center", gap: 6 } },
+                    h(Icon, { name: "hard-hat", size: 11, color: "#a1a1aa" }), "Chantier"
+                  ),
+                  h("h3", { style: { fontSize: 18, fontWeight: 700, color: "#fafafa", margin: 0, marginBottom: 6, letterSpacing: "-0.01em", lineHeight: 1.2 } }, chantier.titre),
+                  h("div", { style: { fontSize: 12, color: "#a1a1aa", display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" } },
+                    h("span", { style: { fontWeight: 600 } }, (chantier.dateDebut ? new Date(chantier.dateDebut).toLocaleDateString("fr-FR") : "?") + " → " + (chantier.dateFin ? new Date(chantier.dateFin).toLocaleDateString("fr-FR") : "?")),
+                    h("span", { style: { fontSize: 11, fontWeight: 600, color: chantier.statut === "Termine" ? "#86efac" : chantier.statut === "A venir" ? "#a5b4fc" : "#fde68a", background: chantier.statut === "Termine" ? "rgba(34,197,94,0.15)" : chantier.statut === "A venir" ? "rgba(99,102,241,0.15)" : "rgba(251,191,36,0.15)", padding: "2px 8px", borderRadius: 3, border: "1px solid " + (chantier.statut === "Termine" ? "rgba(34,197,94,0.3)" : chantier.statut === "A venir" ? "rgba(99,102,241,0.3)" : "rgba(251,191,36,0.3)") } }, chantier.statut),
+                    h("span", null, "Site : ", h("strong", { style: { color: "#cbd5e1" } }, chantier.site || "—"))
                   )
                 )
               ),
-              h("div", { style: { display: "flex", gap: 32, flexWrap: "wrap", alignItems: "flex-end" } },
-                h("div", null,
-                  h("div", { style: { fontSize: 11, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 4 } }, "Réalisé"),
-                  h("div", { style: { fontSize: 22, fontWeight: 700, color: "#f8fafc", lineHeight: 1, fontFamily: "'SF Mono', Consolas, monospace" } }, fmtNum(Math.round(data.realise)) + " m")
+              h("div", { style: { display: "flex", gap: 14, flexWrap: "wrap" } },
+                h("div", { style: { background: "rgba(255,255,255,0.04)", padding: 10, borderRadius: 6, minWidth: 120 } },
+                  h("div", { style: { color: "#a1a1aa", marginBottom: 4, fontSize: 11, fontWeight: 600 } }, "Réalisé"),
+                  h("div", { style: { fontWeight: 700, fontSize: 16, color: "#059669" } }, fmtNum(Math.round(data.realise)) + " m")
                 ),
-                h("div", null,
-                  h("div", { style: { fontSize: 11, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 4 } }, "Reste"),
-                  h("div", { style: { fontSize: 22, fontWeight: 700, color: "#f8fafc", lineHeight: 1, fontFamily: "'SF Mono', Consolas, monospace" } }, fmtNum(Math.round(data.metresRestants)) + " m")
+                h("div", { style: { background: "rgba(255,255,255,0.04)", padding: 10, borderRadius: 6, minWidth: 120 } },
+                  h("div", { style: { color: "#a1a1aa", marginBottom: 4, fontSize: 11, fontWeight: 600 } }, "Reste"),
+                  h("div", { style: { fontWeight: 700, fontSize: 16, color: "#fde68a" } }, fmtNum(Math.round(data.metresRestants)) + " m")
                 ),
-                h("div", null,
-                  h("div", { style: { fontSize: 11, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 4 } }, "Productivité 7j"),
-                  h("div", { style: { display: "flex", alignItems: "baseline", gap: 8 } },
-                    h("div", { style: { fontSize: 22, fontWeight: 700, color: "#f8fafc", lineHeight: 1, fontFamily: "'SF Mono', Consolas, monospace" } }, Math.round(lwAvg) + " m/j"),
-                    h("span", { style: { fontSize: 12, fontWeight: 600, color: trendUp ? "#4ade80" : "#f87171", display: "flex", alignItems: "center", gap: 1 } },
-                      trendUp ? "▲" : "▼", " ", Math.abs(trendPct), "%"
+                h("div", { style: { background: "rgba(255,255,255,0.04)", padding: 10, borderRadius: 6, minWidth: 140 } },
+                  h("div", { style: { color: "#a1a1aa", marginBottom: 4, fontSize: 11, fontWeight: 600 } }, "Productivité 7j"),
+                  h("div", { style: { display: "flex", alignItems: "baseline", gap: 6 } },
+                    h("div", { style: { fontWeight: 700, fontSize: 16, color: "#a5b4fc" } }, Math.round(lwAvg) + " m/j"),
+                    h("span", { style: { fontSize: 11, fontWeight: 700, color: trendUp ? "#86efac" : "#fda4af" } },
+                      (trendUp ? "▲ +" : "▼ ") + Math.abs(trendPct) + "%"
                     )
                   )
                 )
@@ -18420,59 +18428,50 @@
             );
           }()),
 
-          // ─ Section 1 : KPIs visuels (avec sparklines et badges) ─
-          h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 12, marginBottom: 18 } },
+          // ─ Section 1 : KPIs (thème glassmorphism violet/vert/jaune cohérent) ─
+          h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12, marginBottom: 16 } },
             KpiTile({
-              icon: "zap", iconBg: "rgba(168,85,247,0.30)", iconColor: "#d8b4fe",
+              icon: "zap", accent: "#a78bfa",
               label: "Vitesse actuelle",
-              gradient: "linear-gradient(135deg, rgba(168,85,247,0.18), rgba(168,85,247,0.04))",
-              border: "rgba(168,85,247,0.35)",
               value: fmtNum(Math.round(data.vitesse14j)) + " m/j",
+              valueColor: "#a5b4fc",
               hint: fmtNum(Math.round(data.vitesseParMachine)) + " m/j/machine" + (data.jSolo >= 3 ? " (solo)" : ""),
               badge: "14 j",
-              badgeColor: "#d8b4fe",
-              badgeBg: "rgba(168,85,247,0.20)",
-              sparkline: data.sparkVitesse.map(function(p) { return p.val; }).filter(function(v) { return v > 0; }).slice(-14),
-              sparklineColor: "#d8b4fe"
+              badgeColor: "#a5b4fc",
+              badgeBg: "rgba(99,102,241,0.15)",
+              sparkline: data.sparkVitesse.map(function(p) { return p.val; }).filter(function(v) { return v > 0; }).slice(-14)
             }),
             KpiTile({
-              icon: "gauge", iconBg: "rgba(251,191,36,0.30)", iconColor: "#fde68a",
+              icon: "gauge", accent: "#fbbf24",
               label: "Cadence requise",
-              gradient: "linear-gradient(135deg, rgba(251,191,36,0.18), rgba(251,191,36,0.04))",
-              border: "rgba(251,191,36,0.35)",
               value: data.cadenceRequise !== null ? fmtNum(Math.round(data.cadenceRequise)) + " m/j" : "—",
               valueColor: data.cadenceRequise && data.cadenceRequise > data.vitesse14j ? "#fde68a" : "#86efac",
-              hint: "apres " + Math.round(data.tauxAbsence * 100) + " % d'aleas hist.",
-              badge: data.cadenceRequise && data.cadenceRequise > data.vitesse14j * 1.2 ? "⚠ TENDU" : "OK",
+              hint: "après " + Math.round(data.tauxAbsence * 100) + " % d'aléas hist.",
+              badge: data.cadenceRequise && data.cadenceRequise > data.vitesse14j * 1.2 ? "Tendu" : "OK",
               badgeColor: data.cadenceRequise && data.cadenceRequise > data.vitesse14j * 1.2 ? "#fda4af" : "#86efac",
-              badgeBg: data.cadenceRequise && data.cadenceRequise > data.vitesse14j * 1.2 ? "rgba(244,63,94,0.20)" : "rgba(34,197,94,0.20)"
+              badgeBg: data.cadenceRequise && data.cadenceRequise > data.vitesse14j * 1.2 ? "rgba(244,63,94,0.15)" : "rgba(34,197,94,0.15)"
             }),
             KpiTile({
-              icon: "settings", iconBg: "rgba(99,102,241,0.35)", iconColor: "#c4b5fd",
+              icon: "settings", accent: "#818cf8",
               label: "Machines requises",
-              gradient: "linear-gradient(135deg, rgba(99,102,241,0.22), rgba(99,102,241,0.04))",
-              border: "rgba(99,102,241,0.35)",
               value: data.nbMachinesExact !== null ? data.nbMachinesExact.toFixed(2) : "—",
               valueColor: data.nbMachinesEntier > Math.ceil(data.moyMachinesRecent) ? "#fde68a" : "#86efac",
-              hint: data.nbMachinesEntier ? "min " + data.nbMachinesEntier + " machine(s) actives" : "",
+              hint: data.nbMachinesEntier ? "min " + data.nbMachinesEntier + " machine(s)" : "",
               badge: "actuel : " + data.moyMachinesRecent.toFixed(1),
-              badgeColor: "#c4b5fd",
-              badgeBg: "rgba(99,102,241,0.22)"
+              badgeColor: "#a5b4fc",
+              badgeBg: "rgba(99,102,241,0.15)"
             }),
             KpiTile({
               icon: "calendar-check",
-              iconBg: data.decalageJ > 5 ? "rgba(244,63,94,0.30)" : data.decalageJ < -5 ? "rgba(34,197,94,0.30)" : "rgba(99,102,241,0.30)",
-              iconColor: data.decalageJ > 5 ? "#fda4af" : data.decalageJ < -5 ? "#86efac" : "#c4b5fd",
-              label: "Fin estimee",
-              gradient: data.decalageJ > 5 ? "linear-gradient(135deg, rgba(244,63,94,0.18), rgba(244,63,94,0.04))" : data.decalageJ < -5 ? "linear-gradient(135deg, rgba(34,197,94,0.18), rgba(34,197,94,0.04))" : "linear-gradient(135deg, rgba(99,102,241,0.18), rgba(99,102,241,0.04))",
-              border: data.decalageJ > 5 ? "rgba(244,63,94,0.35)" : data.decalageJ < -5 ? "rgba(34,197,94,0.35)" : "rgba(99,102,241,0.35)",
+              accent: data.decalageJ > 5 ? "#f43f5e" : data.decalageJ < -5 ? "#22c55e" : "#818cf8",
+              label: "Fin estimée",
               value: data.projectionImpossible ? "—" : data.dateFinEst.toLocaleDateString("fr-FR"),
-              bigSize: 21,
+              bigSize: 16,
               valueColor: data.decalageJ > 5 ? "#fda4af" : data.decalageJ < -5 ? "#86efac" : "#fafafa",
-              hint: data.decalageJ !== null ? (data.decalageJ >= 0 ? "+" + data.decalageJ : data.decalageJ) + " j ouvres vs contrat" : "projection impossible",
-              badge: data.decalageJ > 0 ? "RETARD" : data.decalageJ < 0 ? "AVANCE" : "OK",
+              hint: data.decalageJ !== null ? (data.decalageJ >= 0 ? "+" + data.decalageJ : data.decalageJ) + " j ouvrés vs contrat" : "projection impossible",
+              badge: data.decalageJ > 0 ? "Retard" : data.decalageJ < 0 ? "Avance" : "OK",
               badgeColor: data.decalageJ > 5 ? "#fda4af" : data.decalageJ < -5 ? "#86efac" : "#fde68a",
-              badgeBg: data.decalageJ > 5 ? "rgba(244,63,94,0.22)" : data.decalageJ < -5 ? "rgba(34,197,94,0.22)" : "rgba(251,191,36,0.20)"
+              badgeBg: data.decalageJ > 5 ? "rgba(244,63,94,0.15)" : data.decalageJ < -5 ? "rgba(34,197,94,0.15)" : "rgba(251,191,36,0.15)"
             })
           ),
 
@@ -18501,17 +18500,28 @@
 
             return h("div", {
               className: "prev-card",
-              style: { background: "#13172a", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 12, padding: 20, marginBottom: 16 }
+              style: {
+                background: "rgba(36, 40, 60, 0.55)",
+                backdropFilter: "blur(20px) saturate(180%)",
+                WebkitBackdropFilter: "blur(20px) saturate(180%)",
+                border: "1px solid rgba(255,255,255,0.07)",
+                borderRadius: 12,
+                padding: 18,
+                marginBottom: 16,
+                boxShadow: "0 8px 24px rgba(0,0,0,0.2)"
+              }
             },
               // Header
-              h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 } },
+              h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12, flexWrap: "wrap", gap: 8 } },
                 h("div", null,
-                  h("div", { style: { fontSize: 13, fontWeight: 600, color: "#f8fafc", marginBottom: 2 } }, "Production quotidienne"),
-                  h("div", { style: { fontSize: 11.5, color: "#64748b" } }, "Mètres forés par jour · 30 derniers jours · barre = quotidien, ligne = moyenne 7 jours")
+                  h("div", { style: { fontSize: 14, fontWeight: 700, color: "#fafafa", marginBottom: 2, display: "flex", alignItems: "center", gap: 8 } },
+                    h(Icon, { name: "activity", size: 14, color: "#a5b4fc" }), "Production quotidienne (30 derniers jours)"
+                  ),
+                  h("div", { style: { fontSize: 11.5, color: "#a1a1aa" } }, "Mètres forés par jour · barre = quotidien réel · ligne = tendance moyenne 7 jours")
                 ),
-                h("div", { style: { display: "flex", gap: 16, fontSize: 11, color: "#94a3b8" } },
+                h("div", { style: { display: "flex", gap: 14, fontSize: 11, color: "#a1a1aa" } },
                   h("span", { style: { display: "flex", alignItems: "center", gap: 5 } }, h("span", { style: { width: 9, height: 9, borderRadius: 2, background: "#818cf8" } }), "Quotidien"),
-                  h("span", { style: { display: "flex", alignItems: "center", gap: 5 } }, h("span", { style: { width: 14, height: 2, background: "#4ade80" } }), "Tendance 7j")
+                  h("span", { style: { display: "flex", alignItems: "center", gap: 5 } }, h("span", { style: { width: 14, height: 2, background: "#86efac" } }), "Tendance 7j")
                 )
               ),
               // Chart SVG
