@@ -14798,10 +14798,10 @@
                   })
                 )
               )
-            )
+            ),
+            // Carte geolocalisation sondeurs - 3e cellule en pleine largeur dans le grid
+            h("div", { style: { gridColumn: "1 / -1" } }, h(CarteGeolocSondeurs, null))
           ),
-          // Carte geolocalisation sondeurs (sous Evolution + Repartition)
-          h(CarteGeolocSondeurs, null),
           // Top consommables + Top sondeurs
           h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16, marginBottom: 16 } },
             h("div", { style: sectionStyle },
