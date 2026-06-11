@@ -1009,6 +1009,19 @@
       return h("span", { style: { background: c.bg, color: c.text, padding: "4px 12px", borderRadius: 999, fontSize: 12, fontWeight: 600, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 5, boxShadow: "inset 0 0 0 1px " + c.ring } }, h(Icon, { name: c.lucide, size: 14, color: c.text }), " " + status);
     }
 
+    // Format quantite + unite pour les pieces de gamme.
+    // "u" -> "8 x" ; "L" -> "8 L" ; "kg" -> "8 kg" ; "paire" -> "8 paires"
+    function fmtGammeQty(qty, unite) {
+      var n = parseFloat(qty);
+      if (isNaN(n) || n <= 0) n = 1;
+      var u = unite || "u";
+      if (u === "u") return n + " ×";
+      if (u === "paire") return n + " paire" + (n > 1 ? "s" : "");
+      if (u === "boite") return n + " boite" + (n > 1 ? "s" : "");
+      if (u === "lot") return n + " lot" + (n > 1 ? "s" : "");
+      return n + " " + u; // L, mL, kg, g, m, cm
+    }
+
     // ─── Helpers Gamme (checklist d'operations) ─────────────────────────
     // Calcule le statut effectif d'une intervention en fonction de sa gamme.
     // - Pas de gamme : retourne le statut brut.
@@ -1075,16 +1088,21 @@
                 title: hasPiece ? "Modifier la piece liee" : "Lier une piece / consommable",
                 style: { background: hasPiece ? "rgba(34,197,94,0.15)" : "rgba(99,102,241,0.10)", border: "1px solid " + (hasPiece ? "rgba(34,197,94,0.30)" : "rgba(99,102,241,0.25)"), color: hasPiece ? "#86efac" : "#a5b4fc", padding: "5px 9px", borderRadius: 6, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 600 } },
                 h(Icon, { name: hasPiece ? "package-check" : "package", size: 12, color: hasPiece ? "#86efac" : "#a5b4fc" }),
-                hasPiece ? (item.quantite ? item.quantite + "x" : "1x") + " " + (item.pieceLabel || item.pieceRef || "?") : "Pieces"
-              ) : (hasPiece ? h("span", { style: { fontSize: 11, color: "#86efac", padding: "3px 8px", background: "rgba(34,197,94,0.10)", borderRadius: 4 } }, (item.quantite || 1) + "× " + (item.pieceLabel || item.pieceRef || "?")) : null),
+                hasPiece ? fmtGammeQty(item.quantite, item.unite) + " " + (item.pieceLabel || item.pieceRef || "?") : "Pieces"
+              ) : (hasPiece ? h("span", { style: { fontSize: 11, color: "#86efac", padding: "3px 8px", background: "rgba(34,197,94,0.10)", borderRadius: 4 } }, fmtGammeQty(item.quantite, item.unite) + " " + (item.pieceLabel || item.pieceRef || "?")) : null),
               !readOnly ? h("button", { type: "button", onClick: function() { remove(i); }, style: { background: "transparent", border: "none", cursor: "pointer", padding: 4, color: "#f43f5e" }, title: "Retirer" }, h(Icon, { name: "trash-2", size: 15, color: "#f43f5e" })) : null
             ),
             // Section pieces (expanded)
-            isExp && !readOnly ? h("div", { style: { marginTop: 8, paddingTop: 8, borderTop: "1px dashed rgba(255,255,255,0.06)", display: "grid", gridTemplateColumns: "1fr 1fr 80px", gap: 6, alignItems: "end" } },
+            isExp && !readOnly ? h("div", { style: { marginTop: 8, paddingTop: 8, borderTop: "1px dashed rgba(255,255,255,0.06)", display: "grid", gridTemplateColumns: "1fr 1fr 65px 70px", gap: 6, alignItems: "end" } },
               // Type
               h("div", null,
                 h("div", { style: { fontSize: 10, color: "#a1a1aa", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 3 } }, "Type"),
-                h("select", { value: item.pieceType || "", onChange: function(e) { update(i, { pieceType: e.target.value, pieceRef: "", pieceLabel: "" }); },
+                h("select", { value: item.pieceType || "", onChange: function(e) {
+                  var nt = e.target.value;
+                  // Defaut intelligent : consommable -> L (liquides typiquement) ; sinon u
+                  var defaultUnit = nt === "consommable" ? "L" : "u";
+                  update(i, { pieceType: nt, pieceRef: "", pieceLabel: "", unite: item.unite || defaultUnit });
+                },
                   style: { ...selectStyle, fontSize: 12, padding: "6px 8px" } },
                   h("option", { value: "" }, "—"),
                   h("option", { value: "piece" }, "📦 Piece catalogue"),
@@ -1104,7 +1122,7 @@
                     pieces.map(function(p) { return h("option", { key: p.Id, value: p.Id }, (p.Reference ? "[" + p.Reference + "] " : "") + (p.Designation || "?")); })
                   ) :
                   h("input", { type: "text", value: item.pieceLabel || "", onChange: function(e) { update(i, { pieceLabel: e.target.value, pieceRef: e.target.value }); },
-                    placeholder: item.pieceType === "consommable" ? "Ex: Huile 15W40 5L" : "Ex: Joint plat sur mesure",
+                    placeholder: item.pieceType === "consommable" ? "Ex: Huile moteur 15W40" : "Ex: Joint plat sur mesure",
                     style: { ...inputStyle, fontSize: 12, padding: "6px 8px" } })
               ),
               // Quantité
@@ -1114,6 +1132,24 @@
                   onChange: function(e) { update(i, { quantite: e.target.value === "" ? null : parseFloat(e.target.value) }); },
                   placeholder: "1",
                   style: { ...inputStyle, fontSize: 12, padding: "6px 8px", textAlign: "center" } })
+              ),
+              // Unité
+              h("div", null,
+                h("div", { style: { fontSize: 10, color: "#a1a1aa", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 3 } }, "Unite"),
+                h("select", { value: item.unite || (item.pieceType === "consommable" ? "L" : "u"),
+                  onChange: function(e) { update(i, { unite: e.target.value }); },
+                  style: { ...selectStyle, fontSize: 12, padding: "6px 8px" } },
+                  h("option", { value: "u" }, "u"),
+                  h("option", { value: "L" }, "L"),
+                  h("option", { value: "mL" }, "mL"),
+                  h("option", { value: "kg" }, "kg"),
+                  h("option", { value: "g" }, "g"),
+                  h("option", { value: "m" }, "m"),
+                  h("option", { value: "cm" }, "cm"),
+                  h("option", { value: "paire" }, "paire"),
+                  h("option", { value: "boite" }, "boite"),
+                  h("option", { value: "lot" }, "lot")
+                )
               )
             ) : null
           );
@@ -1147,11 +1183,11 @@
           var fromPlan = !!item.fromPlan;
           var hasPiece = !!(item.pieceType || item.pieceRef || item.pieceLabel);
           var pieceBadge = hasPiece ? h("span", {
-            title: "Piece prevue : " + (item.pieceLabel || item.pieceRef || "?") + " x" + (item.quantite || 1),
+            title: "Piece prevue : " + fmtGammeQty(item.quantite, item.unite) + " " + (item.pieceLabel || item.pieceRef || "?"),
             style: { fontSize: 10.5, fontWeight: 700, color: "#86efac", background: "rgba(34,197,94,0.12)", padding: "2px 8px", borderRadius: 999, border: "1px solid rgba(34,197,94,0.30)", whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }
           },
             h("span", null, item.pieceType === "piece" ? "📦" : item.pieceType === "consommable" ? "🛢️" : "📄"),
-            (item.quantite || 1) + "× " + (item.pieceLabel || item.pieceRef || "?")
+            fmtGammeQty(item.quantite, item.unite) + " " + (item.pieceLabel || item.pieceRef || "?")
           ) : null;
           return h("div", { key: item.id || i, style: { display: "flex", gap: 10, alignItems: "center", padding: "6px 10px", background: item.done ? "rgba(16, 185, 129, 0.08)" : "rgba(255,255,255,0.03)", border: "1px solid " + (item.done ? "rgba(16, 185, 129, 0.2)" : "rgba(255,255,255,0.06)"), borderRadius: 8, transition: "all 0.15s", flexWrap: "wrap" } },
             h("input", { type: "checkbox", checked: !!item.done, onChange: function(e) { update(i, { done: e.target.checked }); }, style: { width: 18, height: 18, accentColor: "#818cf8", cursor: "pointer" } }),
@@ -18853,6 +18889,9 @@
               };
             }
             map[refKey].qtyTotal += qty;
+            // Conserve l'unite (ecrasee a chaque rencontre, devrait etre coherente)
+            if (step.unite) map[refKey].unite = step.unite;
+            else if (!map[refKey].unite) map[refKey].unite = step.pieceType === "consommable" ? "L" : "u";
             map[refKey].planSources.push({
               planNom: plan.Title || plan.Description,
               equipCodes: equipCodes,
@@ -18901,9 +18940,8 @@
         // KPIs
         h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, marginBottom: 18 } },
           KpiTile({ icon: "package", accent: "#a78bfa", label: "References necessaires", value: totalRefs, hint: inCatalogue + " en catalogue" }),
-          KpiTile({ icon: "boxes", accent: "#22d3ee", label: "Quantite totale", value: Math.round(totalUnits * 100) / 100, hint: "unites a consommer" }),
-          KpiTile({ icon: "alert-triangle", accent: "#f43f5e", label: "Deficit (catalogue)", value: Math.round(totalDeficit * 100) / 100, hint: "manque par rapport au stock" }),
-          KpiTile({ icon: "wallet", accent: "#fbbf24", label: "Cout estime", value: totalCost > 1000000 ? (totalCost / 1000000).toFixed(1) + " MF" : Math.round(totalCost / 1000) + " k", hint: "XPF" })
+          KpiTile({ icon: "alert-triangle", accent: "#f43f5e", label: "Refs en deficit", value: besoins.filter(function(b) { return b.pieceCatalogue && (parseFloat(b.pieceCatalogue.Stock) || 0) < b.qtyTotal; }).length, hint: "stock insuffisant" }),
+          KpiTile({ icon: "wallet", accent: "#fbbf24", label: "Cout estime", value: totalCost > 1000000 ? (totalCost / 1000000).toFixed(1) + " MF" : Math.round(totalCost / 1000) + " k", hint: "XPF a debourser" })
         ),
 
         // Filtres
@@ -18961,9 +18999,9 @@
                       b.label,
                       b.pieceCatalogue && b.pieceCatalogue.Reference ? h("div", { style: { fontSize: 10.5, color: "#71717a", marginTop: 2 } }, "Ref " + b.pieceCatalogue.Reference) : null
                     ),
-                    h("td", { style: { padding: "9px 12px", textAlign: "right", color: "#fafafa", fontFamily: "'SF Mono', Consolas, monospace" } }, Math.round(b.qtyTotal * 100) / 100),
-                    h("td", { style: { padding: "9px 12px", textAlign: "right", color: stock === null ? "#71717a" : stock >= b.qtyTotal ? "#86efac" : "#fda4af", fontFamily: "'SF Mono', Consolas, monospace" } }, stock !== null ? stock : "—"),
-                    h("td", { style: { padding: "9px 12px", textAlign: "right", fontWeight: 700, color: deficit > 0 ? "#fda4af" : "#86efac", fontFamily: "'SF Mono', Consolas, monospace" } }, deficit > 0 ? "+" + Math.round(deficit * 100) / 100 : "OK"),
+                    h("td", { style: { padding: "9px 12px", textAlign: "right", color: "#fafafa", fontFamily: "'SF Mono', Consolas, monospace" } }, fmtGammeQty(Math.round(b.qtyTotal * 100) / 100, b.unite)),
+                    h("td", { style: { padding: "9px 12px", textAlign: "right", color: stock === null ? "#71717a" : stock >= b.qtyTotal ? "#86efac" : "#fda4af", fontFamily: "'SF Mono', Consolas, monospace" } }, stock !== null ? fmtGammeQty(stock, b.unite) : "—"),
+                    h("td", { style: { padding: "9px 12px", textAlign: "right", fontWeight: 700, color: deficit > 0 ? "#fda4af" : "#86efac", fontFamily: "'SF Mono', Consolas, monospace" } }, deficit > 0 ? "+" + fmtGammeQty(Math.round(deficit * 100) / 100, b.unite) : "OK"),
                     h("td", { style: { padding: "9px 12px", textAlign: "right", color: cost > 0 ? "#fde68a" : "#71717a", fontFamily: "'SF Mono', Consolas, monospace" } }, cost > 0 ? fmtNum(Math.round(cost)) + " XPF" : "—"),
                     h("td", { style: { padding: "9px 12px", textAlign: "center", fontSize: 11, color: "#a1a1aa" } },
                       h("div", { title: b.planSources.map(function(s) { return "• " + s.planNom + " (" + s.equipCodes.join(", ") + ") - " + s.prochaineDate.toLocaleDateString("fr-FR"); }).join("\n") }, b.planSources.length + " plan" + (b.planSources.length > 1 ? "s" : ""))
