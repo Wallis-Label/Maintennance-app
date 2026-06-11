@@ -8119,7 +8119,7 @@
       );
     }
 
-    // KPI tile glassmorphism (accent gauche colore + valeur + hint + badge + sparkline)
+    // KPI tile glassmorphism (compact, conçu pour tenir sur une ligne)
     function KpiTile(opts) {
       return h("div", {
         style: {
@@ -8128,32 +8128,34 @@
           WebkitBackdropFilter: "blur(20px) saturate(180%)",
           border: "1px solid rgba(255,255,255,0.07)",
           borderLeft: "3px solid " + (opts.accent || "#818cf8"),
-          borderRadius: 12,
-          padding: "14px 16px",
-          minHeight: 110,
+          borderRadius: 10,
+          padding: "10px 12px",
+          minHeight: 88,
+          minWidth: 0,
           display: "flex",
           flexDirection: "column",
           justifyContent: "space-between",
-          boxShadow: "0 8px 24px rgba(0,0,0,0.2)",
-          transition: "transform 0.2s, box-shadow 0.2s"
+          boxShadow: "0 4px 12px rgba(0,0,0,0.18)",
+          transition: "transform 0.2s, box-shadow 0.2s",
+          overflow: "hidden"
         },
-        onMouseEnter: function(e) { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 12px 32px rgba(0,0,0,0.3)"; },
-        onMouseLeave: function(e) { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = "0 8px 24px rgba(0,0,0,0.2)"; },
+        onMouseEnter: function(e) { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 8px 20px rgba(0,0,0,0.28)"; },
+        onMouseLeave: function(e) { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = "0 4px 12px rgba(0,0,0,0.18)"; },
         title: opts.tooltip || ""
       },
-        h("div", { style: { display: "flex", alignItems: "center", gap: 8, justifyContent: "space-between" } },
-          h("div", { style: { display: "flex", alignItems: "center", gap: 6 } },
-            h(Icon, { name: opts.icon || "circle", size: 13, color: opts.accent || "#a1a1aa" }),
-            h("div", { style: { fontSize: 10, fontWeight: 600, color: "#a1a1aa", textTransform: "uppercase", letterSpacing: 0.5 } }, opts.label)
+        h("div", { style: { display: "flex", alignItems: "center", gap: 6, justifyContent: "space-between", marginBottom: 4 } },
+          h("div", { style: { display: "flex", alignItems: "center", gap: 5, minWidth: 0, flex: "1 1 auto" } },
+            h(Icon, { name: opts.icon || "circle", size: 11, color: opts.accent || "#a1a1aa" }),
+            h("div", { style: { fontSize: 9, fontWeight: 600, color: "#a1a1aa", textTransform: "uppercase", letterSpacing: 0.3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } }, opts.label)
           ),
-          opts.badge ? h("span", { style: { fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 3, background: opts.badgeBg || "rgba(255,255,255,0.05)", color: opts.badgeColor || "#cbd5e1", border: "1px solid " + (opts.badgeBg || "rgba(255,255,255,0.08)") } }, opts.badge) : null
+          opts.badge ? h("span", { style: { fontSize: 9, fontWeight: 700, padding: "1px 5px", borderRadius: 3, background: opts.badgeBg || "rgba(255,255,255,0.05)", color: opts.badgeColor || "#cbd5e1", whiteSpace: "nowrap" } }, opts.badge) : null
         ),
-        h("div", { style: { display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 10 } },
-          h("div", null,
-            h("div", { style: { fontSize: opts.bigSize || 22, fontWeight: 700, color: opts.valueColor || "#fafafa", lineHeight: 1, letterSpacing: "-0.01em" } }, opts.value),
-            opts.hint ? h("div", { style: { fontSize: 11, color: "#a1a1aa", marginTop: 5 } }, opts.hint) : null
+        h("div", { style: { display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 6, minWidth: 0 } },
+          h("div", { style: { minWidth: 0, flex: "1 1 auto" } },
+            h("div", { style: { fontSize: opts.bigSize || 18, fontWeight: 700, color: opts.valueColor || "#fafafa", lineHeight: 1.05, letterSpacing: "-0.01em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } }, opts.value),
+            opts.hint ? h("div", { style: { fontSize: 10, color: "#a1a1aa", marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } }, opts.hint) : null
           ),
-          opts.sparkline && opts.sparkline.length > 1 ? h("div", { style: { opacity: 0.85 } }, Sparkline(opts.sparkline, opts.accent || "#818cf8", 30, 60)) : null
+          opts.sparkline && opts.sparkline.length > 1 ? h("div", { style: { opacity: 0.75, flexShrink: 0 } }, Sparkline(opts.sparkline, opts.accent || "#818cf8", 24, 44)) : null
         )
       );
     }
@@ -9529,7 +9531,7 @@
                             if (v > 0) sparkPts.unshift(v);
                           }
                         }
-                        return h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 } },
+                        return h("div", { style: { display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))", gap: 8 } },
                           KpiTile({
                             icon: "zap", accent: "#a78bfa",
                             label: "Vitesse actuelle",
@@ -9543,21 +9545,21 @@
                           }),
                           cadenceRequise !== null ? KpiTile({
                             icon: "gauge", accent: "#fbbf24",
-                            label: "Cadence requise",
+                            label: "Cadence",
                             value: fmtNum(Math.round(cadenceRequise)) + " m/j",
                             valueColor: cadenceColor,
-                            hint: "après " + Math.round(tauxAbsence * 100) + " % d'aléas hist.",
+                            hint: Math.round(tauxAbsence * 100) + " % aléas",
                             badge: cadenceRequise > vitesse14j * 1.2 ? "Tendu" : "OK",
                             badgeColor: cadenceRequise > vitesse14j * 1.2 ? "#fda4af" : "#86efac",
                             badgeBg: cadenceRequise > vitesse14j * 1.2 ? "rgba(244,63,94,0.15)" : "rgba(34,197,94,0.15)"
                           }) : null,
                           nbMachinesRequises !== null ? KpiTile({
                             icon: "settings", accent: "#818cf8",
-                            label: "Machines requises",
+                            label: "Machines",
                             value: nbMachinesRequisesExact.toFixed(2),
                             valueColor: machinesColor,
-                            hint: "min " + nbMachinesRequises + " machine(s)",
-                            badge: "actuel : " + moyMachinesRecent.toFixed(1),
+                            hint: "min " + nbMachinesRequises + " req.",
+                            badge: "act " + moyMachinesRecent.toFixed(1),
                             badgeColor: "#a5b4fc",
                             badgeBg: "rgba(99,102,241,0.15)"
                           }) : null,
@@ -9566,20 +9568,20 @@
                             accent: decalageJ != null && decalageJ > 5 ? "#f43f5e" : decalageJ != null && decalageJ < -5 ? "#22c55e" : "#818cf8",
                             label: "Fin estimée",
                             value: projectionImpossible ? "—" : dateFinEst.toLocaleDateString("fr-FR"),
-                            bigSize: 16,
+                            bigSize: 13,
                             valueColor: decalageJ != null && decalageJ > 5 ? "#fda4af" : decalageJ != null && decalageJ < -5 ? "#86efac" : "#fafafa",
-                            hint: decalageJ !== null ? (decalageJ >= 0 ? "+" + decalageJ : decalageJ) + " j ouvrés vs contrat" : "projection impossible",
+                            hint: decalageJ !== null ? (decalageJ >= 0 ? "+" + decalageJ : decalageJ) + " j vs contrat" : "impossible",
                             badge: decalageJ > 0 ? "Retard" : decalageJ < 0 ? "Avance" : "OK",
                             badgeColor: decalageJ > 5 ? "#fda4af" : decalageJ < -5 ? "#86efac" : "#fde68a",
                             badgeBg: decalageJ > 5 ? "rgba(244,63,94,0.15)" : decalageJ < -5 ? "rgba(34,197,94,0.15)" : "rgba(251,191,36,0.15)"
                           }),
                           KpiTile({
                             icon: "clock", accent: "#22c55e",
-                            label: "Jours restants",
+                            label: "Restants",
                             value: joursRestants + " j",
                             valueColor: healthColor,
-                            hint: useFallback ? "rythme actuel" : "selon planning",
-                            badge: useFallback ? "estimation" : "planifié",
+                            hint: useFallback ? "rythme actuel" : "planning",
+                            badge: useFallback ? "estim." : "plan",
                             badgeColor: useFallback ? "#a1a1aa" : "#86efac",
                             badgeBg: useFallback ? "rgba(255,255,255,0.04)" : "rgba(34,197,94,0.15)"
                           }),
@@ -9588,18 +9590,18 @@
                             label: "CA restant",
                             value: fmtNum(Math.round(caRestant / 1000)) + " k",
                             valueColor: "#67e8f9",
-                            hint: "XPF (" + fmtNum(Math.round(metresRestants)) + " m × " + fmtNum(prixMetre) + ")",
-                            badge: "à facturer",
+                            hint: "XPF",
+                            badge: "facturer",
                             badgeColor: "#67e8f9",
                             badgeBg: "rgba(34,211,238,0.15)"
                           }),
                           KpiTile({
                             icon: "trending-up",
                             accent: margePct >= 20 ? "#22c55e" : margePct >= 10 ? "#fbbf24" : "#f43f5e",
-                            label: "Marge prévue",
+                            label: "Marge",
                             value: coutTotalPrevu > 0 ? fmtNum(Math.round(margeEstimee / 1000)) + " k" : "N/A",
                             valueColor: margePct >= 20 ? "#86efac" : margePct >= 10 ? "#fde68a" : "#fda4af",
-                            hint: coutTotalPrevu > 0 ? margePct + " % · coût " + fmtNum(Math.round(coutTotalPrevu / 1000)) + " k" : "renseigne dépenses prévues",
+                            hint: coutTotalPrevu > 0 ? margePct + " %" : "renseigne dép.",
                             badge: coutTotalPrevu > 0 ? (margePct >= 20 ? "Bonne" : margePct >= 10 ? "Limite" : "Risque") : "—",
                             badgeColor: margePct >= 20 ? "#86efac" : margePct >= 10 ? "#fde68a" : "#fda4af",
                             badgeBg: margePct >= 20 ? "rgba(34,197,94,0.15)" : margePct >= 10 ? "rgba(251,191,36,0.15)" : "rgba(244,63,94,0.15)",
@@ -18465,7 +18467,7 @@
           }()),
 
           // ─ Section 1 : KPIs (thème glassmorphism violet/vert/jaune cohérent) ─
-          h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12, marginBottom: 16 } },
+          h("div", { style: { display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 10, marginBottom: 16 } },
             KpiTile({
               icon: "zap", accent: "#a78bfa",
               label: "Vitesse actuelle",
