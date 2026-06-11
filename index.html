@@ -14713,9 +14713,8 @@
       var lblStyle = { fontSize: 11, fontWeight: 700, color: "#a1a1aa", textTransform: "uppercase", letterSpacing: 0.5, marginRight: 6 };
 
       // ── Rendu principal ──
-      return h("div", { style: { position: "relative" } },
-        // Animation meteo en fond (gouttes / nuages / orage selon meteo du jour)
-        h(WeatherBackground, { meteo: meteoBgToday }),
+      // (l'animation meteo est maintenant globale au niveau App)
+      return h("div", null,
         h(PageHeader, {
           title: h(IconText, { icon: "bar-chart-3", size: 20 }, "Statistiques"),
           subtitle: "Vue d'ensemble des rapports de forage, activites et consommables",
@@ -21166,6 +21165,26 @@
       }
       // isAdmin: true if role is "Administrateur" OR if email matches ADMIN_EMAIL (fallback)
       const isAdmin = !!(currentAppUser && currentAppUser.role === "Administrateur") || !!((userEmail || "").toLowerCase() === ADMIN_EMAIL);
+      // ─ Meteo globale (1er chantier actif avec GPS) pour animation de fond ─
+      var _gmeteo = useState(null); var globalMeteoToday = _gmeteo[0]; var setGlobalMeteoToday = _gmeteo[1];
+      useEffect(function() {
+        var chs = (dbChantiers || []).filter(function(c) { return c.statut !== "Termine" && c.latitude != null && c.longitude != null; });
+        if (chs.length === 0) return;
+        var c = chs[0];
+        var url = "https://employes-psi.vercel.app/api/meteo?lat=" + c.latitude + "&lon=" + c.longitude;
+        fetch(url).then(function(r) { return r.json(); }).then(function(data) {
+          if (!data || !data.daily || !data.daily.time) return;
+          var t = new Date();
+          var iso = t.getFullYear() + "-" + String(t.getMonth() + 1).padStart(2, "0") + "-" + String(t.getDate()).padStart(2, "0");
+          var idx = data.daily.time.indexOf(iso);
+          if (idx < 0) idx = 0;
+          setGlobalMeteoToday({
+            code: data.daily.weather_code ? data.daily.weather_code[idx] : (data.daily.weathercode ? data.daily.weathercode[idx] : 0),
+            prec: data.daily.precipitation_sum ? data.daily.precipitation_sum[idx] : 0,
+            wind: data.daily.wind_speed_10m_max ? data.daily.wind_speed_10m_max[idx] : 0
+          });
+        }).catch(function() {});
+      }, [dbChantiers]);
       // isSecretaire: role "Secretaire" -> acces complet au coffre RH uniquement
       const isSecretaire = !!(currentAppUser && currentAppUser.role === "Secretaire");
       // Peut acceder au coffre RH (admin OR secretaire OR utilisateur avec page autorisee)
@@ -21535,9 +21554,13 @@
       var mainPadding = bpInfo.isMobile ? "calc(16px + env(safe-area-inset-top)) 12px calc(80px + env(safe-area-inset-bottom))" : bpInfo.isTablet ? "20px 20px" : "24px 32px";
 
       return h(AppContext.Provider, { value: contextValue },
+        // Animation meteo en fond globale (visible derriere tout : sidebar, KPIs, etc.)
+        // Le fond meteo est position:fixed z-index:0 ; les conteneurs au-dessus
+        // doivent etre semi-transparents pour le laisser passer.
+        h(WeatherBackground, { meteo: globalMeteoToday }),
         // Recherche globale Ctrl+K (modal + bouton flottant)
         h(RechercheGlobale, { onNavigate: navigate }),
-        h("div", { style: { display: "flex", height: bpInfo.isMobile ? "auto" : "100dvh", minHeight: "100dvh", overflow: bpInfo.isMobile ? "visible" : "hidden", background: "var(--bg)", fontFamily: "'Inter', system-ui, -apple-system, sans-serif" } },
+        h("div", { style: { display: "flex", height: bpInfo.isMobile ? "auto" : "100dvh", minHeight: "100dvh", overflow: bpInfo.isMobile ? "visible" : "hidden", background: "transparent", fontFamily: "'Inter', system-ui, -apple-system, sans-serif", position: "relative", zIndex: 1 } },
           // Overlay derriere le drawer mobile (clic ferme)
           bpInfo.isMobile && sidebarOpen ? h("div", { onClick: function() { setSidebarOpen(false); }, style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)", zIndex: 998 } }) : null,
           h(Sidebar, { currentPage, onNavigate: navigate, userEmail: session.user && session.user.email, onLogout: logout, isAdmin, isSecretaire, pendingCount: pendingValidations.length, soumissionsPending: soumissionsPendingCount, piecesPending: piecesPendingCount, demandesFinPending: (function() { var u = session.user && session.user.email; return (dbDemandesFin || []).filter(function(d) { return (isAdmin || d.demandeurEmail === u) && (d.statut === "soumise" || (d.statut === "info_demandee" && (isAdmin || d.demandeurEmail === u))); }).length; }()), empruntsFinProche: countEmpruntsFinProche(dbEmprunts), alertesSaisiesPending: (alertesSaisies && alertesSaisies.count) || 0, allowedPages: allowedPages, isMobile: bpInfo.isMobile, isOpen: sidebarOpen, onClose: function() { setSidebarOpen(false); } }),
