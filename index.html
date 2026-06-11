@@ -7570,17 +7570,19 @@
         style: { width: 48, flexShrink: 0, borderRight: "1px solid rgba(255,255,255,0.06)", background: cellBg, textAlign: "center", cursor: effectiveBrush ? "pointer" : "default", position: "relative" }
       },
         // Badge meteo en coin haut-droit, absolute -> n'affecte jamais le layout
-        meteoDay ? h("div", {
-          style: {
-            position: "absolute",
-            top: 1,
-            right: 2,
-            fontSize: 11,
-            lineHeight: "12px",
-            pointerEvents: "none",
-            opacity: 0.95
-          }
-        }, meteoEmoji(meteoDay.code, meteoDay.prec)) : null,
+        // Icone Lucide pour un rendu propre (pas d'emoji qui varie selon l'OS)
+        meteoDay ? (function() {
+          var ic = meteoLucide(meteoDay.code, meteoDay.prec);
+          return h("div", {
+            style: {
+              position: "absolute",
+              top: 2,
+              right: 3,
+              lineHeight: 0,
+              pointerEvents: "none"
+            }
+          }, h(Icon, { name: ic.name, size: 11, color: ic.color }));
+        }()) : null,
         // Ligne 1 : ancienne ligne machineLabel (FS1 / D37 / etc.) -> retiree car
         // l'emoji meteo prend cet espace en coin. L'info machine reste dans le
         // tooltip et dans les sous-lignes par machine en multi-machine.
@@ -8185,7 +8187,7 @@
       );
     }
 
-    // Mapping weather code -> emoji (Open-Meteo / met.no compatible)
+    // Mapping weather code -> emoji (utilise dans les tooltips uniquement)
     function meteoEmoji(code, prec) {
       var c = code || 0;
       var p = prec || 0;
@@ -8198,6 +8200,21 @@
       if (c >= 2) return "⛅";
       if (c >= 1) return "🌤";
       return "☀";
+    }
+    // Mapping weather code -> Lucide icon name + couleur (pour rendu visuel propre)
+    // Plus pro que les emojis, coherent avec le reste de l'app qui utilise Lucide
+    function meteoLucide(code, prec) {
+      var c = code || 0;
+      var p = prec || 0;
+      if (c >= 95) return { name: "cloud-lightning", color: "#a78bfa" }; // orage
+      if (c >= 80 || p > 15) return { name: "cloud-rain", color: "#60a5fa" }; // pluie forte
+      if (c >= 71) return { name: "cloud-snow", color: "#e0f2fe" }; // neige
+      if (c >= 61 || p > 5) return { name: "cloud-rain", color: "#93c5fd" }; // pluie moderee
+      if (c >= 51) return { name: "cloud-drizzle", color: "#bae6fd" }; // bruine
+      if (c >= 45) return { name: "cloud-fog", color: "#cbd5e1" }; // brouillard
+      if (c >= 2) return { name: "cloud", color: "#cbd5e1" }; // nuageux
+      if (c >= 1) return { name: "cloud-sun", color: "#fde68a" }; // partiellement
+      return { name: "sun", color: "#fbbf24" }; // soleil
     }
     // Severite d'intemperies pour fond colore (verge si calme, bleu si pluie, violet si orage)
     function meteoBg(d) {
@@ -18790,14 +18807,6 @@
                 return { date: dt, dow: dow, isWE: isWE, prec: prec, wind: wind, code: code, tMax: tMax, intemp: intemp };
               });
               var jourLabels = ["D", "L", "M", "M", "J", "V", "S"];
-              function emoji(c, prec) {
-                if (c >= 95) return "⛈️";
-                if (c >= 80 || prec > 5) return "🌧️";
-                if (c >= 51) return "🌦️";
-                if (c >= 45) return "🌫️";
-                if (c >= 1) return "⛅";
-                return "☀️";
-              }
               var metragePrev14j = nbProductifsMeteo * data.vitesse14j;
               return h("div", null,
                 h("div", { style: { display: "grid", gridTemplateColumns: "repeat(14, 1fr)", gap: 4, marginBottom: 12 } },
@@ -18805,11 +18814,12 @@
                     var bg = w.isWE ? "rgba(100,116,139,0.10)" : w.intemp ? "rgba(59,130,246,0.15)" : "rgba(251,191,36,0.10)";
                     var bd = w.isWE ? "rgba(100,116,139,0.20)" : w.intemp ? "rgba(59,130,246,0.30)" : "rgba(251,191,36,0.25)";
                     var col = w.isWE ? "#64748b" : w.intemp ? "#93c5fd" : "#fde68a";
-                    return h("div", { key: i, style: { aspectRatio: "1", padding: 4, borderRadius: 6, background: bg, border: "1px solid " + bd, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", fontSize: 10, textAlign: "center", color: col } },
+                    var ic = meteoLucide(w.code, w.prec);
+                    return h("div", { key: i, style: { aspectRatio: "1", padding: 4, borderRadius: 6, background: bg, border: "1px solid " + bd, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, fontSize: 10, textAlign: "center", color: col } },
                       h("div", { style: { fontWeight: 700 } }, jourLabels[w.dow]),
                       h("div", { style: { fontSize: 9 } }, (w.date.getDate())),
-                      w.isWE ? h("div", { style: { fontSize: 10 } }, "—") : h("div", { style: { fontSize: 14 } }, emoji(w.code, w.prec)),
-                      !w.isWE && w.tMax !== null ? h("div", { style: { fontSize: 9 } }, Math.round(w.tMax) + "°") : null
+                      w.isWE ? h("div", { style: { fontSize: 10 } }, "—") : h(Icon, { name: ic.name, size: 18, color: ic.color }),
+                      !w.isWE && w.tMax !== null ? h("div", { style: { fontSize: 9, fontWeight: 600 } }, Math.round(w.tMax) + "°") : null
                     );
                   })
                 ),
