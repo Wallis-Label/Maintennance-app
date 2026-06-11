@@ -8226,29 +8226,74 @@
       var setChantiers = ctxAv.setDbChantiers;
       var saisies = ctxAv.dbSaisies;
 
-      // ── Cout/m global moyen (utilise par le previsionnel chantier) ──
-      // Estimation : (masse_salariale x 1.30 + charges_fixes + emprunts) mensuel
-      // divise par les metres realises mensuels moyens (90 derniers jours).
-      // Le carburant est ignore (~5-10% du total, marge d'erreur acceptable
-      // vs la complexite de l'inclure ici).
+      // ── Fetch consommations_carburant 90j (pour cout/m global) ──
+      var _carb = useState([]); var carbs90j = _carb[0]; var setCarbs90j = _carb[1];
+      useEffect(function() {
+        var d90 = new Date(Date.now() - 90 * 86400 * 1000);
+        var iso = d90.toISOString().substring(0, 10);
+        supabase.from("consommations_carburant").select("sondeuse_code,date_consommation,quantite_l").gte("date_consommation", iso).then(function(res) {
+          if (res && res.data) setCarbs90j(res.data);
+        });
+      }, []);
+
+      // ── Cout/m global moyen sur 90 derniers jours ──
+      // Reproduit la formule de l'Accueil (Statistiques) :
+      //   Personnel x 1.30 + Charges fixes + Emprunts + Carburant + Primes x 1.30
+      //   tout sur 90 jours, divise par les metres realises sur 90j.
+      // Le seul poste non inclus = consommables sondeuses (typiquement < 5% du total).
       var coutMetreGlobalEstime = (function() {
         try {
-          var persList = loadPersonnelFromParametres(ctxAv.parametres || []);
-          var masseSalarialeMensuelle = persList.reduce(function(s, p) { return s + (parseInt(p.salaire) || 0); }, 0) * 1.30;
-          var chargesFixesMensuel = (ctxAv.dbChargesFixes || []).reduce(function(s, c) { return s + (parseFloat(c.montant_mensuel) || 0); }, 0);
+          var parametresList = ctxAv.parametres || [];
+          var persList = loadPersonnelFromParametres(parametresList);
+          var masseSalarialeMensuelle = persList.reduce(function(s, p) { return s + (parseInt(p.salaire) || 0); }, 0);
+          var chargesFixesMensuel = (ctxAv.dbChargesFixes || []).filter(function(c) { return c && c.actif !== false; }).reduce(function(s, c) { return s + (parseFloat(c.montant_mensuel) || 0); }, 0);
           var empruntsMensuel = (ctxAv.dbEmprunts || []).filter(function(e) { return (e.statut || "actif") === "actif"; }).reduce(function(s, e) { return s + (parseFloat(e.mensualite) || 0); }, 0);
-          var coutMensuelTotal = masseSalarialeMensuelle + chargesFixesMensuel + empruntsMensuel;
-          if (coutMensuelTotal <= 0) return 0;
-          // Metres realises sur les 90 derniers jours (tous chantiers confondus)
+          var nbMois90j = 3; // 90j = 3 mois
+          var coutPersonnel90j = masseSalarialeMensuelle * 1.30 * nbMois90j;
+          var coutChargesFixes90j = chargesFixesMensuel * nbMois90j;
+          var coutEmprunts90j = empruntsMensuel * nbMois90j;
+          // Carburant 90j (toutes machines)
+          var prixMazout = 175;
+          var pmRow = parametresList.find(function(p) { return p && (p.cle === "prix_mazout_litre" || p.categorie === "prix_mazout_litre"); });
+          if (pmRow && pmRow.valeur) prixMazout = parseFloat(pmRow.valeur) || 175;
+          var coutCarburant90j = (carbs90j || []).reduce(function(s, c) { return s + ((parseFloat(c.quantite_l) || 0) * prixMazout); }, 0);
+          // Primes 90j (meme calcul que page Primes / page Accueil)
           var today2 = new Date();
           var d90 = new Date(today2.getTime() - 90 * 86400 * 1000);
+          var coutPrimes90j = 0;
+          try {
+            var primesChantiers = ctxAv.dbChantiers || [];
+            var chantiersBySite = {};
+            primesChantiers.filter(function(c) { return c.statut === "En cours" || c.statut === "Termine"; }).forEach(function(ch) {
+              if (!ch.site) return;
+              if (!chantiersBySite[ch.site]) chantiersBySite[ch.site] = [];
+              chantiersBySite[ch.site].push(ch);
+            });
+            var chantierToSite = {};
+            primesChantiers.forEach(function(c) { if (c && c.id != null) chantierToSite[c.id] = c.site || ""; });
+            var totalPrimesBrutes = computeTotalPrimesForPeriod(d90, today2, {
+              chantiers: primesChantiers,
+              chantiersBySite: chantiersBySite,
+              chantierToSite: chantierToSite,
+              paliers: ctxAv.dbPaliers || [],
+              affectations: ctxAv.dbAffectations || [],
+              saisies: ctxAv.dbSaisies || {},
+              personnel: persList,
+              releves: ctxAv.dbRelevesJourn || [],
+              rapportsForage: ctxAv.dbRapportsForage || []
+            });
+            coutPrimes90j = (totalPrimesBrutes || 0) * 1.30;
+          } catch (e) {}
+          // Total couts 90j
+          var coutTotal90j = coutPersonnel90j + coutChargesFixes90j + coutEmprunts90j + coutCarburant90j + coutPrimes90j;
+          if (coutTotal90j <= 0) return 0;
+          // Metres 90j (tous chantiers confondus)
           var iso90 = d90.toISOString().substring(0, 10);
           var totalMetres90j = (ctxAv.dbRelevesJourn || []).filter(function(r) {
             return (r.dateReleve || "") >= iso90;
           }).reduce(function(s, r) { return s + (parseFloat(r.metrage) || 0); }, 0);
           if (totalMetres90j <= 0) return 0;
-          var metresMensuelMoyen = totalMetres90j / 3;
-          return metresMensuelMoyen > 0 ? coutMensuelTotal / metresMensuelMoyen : 0;
+          return coutTotal90j / totalMetres90j;
         } catch (e) { return 0; }
       }());
       var setSaisiesState = ctxAv.setDbSaisies;
