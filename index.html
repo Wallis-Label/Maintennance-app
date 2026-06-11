@@ -13859,29 +13859,59 @@
         }
         // ─ Calcul des forecasts ajustes meteo pour les jours futurs ─
         // Vitesse quotidienne par chantier (sur les 14 derniers jours productifs)
+        // On utilise dbRelevesJourn (toujours chantierId rempli) + saisies metrage
         var bcToday = new Date(now.getTime()); bcToday.setHours(0, 0, 0, 0);
         var activeChForFc = (dbChantiers || []).filter(function(c) {
           if (c.statut === "Termine") return false;
           if (chantierF !== "all" && String(c.id) !== String(chantierF)) return false;
           return true;
         });
+        // Pre-calcule metrage par chantier+date (releves_journaliers MAX par machine puis SUM)
+        var dbRelJ = ctx.dbRelevesJourn || [];
+        var dbSais = ctx.dbSaisies || {};
+        var metByChDate = {};
+        var relTmp = {};
+        for (var ri = 0; ri < dbRelJ.length; ri++) {
+          var rj = dbRelJ[ri];
+          if (!rj || !rj.chantierId || !rj.dateReleve) continue;
+          var ckk = String(rj.chantierId);
+          var dkk = String(rj.dateReleve).substring(0, 10);
+          var mkk = String(rj.sondeuseCode || rj.equipementId || "_no").toUpperCase().trim();
+          if (!relTmp[ckk]) relTmp[ckk] = {};
+          if (!relTmp[ckk][dkk]) relTmp[ckk][dkk] = {};
+          var vrj = parseFloat(rj.metrage) || 0;
+          if (vrj > (relTmp[ckk][dkk][mkk] || 0)) relTmp[ckk][dkk][mkk] = vrj;
+        }
+        Object.keys(relTmp).forEach(function(ck) {
+          metByChDate[ck] = {};
+          Object.keys(relTmp[ck]).forEach(function(dk) {
+            var s = 0;
+            Object.keys(relTmp[ck][dk]).forEach(function(mk) { s += relTmp[ck][dk][mk]; });
+            metByChDate[ck][dk] = s;
+          });
+        });
+        // Fallback saisies (si pas de releves)
+        Object.keys(dbSais).forEach(function(ck) {
+          if (!metByChDate[ck]) metByChDate[ck] = {};
+          Object.keys(dbSais[ck] || {}).forEach(function(dk) {
+            if (metByChDate[ck][dk] == null) {
+              var sv = dbSais[ck][dk];
+              var v = typeof sv === "object" ? (parseFloat(sv.valeur) || 0) : (parseFloat(sv) || 0);
+              if (v > 0) metByChDate[ck][dk] = v;
+            }
+          });
+        });
         var vitesseParChFc = {};
         activeChForFc.forEach(function(c) {
-          // somme metres des 14 derniers jours productifs (sur la base des rapports filtered)
           var pTot = 0, pNb = 0;
           var pCursor = new Date(bcToday.getTime()); var pSafe = 0;
+          var chMet = metByChDate[String(c.id)] || {};
           while (pNb < 14 && pSafe < 80) {
             pCursor.setDate(pCursor.getDate() - 1);
             var pDow = pCursor.getDay();
             if (pDow >= 1 && pDow <= 4) {
               var pIso = pCursor.getFullYear() + "-" + String(pCursor.getMonth() + 1).padStart(2, "0") + "-" + String(pCursor.getDate()).padStart(2, "0");
-              // metres du chantier ce jour : somme rapports
-              var dayMet = 0;
-              (rapports || []).forEach(function(r) {
-                if (r.chantier_id != null && String(r.chantier_id) === String(c.id) && r.date_rapport && String(r.date_rapport).substring(0, 10) === pIso) {
-                  dayMet += parseFloat(r.total_metres) || 0;
-                }
-              });
+              var dayMet = chMet[pIso] || 0;
               if (dayMet > 0) { pTot += dayMet; pNb++; }
             }
             pSafe++;
