@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Démo — Coffre-fort RH</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: linear-gradient(135deg, #0b0e17 0%, #131829 100%); color: #e6e8f0; padding: 24px; min-height: 100vh; line-height: 1.5; }
+.wrap { max-width: 1400px; margin: 0 auto; }
+h1 { font-size: 22px; margin-bottom: 4px; display: flex; align-items: center; gap: 12px; }
+.sub { color: #94a3b8; font-size: 13px; margin-bottom: 20px; }
+.glass { background: rgba(36, 40, 60, 0.55); backdrop-filter: blur(20px) saturate(180%); -webkit-backdrop-filter: blur(20px) saturate(180%); border: 1px solid rgba(255,255,255,0.07); border-radius: 14px; box-shadow: 0 8px 24px rgba(0,0,0,0.2); }
+
+/* Header KPIs */
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 18px; }
+.kpi { padding: 14px 16px; border-left: 3px solid var(--accent, #818cf8); }
+.kpi .lbl { font-size: 10px; color: #a1a1aa; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+.kpi .val { font-size: 22px; font-weight: 700; margin-top: 4px; color: var(--accent, #818cf8); }
+.kpi .hint { font-size: 11px; color: #94a3b8; margin-top: 3px; }
+
+/* Layout principal : sidebar employés + détail */
+.layout { display: grid; grid-template-columns: 320px 1fr; gap: 16px; }
+@media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+
+/* Sidebar employés */
+.emp-list { padding: 14px; max-height: 700px; overflow-y: auto; }
+.emp-search { width: 100%; padding: 8px 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.10); color: #fafafa; border-radius: 8px; margin-bottom: 12px; font-size: 13px; font-family: inherit; outline: none; }
+.emp-search:focus { border-color: rgba(129,140,248,0.5); }
+.emp-item { padding: 10px 12px; border-radius: 8px; margin-bottom: 6px; display: flex; align-items: center; gap: 10px; cursor: pointer; transition: background 0.15s; }
+.emp-item:hover { background: rgba(255,255,255,0.04); }
+.emp-item.active { background: linear-gradient(135deg, rgba(99,102,241,0.18), rgba(99,102,241,0.06)); border: 1px solid rgba(99,102,241,0.30); }
+.emp-avatar { width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, #6366f1, #8b5cf6); display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 13px; color: white; flex-shrink: 0; }
+.emp-info { flex: 1; min-width: 0; }
+.emp-name { font-size: 13px; font-weight: 700; color: #fafafa; }
+.emp-role { font-size: 11px; color: #94a3b8; }
+.emp-meta { font-size: 11px; color: #71717a; display: flex; gap: 6px; align-items: center; }
+.badge-pill { padding: 1px 6px; border-radius: 999px; font-size: 9.5px; font-weight: 700; }
+.badge-expiring { background: rgba(251,191,36,0.18); color: #fde68a; }
+.badge-expired { background: rgba(244,63,94,0.18); color: #fda4af; }
+.badge-ok { background: rgba(34,197,94,0.18); color: #86efac; }
+
+/* Détail employé */
+.detail { padding: 18px 20px; }
+.detail-header { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; padding-bottom: 14px; border-bottom: 1px solid rgba(255,255,255,0.06); }
+.detail-avatar { width: 60px; height: 60px; border-radius: 50%; background: linear-gradient(135deg, #6366f1, #8b5cf6); display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 22px; color: white; flex-shrink: 0; }
+.detail-name { font-size: 19px; font-weight: 800; color: #fafafa; }
+.detail-meta { font-size: 13px; color: #94a3b8; display: flex; gap: 12px; flex-wrap: wrap; margin-top: 4px; }
+.btn-add { margin-left: auto; padding: 10px 16px; border-radius: 8px; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; border: none; font-weight: 700; font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 6px; font-family: inherit; transition: transform 0.15s, box-shadow 0.15s; }
+.btn-add:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(99,102,241,0.30); }
+
+/* Filtres types */
+.type-filters { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+.type-chip { padding: 5px 12px; border-radius: 999px; font-size: 11px; font-weight: 600; background: rgba(255,255,255,0.05); color: #cbd5e1; border: 1px solid rgba(255,255,255,0.08); cursor: pointer; transition: all 0.15s; }
+.type-chip.active { background: rgba(99,102,241,0.20); color: #c4b5fd; border-color: rgba(99,102,241,0.45); }
+.type-chip:hover:not(.active) { background: rgba(255,255,255,0.08); }
+.type-chip .count { margin-left: 4px; font-size: 10px; opacity: 0.7; }
+
+/* Liste documents */
+.doc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.doc-card { background: rgba(255,255,255,0.04); border-radius: 10px; padding: 14px; border-left: 3px solid var(--doc-accent, #818cf8); transition: transform 0.15s, box-shadow 0.15s; cursor: pointer; }
+.doc-card:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0,0,0,0.25); }
+.doc-head { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 8px; }
+.doc-icon { width: 36px; height: 36px; border-radius: 8px; background: var(--doc-bg, rgba(99,102,241,0.20)); display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 18px; }
+.doc-meta { flex: 1; min-width: 0; }
+.doc-type { font-size: 10px; color: #a1a1aa; text-transform: uppercase; letter-spacing: 0.4px; font-weight: 600; }
+.doc-name { font-size: 13px; font-weight: 700; color: #fafafa; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.doc-dates { display: flex; justify-content: space-between; font-size: 11px; color: #94a3b8; margin-top: 8px; padding-top: 8px; border-top: 1px dashed rgba(255,255,255,0.05); }
+.doc-actions { display: flex; gap: 6px; margin-top: 10px; }
+.doc-actions button { flex: 1; padding: 5px 8px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08); border-radius: 5px; color: #cbd5e1; font-size: 11px; font-weight: 600; cursor: pointer; font-family: inherit; display: flex; align-items: center; justify-content: center; gap: 4px; }
+.doc-actions button:hover { background: rgba(255,255,255,0.10); }
+.doc-actions .danger { color: #fda4af; }
+.doc-actions .danger:hover { background: rgba(244,63,94,0.15); }
+.empty { padding: 60px 20px; text-align: center; color: #71717a; }
+.empty-icon { font-size: 48px; opacity: 0.4; margin-bottom: 12px; }
+
+/* Modal upload */
+.modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(8px); z-index: 100; align-items: center; justify-content: center; padding: 20px; }
+.modal-bg.show { display: flex; }
+.modal { width: 100%; max-width: 540px; background: #1a1d2e; border: 1px solid rgba(255,255,255,0.10); border-radius: 14px; padding: 24px; box-shadow: 0 30px 90px rgba(0,0,0,0.6); }
+.modal h2 { font-size: 17px; margin-bottom: 14px; }
+.modal .field { margin-bottom: 14px; }
+.modal .field label { display: block; font-size: 11px; color: #a1a1aa; text-transform: uppercase; letter-spacing: 0.4px; font-weight: 600; margin-bottom: 5px; }
+.modal .field input, .modal .field select, .modal .field textarea { width: 100%; padding: 9px 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.10); color: #fafafa; border-radius: 8px; font-size: 13px; font-family: inherit; outline: none; }
+.modal .field input:focus, .modal .field select:focus, .modal .field textarea:focus { border-color: rgba(129,140,248,0.5); }
+.modal .field textarea { resize: vertical; min-height: 60px; }
+.modal .actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+.modal .actions button { padding: 9px 16px; border-radius: 8px; font-weight: 700; font-size: 13px; cursor: pointer; font-family: inherit; border: none; }
+.modal .actions .cancel { background: rgba(255,255,255,0.06); color: #cbd5e1; }
+.modal .actions .save { background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; }
+.drop-zone { padding: 24px; border: 2px dashed rgba(255,255,255,0.15); border-radius: 10px; text-align: center; color: #94a3b8; cursor: pointer; transition: all 0.2s; background: rgba(255,255,255,0.02); }
+.drop-zone:hover { border-color: rgba(129,140,248,0.5); background: rgba(99,102,241,0.05); color: #c4b5fd; }
+.drop-zone .ic { font-size: 32px; opacity: 0.5; margin-bottom: 6px; }
+.drop-zone .lab { font-size: 13px; font-weight: 600; }
+.drop-zone .hint { font-size: 11px; opacity: 0.7; margin-top: 4px; }
+
+/* Bandeau permissions */
+.perm-banner { background: rgba(99,102,241,0.10); border: 1px solid rgba(99,102,241,0.30); border-radius: 8px; padding: 10px 14px; font-size: 12.5px; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+.perm-banner .lbl { color: #c4b5fd; font-weight: 700; }
+.perm-banner button { margin-left: auto; padding: 4px 10px; background: rgba(99,102,241,0.20); border: 1px solid rgba(99,102,241,0.45); color: #c4b5fd; border-radius: 5px; font-size: 11px; font-weight: 600; cursor: pointer; font-family: inherit; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🗄️ Coffre-fort RH</h1>
+  <div class="sub">Centralisation des documents administratifs : contrats, fiches de paie, permis CACES, certifs médecine du travail, habilitations...</div>
+
+  <!-- Bandeau de permissions (changement de mode pour démo) -->
+  <div class="perm-banner">
+    <span style="font-size:16px;">👁️</span>
+    <span><span class="lbl" id="modeLabel">Vue administrateur</span> — Tu vois tous les documents de tous les employés. Tu peux uploader, modifier, supprimer.</span>
+    <button onclick="toggleMode()">Voir en mode employé</button>
+  </div>
+
+  <!-- KPIs -->
+  <div class="kpis">
+    <div class="glass kpi" style="--accent:#a78bfa;">
+      <div class="lbl">📁 Documents stockés</div>
+      <div class="val">47</div>
+      <div class="hint">sur 12 employés</div>
+    </div>
+    <div class="glass kpi" style="--accent:#fbbf24;">
+      <div class="lbl">⏰ Expirent dans 30j</div>
+      <div class="val">3</div>
+      <div class="hint">Sur Tonus, Mace, Bouhaba</div>
+    </div>
+    <div class="glass kpi" style="--accent:#f43f5e;">
+      <div class="lbl">⚠️ Déjà expirés</div>
+      <div class="val">1</div>
+      <div class="hint">Kanyom (CACES R489)</div>
+    </div>
+    <div class="glass kpi" style="--accent:#22c55e;">
+      <div class="lbl">✅ Conformité</div>
+      <div class="val">92 %</div>
+      <div class="hint">11 / 12 employés à jour</div>
+    </div>
+  </div>
+
+  <div class="layout">
+    <!-- SIDEBAR EMPLOYÉS -->
+    <div class="glass emp-list" id="empList">
+      <input class="emp-search" type="text" placeholder="🔍 Chercher un employé..." oninput="filterEmps(this.value)">
+
+      <div class="emp-item active" onclick="selectEmp(0)">
+        <div class="emp-avatar">SD</div>
+        <div class="emp-info">
+          <div class="emp-name">DESONNEVILLE Sébastien</div>
+          <div class="emp-role">Chef de chantier · DSE</div>
+        </div>
+        <span class="badge-pill badge-ok">8</span>
+      </div>
+      <div class="emp-item" onclick="selectEmp(1)">
+        <div class="emp-avatar" style="background:linear-gradient(135deg,#f59e0b,#dc2626);">JK</div>
+        <div class="emp-info">
+          <div class="emp-name">KANYOM Jean</div>
+          <div class="emp-role">Sondeur · KAN</div>
+        </div>
+        <span class="badge-pill badge-expired">⚠ 1</span>
+      </div>
+      <div class="emp-item" onclick="selectEmp(2)">
+        <div class="emp-avatar" style="background:linear-gradient(135deg,#10b981,#059669);">TM</div>
+        <div class="emp-info">
+          <div class="emp-name">TONUS Mathieu</div>
+          <div class="emp-role">Sondeur · TON</div>
+        </div>
+        <span class="badge-pill badge-expiring">⚠ 30j</span>
+      </div>
+      <div class="emp-item" onclick="selectEmp(3)">
+        <div class="emp-avatar" style="background:linear-gradient(135deg,#06b6d4,#0891b2);">PM</div>
+        <div class="emp-info">
+          <div class="emp-name">MACE Pierre</div>
+          <div class="emp-role">Sondeur · MAC</div>
+        </div>
+        <span class="badge-pill badge-expiring">⚠ 14j</span>
+      </div>
+      <div class="emp-item" onclick="selectEmp(4)">
+        <div class="emp-avatar" style="background:linear-gradient(135deg,#a855f7,#7e22ce);">BO</div>
+        <div class="emp-info">
+          <div class="emp-name">BOUHABA Omar</div>
+          <div class="emp-role">Aide sondeur · BOU</div>
+        </div>
+        <span class="badge-pill badge-ok">5</span>
+      </div>
+      <div class="emp-item" onclick="selectEmp(5)">
+        <div class="emp-avatar" style="background:linear-gradient(135deg,#ec4899,#be185d);">DL</div>
+        <div class="emp-info">
+          <div class="emp-name">LEPAGE Daniel</div>
+          <div class="emp-role">Chauffeur · DLP</div>
+        </div>
+        <span class="badge-pill badge-ok">4</span>
+      </div>
+      <div class="emp-item" onclick="selectEmp(6)">
+        <div class="emp-avatar" style="background:linear-gradient(135deg,#facc15,#eab308);">PG</div>
+        <div class="emp-info">
+          <div class="emp-name">GASPARD Patrick</div>
+          <div class="emp-role">Mécanicien · GAS</div>
+        </div>
+        <span class="badge-pill badge-ok">6</span>
+      </div>
+      <div class="emp-item" onclick="selectEmp(7)">
+        <div class="emp-avatar" style="background:linear-gradient(135deg,#14b8a6,#0d9488);">NF</div>
+        <div class="emp-info">
+          <div class="emp-name">FONTAINE Nathalie</div>
+          <div class="emp-role">Comptable · NAT</div>
+        </div>
+        <span class="badge-pill badge-ok">7</span>
+      </div>
+    </div>
+
+    <!-- DÉTAIL EMPLOYÉ -->
+    <div class="glass detail" id="detailPanel">
+      <div class="detail-header">
+        <div class="detail-avatar">SD</div>
+        <div>
+          <div class="detail-name">DESONNEVILLE Sébastien</div>
+          <div class="detail-meta">
+            <span>Chef de chantier</span>
+            <span>·</span>
+            <span>Code DSE</span>
+            <span>·</span>
+            <span>Embauche : 15/03/2021</span>
+            <span>·</span>
+            <span style="color:#86efac;">✓ À jour</span>
+          </div>
+        </div>
+        <button class="btn-add" onclick="showModal()">+ Ajouter un document</button>
+      </div>
+
+      <div class="type-filters">
+        <div class="type-chip active">Tous <span class="count">8</span></div>
+        <div class="type-chip">📜 Contrat <span class="count">1</span></div>
+        <div class="type-chip">💰 Fiches paie <span class="count">3</span></div>
+        <div class="type-chip">🛠️ Permis CACES <span class="count">1</span></div>
+        <div class="type-chip">⚕️ Médecine <span class="count">1</span></div>
+        <div class="type-chip">⚡ Habilitations <span class="count">1</span></div>
+        <div class="type-chip">🎓 Diplômes <span class="count">1</span></div>
+      </div>
+
+      <div class="doc-grid">
+        <div class="doc-card" style="--doc-accent:#a78bfa; --doc-bg:rgba(168,85,247,0.20);">
+          <div class="doc-head">
+            <div class="doc-icon">📜</div>
+            <div class="doc-meta">
+              <div class="doc-type">Contrat de travail · CDI</div>
+              <div class="doc-name">Contrat_DSE_15032021.pdf</div>
+            </div>
+          </div>
+          <div class="doc-dates">
+            <span>Signé le 15/03/2021</span>
+            <span>Sans expiration</span>
+          </div>
+          <div class="doc-actions">
+            <button>👁️ Voir</button>
+            <button>⬇️ Télécharger</button>
+            <button class="danger">🗑️</button>
+          </div>
+        </div>
+
+        <div class="doc-card" style="--doc-accent:#22c55e; --doc-bg:rgba(34,197,94,0.20);">
+          <div class="doc-head">
+            <div class="doc-icon">💰</div>
+            <div class="doc-meta">
+              <div class="doc-type">Fiche de paie · Mai 2026</div>
+              <div class="doc-name">FP_DSE_2026_05.pdf</div>
+            </div>
+          </div>
+          <div class="doc-dates">
+            <span>Mois de mai 2026</span>
+            <span>Envoyée le 02/06/2026</span>
+          </div>
+          <div class="doc-actions">
+            <button>👁️ Voir</button>
+            <button>⬇️</button>
+            <button class="danger">🗑️</button>
+          </div>
+        </div>
+
+        <div class="doc-card" style="--doc-accent:#22c55e; --doc-bg:rgba(34,197,94,0.20);">
+          <div class="doc-head">
+            <div class="doc-icon">💰</div>
+            <div class="doc-meta">
+              <div class="doc-type">Fiche de paie · Avril 2026</div>
+              <div class="doc-name">FP_DSE_2026_04.pdf</div>
+            </div>
+          </div>
+          <div class="doc-dates">
+            <span>Mois d'avril 2026</span>
+            <span>Envoyée le 02/05/2026</span>
+          </div>
+          <div class="doc-actions">
+            <button>👁️ Voir</button>
+            <button>⬇️</button>
+            <button class="danger">🗑️</button>
+          </div>
+        </div>
+
+        <div class="doc-card" style="--doc-accent:#fbbf24; --doc-bg:rgba(251,191,36,0.20);">
+          <div class="doc-head">
+            <div class="doc-icon">🛠️</div>
+            <div class="doc-meta">
+              <div class="doc-type">CACES R489 cat. 3</div>
+              <div class="doc-name">CACES_DSE_2025.pdf</div>
+            </div>
+          </div>
+          <div class="doc-dates">
+            <span>Émis 22/04/2025</span>
+            <span style="color:#86efac;">Expire 22/04/2030</span>
+          </div>
+          <div class="doc-actions">
+            <button>👁️ Voir</button>
+            <button>⬇️</button>
+            <button class="danger">🗑️</button>
+          </div>
+        </div>
+
+        <div class="doc-card" style="--doc-accent:#06b6d4; --doc-bg:rgba(6,182,212,0.20);">
+          <div class="doc-head">
+            <div class="doc-icon">⚕️</div>
+            <div class="doc-meta">
+              <div class="doc-type">Médecine du travail</div>
+              <div class="doc-name">Med_DSE_2025_11.pdf</div>
+            </div>
+          </div>
+          <div class="doc-dates">
+            <span>Visite 12/11/2025</span>
+            <span style="color:#fde68a;">Expire 12/11/2026 (155j)</span>
+          </div>
+          <div class="doc-actions">
+            <button>👁️ Voir</button>
+            <button>⬇️</button>
+            <button class="danger">🗑️</button>
+          </div>
+        </div>
+
+        <div class="doc-card" style="--doc-accent:#f43f5e; --doc-bg:rgba(244,63,94,0.20);">
+          <div class="doc-head">
+            <div class="doc-icon">⚡</div>
+            <div class="doc-meta">
+              <div class="doc-type">Habilitation électrique BR</div>
+              <div class="doc-name">Habil_BR_DSE.pdf</div>
+            </div>
+          </div>
+          <div class="doc-dates">
+            <span>Émise 08/01/2024</span>
+            <span style="color:#86efac;">Expire 08/01/2027</span>
+          </div>
+          <div class="doc-actions">
+            <button>👁️ Voir</button>
+            <button>⬇️</button>
+            <button class="danger">🗑️</button>
+          </div>
+        </div>
+
+        <div class="doc-card" style="--doc-accent:#8b5cf6; --doc-bg:rgba(139,92,246,0.20);">
+          <div class="doc-head">
+            <div class="doc-icon">🎓</div>
+            <div class="doc-meta">
+              <div class="doc-type">Diplôme · BTS Géologie</div>
+              <div class="doc-name">Diplome_BTS_DSE.pdf</div>
+            </div>
+          </div>
+          <div class="doc-dates">
+            <span>Obtenu 2018</span>
+            <span>Sans expiration</span>
+          </div>
+          <div class="doc-actions">
+            <button>👁️ Voir</button>
+            <button>⬇️</button>
+            <button class="danger">🗑️</button>
+          </div>
+        </div>
+
+        <div class="doc-card" style="--doc-accent:#22c55e; --doc-bg:rgba(34,197,94,0.20);">
+          <div class="doc-head">
+            <div class="doc-icon">💰</div>
+            <div class="doc-meta">
+              <div class="doc-type">Fiche de paie · Mars 2026</div>
+              <div class="doc-name">FP_DSE_2026_03.pdf</div>
+            </div>
+          </div>
+          <div class="doc-dates">
+            <span>Mois de mars 2026</span>
+            <span>Envoyée le 02/04/2026</span>
+          </div>
+          <div class="doc-actions">
+            <button>👁️ Voir</button>
+            <button>⬇️</button>
+            <button class="danger">🗑️</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL UPLOAD -->
+  <div class="modal-bg" id="modalUpload">
+    <div class="modal">
+      <h2>📤 Ajouter un document</h2>
+      <div class="field">
+        <label>Employé</label>
+        <select><option>DESONNEVILLE Sébastien (DSE)</option></select>
+      </div>
+      <div class="field">
+        <label>Type de document</label>
+        <select>
+          <option>📜 Contrat de travail</option>
+          <option>📜 Avenant au contrat</option>
+          <option>💰 Fiche de paie</option>
+          <option>💰 Solde de tout compte</option>
+          <option>🛠️ Permis CACES</option>
+          <option>🚗 Permis de conduire</option>
+          <option>⚕️ Certificat médecine du travail</option>
+          <option>⚡ Habilitation électrique</option>
+          <option>🎓 Diplôme / Formation</option>
+          <option>🆔 Carte d'identité / Passeport</option>
+          <option>📄 Autre</option>
+        </select>
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+        <div class="field">
+          <label>Date d'émission</label>
+          <input type="date" value="2026-06-11">
+        </div>
+        <div class="field">
+          <label>Date d'expiration <span style="color:#71717a;">(optionnel)</span></label>
+          <input type="date">
+        </div>
+      </div>
+      <div class="field">
+        <label>Notes</label>
+        <textarea placeholder="Numéro de série, organisme certificateur, conditions particulières..."></textarea>
+      </div>
+      <div class="field">
+        <label>Fichier</label>
+        <div class="drop-zone">
+          <div class="ic">📁</div>
+          <div class="lab">Glisse un fichier ici ou clique pour parcourir</div>
+          <div class="hint">PDF, JPG, PNG · max 10 Mo</div>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="cancel" onclick="hideModal()">Annuler</button>
+        <button class="save" onclick="hideModal()">💾 Enregistrer</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function showModal() { document.getElementById("modalUpload").classList.add("show"); }
+function hideModal() { document.getElementById("modalUpload").classList.remove("show"); }
+document.getElementById("modalUpload").onclick = function(e) { if (e.target === this) hideModal(); };
+
+var isEmployee = false;
+function toggleMode() {
+  isEmployee = !isEmployee;
+  var banner = document.querySelector(".perm-banner");
+  var lbl = document.getElementById("modeLabel");
+  var btn = document.querySelector(".perm-banner button");
+  if (isEmployee) {
+    banner.style.background = "rgba(34,197,94,0.10)";
+    banner.style.borderColor = "rgba(34,197,94,0.30)";
+    lbl.style.color = "#86efac";
+    lbl.textContent = "Vue employé (DESONNEVILLE Sébastien)";
+    banner.querySelector("span:nth-of-type(2)").innerHTML = '<span class="lbl" style="color:#86efac;">Vue employé (DESONNEVILLE Sébastien)</span> — Tu vois seulement TES documents. Pas de upload ni delete possibles.';
+    btn.textContent = "Repasser en admin";
+    document.getElementById("empList").style.display = "none";
+    document.querySelector(".layout").style.gridTemplateColumns = "1fr";
+    document.querySelector(".btn-add").style.display = "none";
+    document.querySelectorAll(".doc-actions .danger").forEach(function(b) { b.style.display = "none"; });
+  } else {
+    banner.style.background = "rgba(99,102,241,0.10)";
+    banner.style.borderColor = "rgba(99,102,241,0.30)";
+    lbl.style.color = "#c4b5fd";
+    lbl.textContent = "Vue administrateur";
+    banner.querySelector("span:nth-of-type(2)").innerHTML = '<span class="lbl">Vue administrateur</span> — Tu vois tous les documents de tous les employés. Tu peux uploader, modifier, supprimer.';
+    btn.textContent = "Voir en mode employé";
+    document.getElementById("empList").style.display = "block";
+    document.querySelector(".layout").style.gridTemplateColumns = "320px 1fr";
+    document.querySelector(".btn-add").style.display = "flex";
+    document.querySelectorAll(".doc-actions .danger").forEach(function(b) { b.style.display = ""; });
+  }
+}
+
+function selectEmp(idx) {
+  document.querySelectorAll(".emp-item").forEach(function(el, i) {
+    el.classList.toggle("active", i === idx);
+  });
+}
+
+function filterEmps(q) {
+  var qq = q.toLowerCase();
+  document.querySelectorAll(".emp-item").forEach(function(el) {
+    var name = el.querySelector(".emp-name").textContent.toLowerCase();
+    var role = el.querySelector(".emp-role").textContent.toLowerCase();
+    el.style.display = (name.indexOf(qq) >= 0 || role.indexOf(qq) >= 0) ? "flex" : "none";
+  });
+}
+</script>
+</body>
+</html>
