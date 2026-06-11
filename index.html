@@ -8916,12 +8916,14 @@
                   var l = String(s).toLowerCase();
                   return l.indexOf("forat") >= 0 || l.indexOf("forag") >= 0;
                 }
+                // ── Heures par chantier : 3 sources possibles (cascade) ──
+                // 1) Rapports_forage liees par chantier_id : on prend les activites
+                //    'forat'/'forag', sinon r.total_heures
+                // 2) Fallback : Releves_journaliers liees au chantier (somme MAX par
+                //    jour-machine pour eviter de cumuler 2 employes sur la meme machine)
                 var rapports = (ctxAv.dbRapportsForage || []).filter(function(r) {
                   return r && String(r.chantier_id) === String(chantier.id);
                 });
-                // Pour chaque rapport, on essaie 2 sources d'heures dans l'ordre :
-                //  1) Activites avec libelle 'forat'/'forag' (heures de foration pures)
-                //  2) Fallback : r.total_heures (heures totales du rapport, moins precis)
                 function extractHeuresRapport(r) {
                   if (!r) return { heures: 0, source: "none" };
                   var acts = Array.isArray(r.activites) ? r.activites : [];
@@ -8937,6 +8939,7 @@
                   if (!isNaN(tot) && tot > 0) return { heures: tot, source: "total" };
                   return { heures: 0, source: "none" };
                 }
+                // Source 1 + 2 via rapports_forage
                 var heuresTotal = 0;
                 var sourceUsed = "none";
                 rapports.forEach(function(r) {
@@ -8945,6 +8948,23 @@
                   if (h.source === "foration") sourceUsed = "foration";
                   else if (h.source === "total" && sourceUsed !== "foration") sourceUsed = "total";
                 });
+                // Source 3 (fallback) : releves_journaliers, MAX par jour-machine pour dedup
+                if (heuresTotal === 0) {
+                  var heuresParJourMachine = {};
+                  (ctxAv.dbRelevesJourn || []).forEach(function(rj) {
+                    if (!rj || String(rj.chantierId) !== String(chantier.id)) return;
+                    var d = String(rj.dateReleve || "").substring(0, 10);
+                    if (!d) return;
+                    var mkey = String(rj.equipementId || rj.sondeuseCode || "_none").toUpperCase().trim();
+                    var key = d + "|" + mkey;
+                    var h = parseFloat(rj.heures) || 0;
+                    if (h > (heuresParJourMachine[key] || 0)) heuresParJourMachine[key] = h;
+                  });
+                  Object.keys(heuresParJourMachine).forEach(function(k) {
+                    heuresTotal += heuresParJourMachine[k];
+                  });
+                  if (heuresTotal > 0) sourceUsed = "releves";
+                }
                 var attenduTotal = heuresTotal * VITESSE_NORMATIVE_MH;
                 var totalInfo = {
                   avance: realise - attenduTotal,
@@ -8969,6 +8989,23 @@
                   if (h.source === "foration") sourceMois = "foration";
                   else if (h.source === "total" && sourceMois !== "foration") sourceMois = "total";
                 });
+                // Fallback releves_journaliers pour le mois
+                if (heuresMois === 0) {
+                  var heuresParJMois = {};
+                  (ctxAv.dbRelevesJourn || []).forEach(function(rj) {
+                    if (!rj || String(rj.chantierId) !== String(chantier.id)) return;
+                    var d = String(rj.dateReleve || "").substring(0, 10);
+                    if (d.substring(0, 7) !== monthPrefix) return;
+                    var mkey = String(rj.equipementId || rj.sondeuseCode || "_none").toUpperCase().trim();
+                    var key = d + "|" + mkey;
+                    var h = parseFloat(rj.heures) || 0;
+                    if (h > (heuresParJMois[key] || 0)) heuresParJMois[key] = h;
+                  });
+                  Object.keys(heuresParJMois).forEach(function(k) {
+                    heuresMois += heuresParJMois[k];
+                  });
+                  if (heuresMois > 0) sourceMois = "releves";
+                }
                 var attenduMois = heuresMois * VITESSE_NORMATIVE_MH;
                 var moisInfo = {
                   avance: monthMet - attenduMois,
