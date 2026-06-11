@@ -8891,25 +8891,25 @@
 
             var caMois = monthMet * (chantier.prixMetre || 0);
 
-            // ── Calcul avance / retard : formule proportionnelle du contrat ──
+            // ── Calcul avance / retard : formule proportionnelle + multi-machines ──
             //
             // Formule (definie par le user) :
             //   metrage_theorique_periode =
-            //     (jours_reelement_travailles_periode x metrage_theorique_chantier)
+            //     (jours_machine_passes x metrage_theorique_chantier)
             //     / jours_ouvres_annuel_chantier
             //   avance = metrage_realise_periode - metrage_theorique_periode
             //
-            // jours_reelement_travailles : entre date_debut et today (ou date_fin si
-            //   plus tot), lundi a jeudi, MOINS les saisies du chantier marquees
+            // jours_machine_passes = SOMME, pour chaque jour reellement travaille,
+            //   du nombre de machines DISTINCTES qui ont fait du metrage ce jour la
+            //   (detection via dbRelevesJourn : equipement_id ou sondeuseCode).
+            //   Defaut = 1 machine si jour ouvre mais aucun releve trouve.
+            // jours_reelement_travailles : lundi-jeudi, MOINS les saisies marquees
             //   ferie/intemperies/panne/arret/non_productif/conge/chomage/maladie.
-            // jours_ouvres_annuel : entre date_debut et date_fin du chantier, lundi
-            //   a jeudi (sans exclusion -- on ne connait pas les futurs feries).
+            // jours_ouvres_annuel : lundi-jeudi entre date_debut et date_fin (sans
+            //   exclusion -- on ne connait pas les futurs feries).
             //
-            // Avantages :
-            // - Aucune constante magique (220 m/j etc.)
-            // - Base directement sur le metrage et la duree du contrat
-            // - Si tu as plus de feries/intemperies/pannes, jours_passes baisse
-            //   donc l'attendu baisse aussi -> tu n'es pas penalise pour ca
+            // Exemple : si 2 sondeuses ont produit le 5/6 sur Tiebaghi, ce jour
+            // compte pour 2 jours-machine (objectif quotidien x2).
             var avanceCalc = (function() {
               if (chantier.statut === "A venir") return { total: null, mois: null };
               try {
@@ -8923,15 +8923,31 @@
                 var saisiesChantier = (ctxAv.dbSaisies && ctxAv.dbSaisies[chantier.id]) ? ctxAv.dbSaisies[chantier.id] : {};
                 var EXCLUDED_TYPES = { ferie: 1, intemperies: 1, panne: 1, arret: 1, non_productif: 1, conge: 1, chomage: 1, maladie: 1 };
 
+                // ── Index machines par jour : { "YYYY-MM-DD": Set<machineKey> } ──
+                // Detection via relevés journaliers du chantier. Une machine = un
+                // equipement_id distinct (sondeuseCode en fallback).
+                var machinesByDate = {};
+                (ctxAv.dbRelevesJourn || []).forEach(function(r) {
+                  if (!r || String(r.chantierId) !== String(chantier.id)) return;
+                  var d = String(r.dateReleve || "").substring(0, 10);
+                  if (!d) return;
+                  var mk = String(r.equipementId || r.sondeuseCode || "_no_machine").toUpperCase().trim();
+                  if (!machinesByDate[d]) machinesByDate[d] = {};
+                  machinesByDate[d][mk] = 1;
+                });
+                function nbMachinesLeJour(iso) {
+                  var s = machinesByDate[iso];
+                  if (!s) return 1; // fallback 1 machine si jour ouvre sans releve
+                  return Object.keys(s).length || 1;
+                }
+
                 function isoOf(d) {
                   return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
                 }
-                // Lundi-Jeudi seulement (vendredi/samedi/dimanche exclus)
                 function isJourOuvre(d) {
                   var dow = d.getDay();
                   return dow >= 1 && dow <= 4;
                 }
-                // Reellement travaille = lundi-jeudi + pas de saisie d'absence
                 function isJourReelementTravaille(d) {
                   if (!isJourOuvre(d)) return false;
                   var iso = isoOf(d);
@@ -8954,37 +8970,53 @@
                   }
                   return c;
                 }
-                function countJoursReelementTravailles(from, to) {
-                  if (from > to) return 0;
-                  var c = 0;
+                // Renvoie { joursTravailles, joursMachine }
+                // joursMachine = somme(nb_machines_le_jour) sur les jours reellement travailles
+                function countWorkRange(from, to) {
+                  var res = { joursTravailles: 0, joursMachine: 0 };
+                  if (from > to) return res;
                   var d = new Date(from.getTime());
                   var safe = 0;
                   while (d <= to && safe < 4000) {
-                    if (isJourReelementTravaille(d)) c++;
+                    if (isJourReelementTravaille(d)) {
+                      res.joursTravailles += 1;
+                      res.joursMachine += nbMachinesLeJour(isoOf(d));
+                    }
                     d.setDate(d.getDate() + 1);
                     safe++;
                   }
-                  return c;
+                  return res;
                 }
 
                 if (today < dDeb) {
                   return { total: null, mois: null };
                 }
 
-                // ─ Total chantier (depuis date_debut jusqu'a aujourd'hui ou date_fin) ─
+                // ─ Total chantier ─
                 var endTotal = today < dFin ? today : dFin;
                 var joursOuvresAnnuel = countJoursOuvres(dDeb, dFin);
-                var joursPasses = countJoursReelementTravailles(dDeb, endTotal);
+                var passesRange = countWorkRange(dDeb, endTotal);
+                // metrage_theorique = jours_machine_passes x metrage_total / jours_ouvres_annuel
                 var attenduTotal = joursOuvresAnnuel > 0
-                  ? (joursPasses * metrageTotal) / joursOuvresAnnuel
+                  ? (passesRange.joursMachine * metrageTotal) / joursOuvresAnnuel
                   : 0;
+                // Detection nb machines distinctes sur tout le chantier (pour info)
+                var allMachines = {};
+                (ctxAv.dbRelevesJourn || []).forEach(function(r) {
+                  if (!r || String(r.chantierId) !== String(chantier.id)) return;
+                  var mk = String(r.equipementId || r.sondeuseCode || "_no_machine").toUpperCase().trim();
+                  if (mk !== "_NO_MACHINE") allMachines[mk] = 1;
+                });
+                var nbMachinesDistinctes = Object.keys(allMachines).length;
                 var totalInfo = {
                   avance: realise - attenduTotal,
                   attendu: attenduTotal,
-                  joursPasses: joursPasses,
+                  joursTravailles: passesRange.joursTravailles,
+                  joursMachinePasses: passesRange.joursMachine,
                   joursOuvresAnnuel: joursOuvresAnnuel,
                   metrageTotal: metrageTotal,
                   realise: realise,
+                  nbMachinesDistinctes: nbMachinesDistinctes,
                   hasData: joursOuvresAnnuel > 0
                 };
 
@@ -8996,18 +9028,19 @@
                 var moisStart = monthStart < dDeb ? dDeb : monthStart;
                 var moisEnd = monthEnd > dFin ? dFin : monthEnd;
                 if (moisEnd > today) moisEnd = today;
-                var joursMois = (moisStart <= moisEnd) ? countJoursReelementTravailles(moisStart, moisEnd) : 0;
+                var moisRange = (moisStart <= moisEnd) ? countWorkRange(moisStart, moisEnd) : { joursTravailles: 0, joursMachine: 0 };
                 var attenduMois = joursOuvresAnnuel > 0
-                  ? (joursMois * metrageTotal) / joursOuvresAnnuel
+                  ? (moisRange.joursMachine * metrageTotal) / joursOuvresAnnuel
                   : 0;
                 var moisInfo = {
                   avance: monthMet - attenduMois,
                   attendu: attenduMois,
-                  joursPasses: joursMois,
+                  joursTravailles: moisRange.joursTravailles,
+                  joursMachinePasses: moisRange.joursMachine,
                   joursOuvresAnnuel: joursOuvresAnnuel,
                   metrageTotal: metrageTotal,
                   realise: monthMet,
-                  hasData: joursMois > 0
+                  hasData: moisRange.joursMachine > 0
                 };
 
                 return { total: totalInfo, mois: moisInfo };
@@ -9033,23 +9066,27 @@
                       h("span", { style: { marginRight: 8 } }, "Reste : " + fmtNum(remaining) + " m"),
                       avanceMoisInfo && avanceMoisInfo.hasData ? h("span", {
                         title: "Avance/retard du mois.\n" +
-                          "Formule : metrage_theorique = (jours_passes x metrage_contrat) / jours_ouvres_annuel\n" +
-                          "- Jours reellement travailles ce mois (Lun-Jeu hors feries/intemperies/pannes) : " + avanceMoisInfo.joursPasses + " j\n" +
+                          "Formule : metrage_theorique = (jours_machine_passes x metrage_contrat) / jours_ouvres_annuel\n" +
+                          "- Jours travailles ce mois (Lun-Jeu hors feries/intemperies/pannes) : " + avanceMoisInfo.joursTravailles + " j\n" +
+                          "- Jours-machine ce mois (somme des machines distinctes detectees dans les releves chaque jour) : " + avanceMoisInfo.joursMachinePasses + "\n" +
                           "- Metrage contractuel total : " + fmtNum(avanceMoisInfo.metrageTotal) + " m\n" +
                           "- Jours ouvres annuels du chantier (Lun-Jeu) : " + avanceMoisInfo.joursOuvresAnnuel + " j\n" +
                           "- Attendu ce mois : " + fmtNum(Math.round(avanceMoisInfo.attendu)) + " m\n" +
-                          "  (= " + avanceMoisInfo.joursPasses + " x " + fmtNum(avanceMoisInfo.metrageTotal) + " / " + avanceMoisInfo.joursOuvresAnnuel + ")\n" +
+                          "  (= " + avanceMoisInfo.joursMachinePasses + " x " + fmtNum(avanceMoisInfo.metrageTotal) + " / " + avanceMoisInfo.joursOuvresAnnuel + ")\n" +
                           "- Realise ce mois : " + fmtNum(Math.round(monthMet)) + " m",
                         style: { fontWeight: 700, padding: "2px 10px", borderRadius: 999, fontSize: 11.5, background: avanceMoisInfo.avance >= 0 ? "rgba(34,197,94,0.15)" : "rgba(244,63,94,0.15)", border: "1px solid " + (avanceMoisInfo.avance >= 0 ? "rgba(34,197,94,0.35)" : "rgba(244,63,94,0.35)"), color: avanceMoisInfo.avance >= 0 ? "#86efac" : "#fda4af" }
                       }, "Mois " + (avanceMoisInfo.avance >= 0 ? "+" : "") + fmtNum(Math.round(avanceMoisInfo.avance)) + " m") : null,
                       avanceInfo && avanceInfo.hasData ? h("span", {
                         title: "Avance/retard total.\n" +
-                          "Formule : metrage_theorique = (jours_passes x metrage_contrat) / jours_ouvres_annuel\n" +
-                          "- Jours reellement travailles (Lun-Jeu hors feries/intemperies/pannes) : " + avanceInfo.joursPasses + " j\n" +
+                          "Formule : metrage_theorique = (jours_machine_passes x metrage_contrat) / jours_ouvres_annuel\n" +
+                          "Multi-machines : si 2 sondeuses ont fait du metrage le meme jour, ce jour compte pour 2 jours-machine.\n" +
+                          "- Machines distinctes detectees sur ce chantier : " + avanceInfo.nbMachinesDistinctes + "\n" +
+                          "- Jours travailles (Lun-Jeu hors feries/intemperies/pannes) : " + avanceInfo.joursTravailles + " j\n" +
+                          "- Jours-machine ecoules : " + avanceInfo.joursMachinePasses + "\n" +
                           "- Metrage contractuel total : " + fmtNum(avanceInfo.metrageTotal) + " m\n" +
                           "- Jours ouvres annuels du chantier (Lun-Jeu) : " + avanceInfo.joursOuvresAnnuel + " j\n" +
                           "- Attendu a ce jour : " + fmtNum(Math.round(avanceInfo.attendu)) + " m\n" +
-                          "  (= " + avanceInfo.joursPasses + " x " + fmtNum(avanceInfo.metrageTotal) + " / " + avanceInfo.joursOuvresAnnuel + ")\n" +
+                          "  (= " + avanceInfo.joursMachinePasses + " x " + fmtNum(avanceInfo.metrageTotal) + " / " + avanceInfo.joursOuvresAnnuel + ")\n" +
                           "- Realise : " + fmtNum(Math.round(realise)) + " m",
                         style: { fontWeight: 700, padding: "2px 10px", borderRadius: 999, fontSize: 11.5, background: avanceInfo.avance >= 0 ? "rgba(34,197,94,0.15)" : "rgba(244,63,94,0.15)", border: "1px solid " + (avanceInfo.avance >= 0 ? "rgba(34,197,94,0.35)" : "rgba(244,63,94,0.35)"), color: avanceInfo.avance >= 0 ? "#86efac" : "#fda4af" }
                       }, "Total " + (avanceInfo.avance >= 0 ? "+" : "") + fmtNum(Math.round(avanceInfo.avance)) + " m") : null
