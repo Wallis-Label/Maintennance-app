@@ -14132,19 +14132,51 @@
         caByDate[keyMonth] = (caByDate[keyMonth] || 0) + ca;
       });
 
-      // ── CA YTD (1er janvier -> aujourd'hui) + CA annuel projete ──
+      // ── Agregats YTD (1er janvier -> aujourd'hui) + projections annuelles ──
       // Independant des filtres : se base sur TOUS les rapports de l'annee en cours.
       var yearStart = new Date(now.getFullYear(), 0, 1);
       var caYTD = 0;
+      var metragesYTD = 0;
+      var coutConsoYTD = 0;
+      var minutesForationYTD = 0;
       (rapports || []).forEach(function(r) {
         if (!r.date_rapport) return;
         var d = new Date(r.date_rapport);
         if (d < yearStart || d > now) return;
         var prix = lookupPrixMetre(r);
-        caYTD += (parseFloat(r.total_metres) || 0) * prix;
+        var metres = parseFloat(r.total_metres) || 0;
+        caYTD += metres * prix;
+        metragesYTD += metres;
+        // Cout consommables YTD (perdus dans le rapport)
+        var consos = Array.isArray(r.consommables_perdus) ? r.consommables_perdus : [];
+        consos.forEach(function(c) {
+          var qty = parseFloat(c.qty != null ? c.qty : (c.quantite != null ? c.quantite : (c.qte || 0))) || 0;
+          var pConso = lookupPrix(c.designation || c.nom, c.ref);
+          coutConsoYTD += qty * pConso;
+        });
+        // Heures de foration YTD pour productivite annuelle
+        var activites = Array.isArray(r.activites) ? r.activites : [];
+        activites.forEach(function(a) {
+          if ((a.libelle || "").toUpperCase() !== "FORATION") return;
+          minutesForationYTD += durBtw(a.debut, a.fin);
+        });
+      });
+      // Carburant YTD (de consommations_carburant - source unique du mazout)
+      var prixMazoutYTD = lookupPrix("Mazout/L", "");
+      (carburants || []).forEach(function(c) {
+        var dateStr = String(c.date_consommation || "").substring(0, 10);
+        if (!dateStr) return;
+        var dd = new Date(dateStr);
+        if (dd < yearStart || dd > now) return;
+        var qty = parseFloat(c.quantite_l) || 0;
+        if (qty <= 0) return;
+        coutConsoYTD += qty * prixMazoutYTD;
       });
       var daysElapsed = Math.max(1, Math.floor((now - yearStart) / 86400000) + 1);
       var caAnnuelProj = (caYTD / daysElapsed) * 365;
+      var metragesAnnuelProj = (metragesYTD / daysElapsed) * 365;
+      var coutConsoAnnuelProj = (coutConsoYTD / daysElapsed) * 365;
+      var productiviteYTD = minutesForationYTD > 0 ? metragesYTD / (minutesForationYTD / 60) : 0;
 
       // ── CA de la periode filtree + projection sur la periode ──
       // Tient compte des filtres (chantier / sondeuse / sondeur / periode)
@@ -14906,11 +14938,11 @@
         h(React.Fragment, null,
           // KPIs
           h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14, marginBottom: 14 } },
-            kpiCard("indigo", "rocket", Math.round(totalMetres).toLocaleString("fr-FR") + " m", "Metrage total"),
+            kpiCard("indigo", "rocket", Math.round(totalMetres).toLocaleString("fr-FR") + " m", "Metrage total", "Annuel projete : " + Math.round(metragesAnnuelProj).toLocaleString("fr-FR") + " m"),
             kpiCard("green", "coins", fmtCaCompact(caYTD) + " XPF", "CA " + now.getFullYear() + " (" + daysElapsed + "j)", "Periode (" + periodLabelShort + ") : " + fmtCaCompact(caPeriode) + " XPF"),
             kpiCard("red", "trending-up", fmtCaCompact(caAnnuelProj) + " XPF", "CA annuel projete", period === "mois" ? "Projete sur le mois : " + fmtCaCompact(caProjPeriode) + " XPF" : "Periode (" + periodLabelShort + ") : " + fmtCaCompact(caPeriode) + " XPF"),
-            kpiCard("pink", "package-x", fmtXPF(totalCoutConso), "Cout consommables"),
-            kpiCard("amber", "zap", productivite.toFixed(1) + " m/h", "Productivite foration")
+            kpiCard("pink", "package-x", fmtXPF(totalCoutConso), "Cout consommables", "Annuel projete : " + fmtCaCompact(coutConsoAnnuelProj) + " XPF"),
+            kpiCard("amber", "zap", productivite.toFixed(1) + " m/h", "Productivite foration", "Annuel YTD : " + productiviteYTD.toFixed(1) + " m/h")
           ),
           // Ligne 1 : Periode (compactes) — Seuil + Cout/m + Gain/m sur toute la periode
           seuilMois > 0 ? h("div", { style: { display: "flex", gap: 10, marginBottom: 10, flexWrap: "wrap" } },
