@@ -1670,6 +1670,14 @@
           ),
           h("div", { style: { fontSize: 12, fontWeight: 600, color: "#fb7185" } }, "Voir le detail >")
         ) : null,
+        (ctx.rhSignaturesPending || 0) > 0 ? h("div", { onClick: function() { onNavigate("coffre-rh"); }, style: { cursor: "pointer", marginBottom: 18, padding: "12px 16px", borderRadius: 12, background: "linear-gradient(135deg, rgba(6, 182, 212, 0.15), rgba(6, 182, 212, 0.05))", border: "1px solid rgba(6, 182, 212, 0.35)", display: "flex", alignItems: "center", gap: 12 } },
+          h("div", { style: { width: 36, height: 36, borderRadius: 10, background: "rgba(6, 182, 212, 0.25)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } }, h(Icon, { name: "pen-tool", size: 18, color: "#67e8f9" })),
+          h("div", { style: { flex: 1, minWidth: 0 } },
+            h("div", { style: { fontSize: 13.5, fontWeight: 700, color: "#fafafa" } }, ctx.rhSignaturesPending + " document" + (ctx.rhSignaturesPending > 1 ? "s" : "") + " en attente de signature"),
+            h("div", { style: { fontSize: 12, color: "#cbd5e1", marginTop: 2 } }, ctx.isRH ? "Documents RH a faire signer aux employes." : "Tu as des documents administratifs a signer dans ton coffre-fort RH.")
+          ),
+          h("div", { style: { fontSize: 12, fontWeight: 600, color: "#67e8f9" } }, "Voir > ")
+        ) : null,
         h("div", { style: { display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 24 } },
           h(KPICard, { icon: h(Icon, { name: "truck", size: 22, color: "#ffffff" }), label: "Equipements", value: fmtNum(totalEquip), color: "#818cf8", onClick: () => onNavigate("equipements") }),
           h(KPICard, { icon: h(Icon, { name: "calendar", size: 22, color: "#ffffff" }), label: "Planifiees", value: fmtNum(planifiees), color: "#60a5fa", onClick: () => onNavigate("interventions") }),
@@ -19424,6 +19432,222 @@
       return RH_DOC_TYPES.find(function(t) { return t.key === key; }) || RH_DOC_TYPES[RH_DOC_TYPES.length - 1];
     }
 
+    // ─── Helper : generer URL signee pour preview/download ─────────────────
+    async function getRhDocSignedUrl(storagePath) {
+      try {
+        var res = await supabase.storage.from("rh-documents").createSignedUrl(storagePath, 300);
+        if (res.error) throw new Error(res.error.message);
+        return res.data && res.data.signedUrl ? res.data.signedUrl : null;
+      } catch (e) {
+        console.warn("[rh-signed-url]", e.message);
+        return null;
+      }
+    }
+
+    // ─── RhDocUploadModal : upload d'un document RH ───────────────────────
+    function RhDocUploadModal({ personnelCode, personnelNom, uploaderEmail, onClose, onUploaded }) {
+      var _type = useState("contrat"); var typeDoc = _type[0]; var setTypeDoc = _type[1];
+      var _file = useState(null); var file = _file[0]; var setFile = _file[1];
+      var _emission = useState(""); var dateEmission = _emission[0]; var setDateEmission = _emission[1];
+      var _expir = useState(""); var dateExpir = _expir[0]; var setDateExpir = _expir[1];
+      var _notes = useState(""); var notes = _notes[0]; var setNotes = _notes[1];
+      var _sign = useState(false); var needsSignature = _sign[0]; var setNeedsSignature = _sign[1];
+      var _deadline = useState(""); var deadline = _deadline[0]; var setDeadline = _deadline[1];
+      var _saving = useState(false); var saving = _saving[0]; var setSaving = _saving[1];
+      var _err = useState(null); var err = _err[0]; var setErr = _err[1];
+
+      async function handleUpload() {
+        if (!file) { setErr("Choisis un fichier"); return; }
+        if (!personnelCode) { setErr("Code employe manquant"); return; }
+        setSaving(true); setErr(null);
+        try {
+          // Path : <code>/<timestamp>_<filename>
+          var ts = new Date().toISOString().replace(/[:.]/g, "-");
+          var cleanName = (file.name || "doc").replace(/[^a-zA-Z0-9._-]/g, "_");
+          var storagePath = personnelCode + "/" + ts + "_" + cleanName;
+          var up = await supabase.storage.from("rh-documents").upload(storagePath, file, {
+            cacheControl: "3600", upsert: false, contentType: file.type || undefined
+          });
+          if (up.error) throw new Error("Upload : " + up.error.message);
+          // Insert row dans rh_documents
+          var row = {
+            personnel_code: personnelCode,
+            personnel_nom: personnelNom || null,
+            type_document: typeDoc,
+            nom_fichier: file.name,
+            storage_path: storagePath,
+            date_emission: dateEmission || null,
+            date_expiration: dateExpir || null,
+            notes: notes || null,
+            status: needsSignature ? "pending_signature" : "active",
+            needs_signature: needsSignature,
+            uploaded_by: uploaderEmail || null,
+            deadline_at: needsSignature && deadline ? new Date(deadline).toISOString() : null
+          };
+          var ins = await supabase.from("rh_documents").insert(row).select("*").single();
+          if (ins.error) {
+            // cleanup le fichier upload
+            await supabase.storage.from("rh-documents").remove([storagePath]);
+            throw new Error("Insert DB : " + ins.error.message);
+          }
+          if (onUploaded) onUploaded(ins.data);
+          if (onClose) onClose();
+        } catch (e) {
+          setErr(e.message || "Erreur upload");
+        }
+        setSaving(false);
+      }
+
+      return h(Modal, { title: "Ajouter un document RH", onClose: onClose, size: 580 },
+        h("div", { style: { display: "flex", flexDirection: "column", gap: 14 } },
+          err ? h("div", { style: { padding: 10, borderRadius: 6, background: "rgba(244,63,94,0.15)", color: "#fda4af", fontSize: 12.5 } }, err) : null,
+          h(FormField, { label: "Type de document" },
+            h("select", { value: typeDoc, onChange: function(e) { setTypeDoc(e.target.value); }, style: selectStyle },
+              RH_DOC_TYPES.map(function(t) { return h("option", { key: t.key, value: t.key }, t.label); })
+            )
+          ),
+          h(FormField, { label: "Fichier (PDF ou image, max 10 Mo)" },
+            h("input", { type: "file", accept: "application/pdf,image/*", onChange: function(e) { var f = e.target.files && e.target.files[0]; setFile(f || null); },
+              style: { width: "100%", padding: 8, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.10)", color: "#fafafa", borderRadius: 6, fontSize: 13, fontFamily: "inherit" } })
+          ),
+          h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 } },
+            h(FormField, { label: "Date d'emission (optionnel)" }, h("input", { type: "date", value: dateEmission, onChange: function(e) { setDateEmission(e.target.value); }, style: inputStyle })),
+            h(FormField, { label: "Date d'expiration (optionnel)" }, h("input", { type: "date", value: dateExpir, onChange: function(e) { setDateExpir(e.target.value); }, style: inputStyle }))
+          ),
+          h(FormField, { label: "Notes internes (optionnel)" },
+            h("textarea", { value: notes, onChange: function(e) { setNotes(e.target.value); }, rows: 2, style: Object.assign({}, inputStyle, { resize: "vertical", minHeight: 50 }) })
+          ),
+          h("div", { style: { padding: 12, borderRadius: 8, background: needsSignature ? "rgba(6,182,212,0.10)" : "rgba(255,255,255,0.03)", border: "1px solid " + (needsSignature ? "rgba(6,182,212,0.30)" : "rgba(255,255,255,0.06)") } },
+            h("label", { style: { display: "flex", gap: 10, alignItems: "center", cursor: "pointer" } },
+              h("input", { type: "checkbox", checked: needsSignature, onChange: function(e) { setNeedsSignature(e.target.checked); }, style: { width: 18, height: 18, accentColor: "#06b6d4" } }),
+              h("div", null,
+                h("div", { style: { fontSize: 13, fontWeight: 700, color: "#fafafa" } }, h(IconText, { icon: "pen-tool", size: 13 }, "Demander une signature electronique")),
+                h("div", { style: { fontSize: 11.5, color: "#94a3b8", marginTop: 2 } }, "L'employe verra le document en attente de signature dans son espace.")
+              )
+            ),
+            needsSignature ? h("div", { style: { marginTop: 10 } },
+              h(FormField, { label: "Echeance signature (optionnel)" }, h("input", { type: "date", value: deadline, onChange: function(e) { setDeadline(e.target.value); }, style: inputStyle }))
+            ) : null
+          ),
+          h("div", { style: { display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 6 } },
+            h(Button, { variant: "secondary", onClick: onClose, disabled: saving }, "Annuler"),
+            h(Button, { onClick: handleUpload, disabled: saving || !file }, saving ? "Upload..." : h(IconText, { icon: "upload-cloud", size: 14 }, "Telecharger"))
+          )
+        )
+      );
+    }
+
+    // ─── RhDocSignModal : preview + signature electronique ─────────────────
+    function RhDocSignModal({ document, signerEmail, onClose, onSigned }) {
+      var _url = useState(null); var previewUrl = _url[0]; var setPreviewUrl = _url[1];
+      var _loaded = useState(false); var urlLoaded = _loaded[0]; var setUrlLoaded = _loaded[1];
+      var _sig = useState(null); var sigImage = _sig[0]; var setSigImage = _sig[1];
+      var _saving = useState(false); var saving = _saving[0]; var setSaving = _saving[1];
+      var _refusing = useState(false); var refusing = _refusing[0]; var setRefusing = _refusing[1];
+      var _reason = useState(""); var refuseReason = _reason[0]; var setRefuseReason = _reason[1];
+      var _err = useState(null); var err = _err[0]; var setErr = _err[1];
+      var _read = useState(false); var readConfirmed = _read[0]; var setReadConfirmed = _read[1];
+
+      useEffect(function() {
+        getRhDocSignedUrl(document.storage_path).then(function(u) { setPreviewUrl(u); setUrlLoaded(true); });
+      }, [document.id]);
+
+      var isPdf = (document.nom_fichier || "").toLowerCase().indexOf(".pdf") >= 0;
+
+      async function handleSign() {
+        if (!sigImage) { setErr("Signe d'abord avec ta souris ou ton doigt"); return; }
+        if (!readConfirmed) { setErr("Coche que tu as lu le document avant de signer"); return; }
+        setSaving(true); setErr(null);
+        try {
+          var ins = await supabase.from("rh_signatures").insert({
+            document_id: document.id,
+            signer_email: signerEmail || "anonyme",
+            signature_image: sigImage,
+            user_agent: navigator.userAgent
+          });
+          if (ins.error) throw new Error("Insert signature : " + ins.error.message);
+          var upd = await supabase.from("rh_documents").update({
+            status: "signed",
+            signed_at: new Date().toISOString()
+          }).eq("id", document.id);
+          if (upd.error) throw new Error("Update doc : " + upd.error.message);
+          if (onSigned) onSigned();
+          if (onClose) onClose();
+        } catch (e) { setErr(e.message); }
+        setSaving(false);
+      }
+
+      async function handleRefuse() {
+        if (!refuseReason.trim()) { setErr("Indique la raison du refus"); return; }
+        setSaving(true); setErr(null);
+        try {
+          var ins = await supabase.from("rh_signatures").insert({
+            document_id: document.id,
+            signer_email: signerEmail || "anonyme",
+            signature_image: "REFUSED",
+            refused: true,
+            refuse_reason: refuseReason,
+            user_agent: navigator.userAgent
+          });
+          if (ins.error) throw new Error("Insert refus : " + ins.error.message);
+          var upd = await supabase.from("rh_documents").update({ status: "refused" }).eq("id", document.id);
+          if (upd.error) throw new Error("Update doc : " + upd.error.message);
+          if (onSigned) onSigned();
+          if (onClose) onClose();
+        } catch (e) { setErr(e.message); }
+        setSaving(false);
+      }
+
+      return h(Modal, { title: "Signer : " + (document.nom_fichier || "?"), onClose: onClose, size: 760 },
+        h("div", { style: { display: "flex", flexDirection: "column", gap: 14 } },
+          err ? h("div", { style: { padding: 10, borderRadius: 6, background: "rgba(244,63,94,0.15)", color: "#fda4af", fontSize: 12.5 } }, err) : null,
+          // Infos doc
+          h("div", { style: { padding: 12, borderRadius: 10, background: "rgba(255,255,255,0.04)", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, fontSize: 12.5 } },
+            h("div", null, h("strong", { style: { color: "#a1a1aa" } }, "Type : "), h("span", { style: { color: "#fafafa" } }, getRhDocTypeInfo(document.type_document).label)),
+            h("div", null, h("strong", { style: { color: "#a1a1aa" } }, "Date emission : "), h("span", { style: { color: "#fafafa" } }, document.date_emission ? new Date(document.date_emission).toLocaleDateString("fr-FR") : "—")),
+            document.deadline_at ? h("div", { style: { gridColumn: "1 / -1" } }, h("strong", { style: { color: "#fde68a" } }, "Echeance signature : "), h("span", { style: { color: "#fde68a" } }, new Date(document.deadline_at).toLocaleDateString("fr-FR"))) : null
+          ),
+          // Preview
+          !urlLoaded ? h("div", { style: { padding: 30, textAlign: "center", color: "#a1a1aa" } }, "Chargement preview...") :
+          !previewUrl ? h("div", { style: { padding: 16, borderRadius: 8, background: "rgba(244,63,94,0.10)", color: "#fda4af", fontSize: 12 } }, "Impossible de charger le document.") :
+          isPdf ?
+            h("iframe", { src: previewUrl, style: { width: "100%", height: 380, border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, background: "#fff" } }) :
+            h("img", { src: previewUrl, style: { width: "100%", maxHeight: 380, objectFit: "contain", borderRadius: 8, background: "#fff" } }),
+          // Confirmation lecture
+          h("label", { style: { display: "flex", gap: 10, alignItems: "center", cursor: "pointer", padding: 10, borderRadius: 8, background: readConfirmed ? "rgba(34,197,94,0.08)" : "rgba(255,255,255,0.03)" } },
+            h("input", { type: "checkbox", checked: readConfirmed, onChange: function(e) { setReadConfirmed(e.target.checked); }, style: { width: 18, height: 18, accentColor: "#22c55e" } }),
+            h("span", { style: { fontSize: 13, color: "#fafafa" } }, "J'ai lu attentivement le document ci-dessus et j'en accepte les termes.")
+          ),
+          // Signature pad
+          !refusing ? h("div", { style: { padding: 12, borderRadius: 10, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" } },
+            h("div", { style: { fontSize: 12, fontWeight: 700, color: "#a5b4fc", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 8 } }, "Signature manuscrite"),
+            h(SignaturePad, { onChange: setSigImage, height: 140 })
+          ) : null,
+          // Mode refus
+          refusing ? h("div", { style: { padding: 12, borderRadius: 10, background: "rgba(244,63,94,0.08)", border: "1px solid rgba(244,63,94,0.25)" } },
+            h("div", { style: { fontSize: 12, fontWeight: 700, color: "#fda4af", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 8 } }, "Raison du refus"),
+            h("textarea", { value: refuseReason, onChange: function(e) { setRefuseReason(e.target.value); }, rows: 3,
+              placeholder: "Explique pourquoi tu refuses de signer ce document...",
+              style: Object.assign({}, inputStyle, { resize: "vertical", minHeight: 70 }) })
+          ) : null,
+          // Boutons
+          h("div", { style: { display: "flex", justifyContent: "space-between", gap: 10, marginTop: 4, flexWrap: "wrap" } },
+            h("div", { style: { display: "flex", gap: 8 } },
+              !refusing ? h(Button, { variant: "secondary", onClick: function() { setRefusing(true); }, disabled: saving },
+                h(IconText, { icon: "x", size: 13 }, "Refuser de signer")
+              ) : h(Button, { variant: "secondary", onClick: function() { setRefusing(false); setRefuseReason(""); }, disabled: saving }, "Annuler refus")
+            ),
+            h("div", { style: { display: "flex", gap: 10 } },
+              h(Button, { variant: "secondary", onClick: onClose, disabled: saving }, "Plus tard"),
+              refusing ?
+                h(Button, { onClick: handleRefuse, disabled: saving, style: { background: "linear-gradient(135deg, #f43f5e, #ef4444)" } }, saving ? "..." : "Confirmer le refus") :
+                h(Button, { onClick: handleSign, disabled: saving || !sigImage || !readConfirmed }, saving ? "Signature..." : h(IconText, { icon: "check", size: 14 }, "Signer le document"))
+            )
+          )
+        )
+      );
+    }
+
     function EcranCoffreRH() {
       var ctx = useAppData();
       var isAdmin = ctx.isAdmin;
@@ -19450,6 +19674,9 @@
       var _loading = useState(true); var loading = _loading[0]; var setLoading = _loading[1];
       var _search = useState(""); var search = _search[0]; var setSearch = _search[1];
       var _typeFilter = useState("all"); var typeFilter = _typeFilter[0]; var setTypeFilter = _typeFilter[1];
+      var _showUpload = useState(false); var showUploadModal = _showUpload[0]; var setShowUploadModal = _showUpload[1];
+      var _signDoc = useState(null); var signDoc = _signDoc[0]; var setSignDoc = _signDoc[1];
+      var _toDelete = useState(null); var toDelete = _toDelete[0]; var setToDelete = _toDelete[1];
 
       // ─ Fetch docs ─
       function fetchDocs() {
@@ -19546,7 +19773,7 @@
                     h("span", { style: { color: "#86efac" } }, docsForSelected.length + " document" + (docsForSelected.length > 1 ? "s" : ""))
                   )
                 ),
-                isRH ? h("button", { onClick: function() { alert("Upload sera dispo dans la prochaine etape (signatures + storage)."); }, style: { marginLeft: "auto", padding: "10px 16px", borderRadius: 8, background: "linear-gradient(135deg, #6366f1, #8b5cf6)", color: "white", border: "none", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 6 } }, "+ Ajouter un document") : null
+                isRH ? h("button", { onClick: function() { setShowUploadModal(true); }, style: { marginLeft: "auto", padding: "10px 16px", borderRadius: 8, background: "linear-gradient(135deg, #6366f1, #8b5cf6)", color: "white", border: "none", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 6 } }, "+ Ajouter un document") : null
               ),
 
               // Filtres types
@@ -19576,10 +19803,29 @@
                   var expired = d.date_expiration && new Date(d.date_expiration) < now;
                   var expiringSoon2 = d.date_expiration && new Date(d.date_expiration) > now && new Date(d.date_expiration) <= soon;
                   var expColor = expired ? "#fda4af" : expiringSoon2 ? "#fde68a" : "#86efac";
-                  return h("div", { key: d.id, style: { background: "rgba(255,255,255,0.04)", borderRadius: 10, padding: 14, borderLeft: "3px solid " + info.accent } },
+                  var canSignThis = !isRH && d.personnel_code === (ownPersonnel && ownPersonnel.code) && d.status === "pending_signature";
+                  // Action principale au clic : signer (si employe avec doc en attente), sinon preview
+                  function handleCardClick() {
+                    if (canSignThis) { setSignDoc(d); return; }
+                    // RH ou consultation : ouvre le doc dans un nouvel onglet via signed URL
+                    getRhDocSignedUrl(d.storage_path).then(function(u) {
+                      if (u) window.open(u, "_blank");
+                      else alert("Impossible de charger l'apercu");
+                    });
+                  }
+                  return h("div", { key: d.id, onClick: handleCardClick,
+                    style: { background: "rgba(255,255,255,0.04)", borderRadius: 10, padding: 14, borderLeft: "3px solid " + info.accent, cursor: "pointer", transition: "background 0.15s", position: "relative" },
+                    onMouseEnter: function(e) { e.currentTarget.style.background = "rgba(255,255,255,0.07)"; },
+                    onMouseLeave: function(e) { e.currentTarget.style.background = "rgba(255,255,255,0.04)"; }
+                  },
+                    isRH ? h("button", {
+                      onClick: function(e) { e.stopPropagation(); setToDelete(d); },
+                      title: "Supprimer ce document",
+                      style: { position: "absolute", top: 8, right: 8, background: "rgba(244,63,94,0.10)", border: "1px solid rgba(244,63,94,0.20)", borderRadius: 6, padding: "4px 6px", cursor: "pointer", color: "#fda4af", fontSize: 12, lineHeight: 1 }
+                    }, h(Icon, { name: "trash-2", size: 13, color: "#fda4af" })) : null,
                     h("div", { style: { display: "flex", gap: 10, alignItems: "flex-start", marginBottom: 8 } },
                       h("div", { style: { width: 36, height: 36, borderRadius: 8, background: info.accent + "30", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: 18 } }, info.icon),
-                      h("div", { style: { flex: 1, minWidth: 0 } },
+                      h("div", { style: { flex: 1, minWidth: 0, paddingRight: isRH ? 24 : 0 } },
                         h("div", { style: { fontSize: 10, color: "#a1a1aa", textTransform: "uppercase", letterSpacing: 0.4, fontWeight: 600 } }, info.label),
                         h("div", { style: { fontSize: 13, fontWeight: 700, color: "#fafafa", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, d.nom_fichier)
                       )
@@ -19588,14 +19834,46 @@
                       h("span", null, d.date_emission ? new Date(d.date_emission).toLocaleDateString("fr-FR") : "?"),
                       d.date_expiration ? h("span", { style: { color: expColor } }, "Exp " + new Date(d.date_expiration).toLocaleDateString("fr-FR")) : h("span", null, "Sans expiration")
                     ),
-                    d.status === "pending_signature" ? h("div", { style: { marginTop: 8, padding: "5px 8px", borderRadius: 5, background: "rgba(251,191,36,0.18)", color: "#fde68a", fontSize: 11, fontWeight: 700, textAlign: "center" } }, "✍️ En attente de signature") : null,
-                    d.status === "signed" ? h("div", { style: { marginTop: 8, padding: "5px 8px", borderRadius: 5, background: "rgba(34,197,94,0.15)", color: "#86efac", fontSize: 11, fontWeight: 700, textAlign: "center" } }, "✓ Signe le " + new Date(d.signed_at).toLocaleDateString("fr-FR")) : null
+                    d.status === "pending_signature" ? h("div", { style: { marginTop: 8, padding: "5px 8px", borderRadius: 5, background: "rgba(251,191,36,0.18)", color: "#fde68a", fontSize: 11, fontWeight: 700, textAlign: "center" } },
+                      canSignThis ? "✍️ Cliquer pour signer" : "✍️ En attente de signature"
+                    ) : null,
+                    d.status === "signed" ? h("div", { style: { marginTop: 8, padding: "5px 8px", borderRadius: 5, background: "rgba(34,197,94,0.15)", color: "#86efac", fontSize: 11, fontWeight: 700, textAlign: "center" } }, "✓ Signe le " + new Date(d.signed_at).toLocaleDateString("fr-FR")) : null,
+                    d.status === "refused" ? h("div", { style: { marginTop: 8, padding: "5px 8px", borderRadius: 5, background: "rgba(244,63,94,0.15)", color: "#fda4af", fontSize: 11, fontWeight: 700, textAlign: "center" } }, "✗ Refus de signature") : null
                   );
                 })
               )
             )
           )
-        )
+        ),
+        // ─ Modaux upload + signature + suppression ─
+        showUploadModal && selectedPersonnel ? h(RhDocUploadModal, {
+          personnelCode: selectedPersonnel.code,
+          personnelNom: ((selectedPersonnel.prenom || "") + " " + (selectedPersonnel.nom || "")).trim(),
+          uploaderEmail: userEmail,
+          onClose: function() { setShowUploadModal(false); },
+          onUploaded: function() { setShowUploadModal(false); fetchDocs(); }
+        }) : null,
+        signDoc ? h(RhDocSignModal, {
+          document: signDoc,
+          signerEmail: userEmail,
+          onClose: function() { setSignDoc(null); },
+          onSigned: function() { setSignDoc(null); fetchDocs(); }
+        }) : null,
+        toDelete ? h(ConfirmDialog, {
+          title: "Supprimer ce document ?",
+          message: "Le fichier \"" + (toDelete.nom_fichier || "?") + "\" sera supprime du coffre-fort RH. Cette action est irreversible.",
+          onConfirm: async function() {
+            try {
+              // Supprime fichier dans le bucket
+              await supabase.storage.from("rh-documents").remove([toDelete.storage_path]);
+              // Supprime la ligne (cascade les signatures liees)
+              await supabase.from("rh_documents").delete().eq("id", toDelete.id);
+              setToDelete(null);
+              fetchDocs();
+            } catch (e) { alert("Erreur suppression : " + e.message); }
+          },
+          onCancel: function() { setToDelete(null); }
+        }) : null
       );
     }
 
@@ -20419,7 +20697,7 @@
     }
 
     // ─── Sidebar ────────────────────────────────────────────────────────
-    function Sidebar({ currentPage, onNavigate, userEmail, onLogout, isAdmin, isSecretaire, pendingCount, soumissionsPending, piecesPending, demandesFinPending, empruntsFinProche, alertesSaisiesPending, achatsPrevisionnelsPending, allowedPages, isMobile, isOpen, onClose }) {
+    function Sidebar({ currentPage, onNavigate, userEmail, onLogout, isAdmin, isSecretaire, pendingCount, soumissionsPending, piecesPending, demandesFinPending, empruntsFinProche, alertesSaisiesPending, achatsPrevisionnelsPending, rhSignaturesPending, allowedPages, isMobile, isOpen, onClose }) {
       const sections = [
         { name: "Tableau de bord", pages: [
           { key: "statistiques", label: "Accueil", lucide: "bar-chart-3" },
@@ -20476,7 +20754,7 @@
         h("nav", { style: { flex: 1, padding: "8px 8px 16px", overflowY: "auto" } },
           sections.map((section) => h("div", { key: section.name },
             h("div", { style: { fontSize: 10.5, fontWeight: 600, color: "#a1a1aa", textTransform: "uppercase", letterSpacing: 0.6, padding: "16px 14px 8px" } }, section.name),
-            section.pages.filter(function(p) { if (p.adminOnly && !isAdmin) return false; if (p.key === "administration") return true; if (p.key === "coffre-rh" && (isAdmin || isSecretaire)) return true; if (!isAdmin && allowedPages && allowedPages.indexOf(p.key) < 0) return false; return true; }).map((p) => {
+            section.pages.filter(function(p) { if (p.adminOnly && !isAdmin) return false; if (p.key === "administration") return true; if (p.key === "coffre-rh") return true; if (!isAdmin && allowedPages && allowedPages.indexOf(p.key) < 0) return false; return true; }).map((p) => {
               var isActive = currentPage === p.key;
               return h("button", { key: p.key, onClick: () => navigateThenClose(p.key),
                 style: {
@@ -20498,7 +20776,8 @@
                 p.key === "pieces" && piecesPending > 0 ? h("span", { style: { marginLeft: "auto", background: "linear-gradient(135deg, #06b6d4, #0891b2)", color: "#fff", fontSize: 10.5, fontWeight: 700, padding: "2px 7px", borderRadius: 999, minWidth: 20, textAlign: "center", boxShadow: "0 2px 8px rgba(6, 182, 212, 0.4)" }, title: "Pieces saisies par les sondeurs non reperees dans le catalogue" }, piecesPending) : null,
                 p.key === "financement" && demandesFinPending > 0 ? h("span", { style: { marginLeft: "auto", background: "linear-gradient(135deg, #f59e0b, #d97706)", color: "#fff", fontSize: 10.5, fontWeight: 700, padding: "2px 7px", borderRadius: 999, minWidth: 20, textAlign: "center", boxShadow: "0 2px 8px rgba(245, 158, 11, 0.4)" } }, demandesFinPending) : null,
                 p.key === "emprunts" && empruntsFinProche > 0 ? h("span", { style: { marginLeft: "auto", background: "linear-gradient(135deg, #fcd34d, #ca8a04)", color: "#1c1917", fontSize: 10.5, fontWeight: 700, padding: "2px 7px", borderRadius: 999, minWidth: 20, textAlign: "center", boxShadow: "0 2px 8px rgba(252, 211, 77, 0.4)" }, title: "Pret(s) arrivant a terme dans les 30 jours" }, empruntsFinProche) : null,
-                p.key === "achats-previsionnels" && achatsPrevisionnelsPending > 0 ? h("span", { style: { marginLeft: "auto", background: "linear-gradient(135deg, #f59e0b, #d97706)", color: "#fff", fontSize: 10.5, fontWeight: 700, padding: "2px 7px", borderRadius: 999, minWidth: 20, textAlign: "center", boxShadow: "0 2px 8px rgba(245, 158, 11, 0.4)" }, title: achatsPrevisionnelsPending + " reference(s) en deficit dans les 90 prochains jours" }, achatsPrevisionnelsPending) : null
+                p.key === "achats-previsionnels" && achatsPrevisionnelsPending > 0 ? h("span", { style: { marginLeft: "auto", background: "linear-gradient(135deg, #f59e0b, #d97706)", color: "#fff", fontSize: 10.5, fontWeight: 700, padding: "2px 7px", borderRadius: 999, minWidth: 20, textAlign: "center", boxShadow: "0 2px 8px rgba(245, 158, 11, 0.4)" }, title: achatsPrevisionnelsPending + " reference(s) en deficit dans les 90 prochains jours" }, achatsPrevisionnelsPending) : null,
+                p.key === "coffre-rh" && rhSignaturesPending > 0 ? h("span", { style: { marginLeft: "auto", background: "linear-gradient(135deg, #06b6d4, #0891b2)", color: "#fff", fontSize: 10.5, fontWeight: 700, padding: "2px 7px", borderRadius: 999, minWidth: 20, textAlign: "center", boxShadow: "0 2px 8px rgba(6, 182, 212, 0.4)" }, title: rhSignaturesPending + " document(s) en attente de signature" }, rhSignaturesPending) : null
               );
             })))),
         h("div", { style: { padding: "12px 16px", borderTop: "1px solid rgba(255,255,255,0.06)" } },
@@ -20817,6 +21096,7 @@
       const [dbBugLogs, setDbBugLogs] = useState([]);
       const [soumissionsPendingCount, setSoumissionsPendingCount] = useState(0);
       const [piecesPendingCount, setPiecesPendingCount] = useState(0);
+      const [rhSignaturesPending, setRhSignaturesPending] = useState(0);
       // Donnees brutes pour la detection des saisies manquantes (fenetre [1er juin -> hier])
       const [recentRelHeures, setRecentRelHeures] = useState([]);
       const [toast, setToast] = useState({ message: "", type: "success" });
@@ -21595,6 +21875,35 @@
       const isSecretaire = !!(currentAppUser && currentAppUser.role === "Secretaire");
       // Peut acceder au coffre RH (admin OR secretaire OR utilisateur avec page autorisee)
       const isRH = isAdmin || isSecretaire;
+
+      // ── RH signatures en attente (poll toutes les 60s) ─────────────────
+      // - Pour RH (admin/secretaire) : compte global des docs en attente
+      // - Pour employe : compte ses propres docs en attente de signature
+      useEffect(function() {
+        if (!session) return;
+        var stop = false;
+        function refresh() {
+          var q = supabase.from("rh_documents").select("id, personnel_code, status").eq("status", "pending_signature");
+          q.then(function(res) {
+            if (stop) return;
+            if (res.error) { console.warn("[rh-pending]", res.error.message); return; }
+            var list = res.data || [];
+            if (isRH) { setRhSignaturesPending(list.length); return; }
+            // Employe : matche son personnel_code via parametres.personnel_data
+            var personnelList = [];
+            var pdRow = (parametres || []).find(function(p) { return p.categorie === "personnel_data"; });
+            if (pdRow && pdRow.valeur) { try { personnelList = JSON.parse(pdRow.valeur) || []; } catch (e) {} }
+            var ownEmail = (session && session.user && session.user.email) || "";
+            var own = personnelList.find(function(p) { return p && p.email && p.email.toLowerCase() === ownEmail.toLowerCase(); });
+            var ownCode = own ? own.code : null;
+            if (!ownCode) { setRhSignaturesPending(0); return; }
+            setRhSignaturesPending(list.filter(function(d) { return d.personnel_code === ownCode; }).length);
+          });
+        }
+        refresh();
+        var tid = setInterval(refresh, 60000);
+        return function() { stop = true; clearInterval(tid); };
+      }, [session, isRH, parametres]);
       // Allowed pages: admin gets everything, others get only assigned pages
       var allowedPages = null; // null = all pages (admin)
       if (!isAdmin && currentAppUser) {
@@ -21895,7 +22204,7 @@
         dbEmprunts, setDbEmprunts,
         dbChargesFixes, setDbChargesFixes,
         dbBugLogs, setDbBugLogs,
-        alertesSaisies, recentRelHeures,
+        alertesSaisies, recentRelHeures, rhSignaturesPending,
         loadAll, showToast,
         addIntervention: wrappedAddIntervention, updateIntervention: wrappedUpdateIntervention, deleteIntervention,
         addEquipement: wrappedAddEquipement, updateEquipement: wrappedUpdateEquipement, deleteEquipement,
@@ -21921,7 +22230,7 @@
 
       const renderPage = () => {
         // Check page access for non-admins
-        if (!isAdmin && allowedPages && currentPage !== "accueil" && currentPage !== "fiche-equipement" && currentPage !== "administration" && currentPage !== "alertes-saisies" && !(currentPage === "coffre-rh" && (isAdmin || isSecretaire)) && allowedPages.indexOf(currentPage) < 0) {
+        if (!isAdmin && allowedPages && currentPage !== "accueil" && currentPage !== "fiche-equipement" && currentPage !== "administration" && currentPage !== "alertes-saisies" && currentPage !== "coffre-rh" && allowedPages.indexOf(currentPage) < 0) {
           return h(EcranAccueil, { onNavigate: navigate });
         }
         // Alertes saisies est admin only
@@ -21969,7 +22278,7 @@
         h("div", { style: { display: "flex", height: bpInfo.isMobile ? "auto" : "100dvh", minHeight: "100dvh", overflow: bpInfo.isMobile ? "visible" : "hidden", background: "transparent", fontFamily: "'Inter', system-ui, -apple-system, sans-serif", position: "relative", zIndex: 1 } },
           // Overlay derriere le drawer mobile (clic ferme)
           bpInfo.isMobile && sidebarOpen ? h("div", { onClick: function() { setSidebarOpen(false); }, style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)", zIndex: 998 } }) : null,
-          h(Sidebar, { currentPage, onNavigate: navigate, userEmail: session.user && session.user.email, onLogout: logout, isAdmin, isSecretaire, pendingCount: pendingValidations.length, soumissionsPending: soumissionsPendingCount, piecesPending: piecesPendingCount, demandesFinPending: (function() { var u = session.user && session.user.email; return (dbDemandesFin || []).filter(function(d) { return (isAdmin || d.demandeurEmail === u) && (d.statut === "soumise" || (d.statut === "info_demandee" && (isAdmin || d.demandeurEmail === u))); }).length; }()), empruntsFinProche: countEmpruntsFinProche(dbEmprunts), alertesSaisiesPending: (alertesSaisies && alertesSaisies.count) || 0, achatsPrevisionnelsPending: achatsPrevisionnelsPending, allowedPages: allowedPages, isMobile: bpInfo.isMobile, isOpen: sidebarOpen, onClose: function() { setSidebarOpen(false); } }),
+          h(Sidebar, { currentPage, onNavigate: navigate, userEmail: session.user && session.user.email, onLogout: logout, isAdmin, isSecretaire, pendingCount: pendingValidations.length, soumissionsPending: soumissionsPendingCount, piecesPending: piecesPendingCount, demandesFinPending: (function() { var u = session.user && session.user.email; return (dbDemandesFin || []).filter(function(d) { return (isAdmin || d.demandeurEmail === u) && (d.statut === "soumise" || (d.statut === "info_demandee" && (isAdmin || d.demandeurEmail === u))); }).length; }()), empruntsFinProche: countEmpruntsFinProche(dbEmprunts), alertesSaisiesPending: (alertesSaisies && alertesSaisies.count) || 0, achatsPrevisionnelsPending: achatsPrevisionnelsPending, rhSignaturesPending: rhSignaturesPending, allowedPages: allowedPages, isMobile: bpInfo.isMobile, isOpen: sidebarOpen, onClose: function() { setSidebarOpen(false); } }),
           h("div", { style: { flex: 1, padding: mainPadding, overflowY: bpInfo.isMobile ? "visible" : "auto", maxHeight: bpInfo.isMobile ? "none" : "100dvh", position: "relative", width: "100%", minWidth: 0 } },
             // Bouton hamburger sur mobile (en haut a gauche, fixed)
             bpInfo.isMobile ? h("button", { onClick: function() { setSidebarOpen(true); }, "aria-label": "Ouvrir le menu", style: { position: "fixed", top: "calc(12px + env(safe-area-inset-top))", left: "calc(12px + env(safe-area-inset-left))", width: 40, height: 40, padding: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(36, 40, 60, 0.85)", backdropFilter: "blur(12px)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#fafafa", cursor: "pointer", zIndex: 997, boxShadow: "0 4px 12px rgba(0,0,0,0.4)" } }, h(Icon, { name: "menu", size: 20, color: "#fafafa" })) : null,
