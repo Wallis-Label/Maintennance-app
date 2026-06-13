@@ -10185,10 +10185,11 @@
                             label: "CA restant",
                             value: caRestant >= 1000000 ? (caRestant / 1000000).toFixed(1) + " MF" : fmtNum(Math.round(caRestant / 1000)) + " k",
                             valueColor: "#67e8f9",
-                            hint: "XPF",
+                            hint: "sur " + (caTotal >= 1000000 ? (caTotal / 1000000).toFixed(1) + " MF" : fmtNum(Math.round(caTotal / 1000)) + " k") + " total",
                             badge: "facturer",
                             badgeColor: "#67e8f9",
-                            badgeBg: "rgba(34,211,238,0.15)"
+                            badgeBg: "rgba(34,211,238,0.15)",
+                            tooltip: "CA total contrat (" + fmtNum(chantier.metrage) + " m x " + fmtNum(prixMetre) + " XPF/m) : " + fmtNum(Math.round(caTotal)) + " XPF\nCA deja realise : " + fmtNum(Math.round(caTotal - caRestant)) + " XPF\nCA restant a facturer : " + fmtNum(Math.round(caRestant)) + " XPF"
                           }),
                           KpiTile({
                             icon: "trending-up",
