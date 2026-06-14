@@ -8573,6 +8573,35 @@
       return 1;                    // sec : 100%
     }
 
+    // ─ Facteur d'adaptation machine : -30% les 3 premiers jours apres l'arrivee
+    //   d'une machine sur un chantier (temps d'installation + prise en main).
+    //   Si plusieurs machines tournent en parallele et qu'une seule est en
+    //   adaptation, le -30% est proportionnel a sa part dans la flotte du jour.
+    //   Exemple : D38 remplace D36 (1 machine seule en adaptation) -> -30% pendant 3j.
+    //             D38 arrive en plus de D36 (2 machines, 1 en adaptation) -> -15% pendant 3j.
+    function adaptationMachineFactor(chantierId, dateStr, dbChantierEquipements) {
+      if (!chantierId || !dateStr) return 1;
+      var dayMs = 86400000;
+      var iso = String(dateStr).substring(0, 10);
+      var d = new Date(iso + "T00:00:00").getTime();
+      if (isNaN(d)) return 1;
+      var nbActives = 0;
+      var nbAdaptation = 0;
+      (dbChantierEquipements || []).forEach(function(ce) {
+        if (!ce) return;
+        if (String(ce.chantier_id) !== String(chantierId)) return;
+        var deb = ce.date_debut ? new Date(String(ce.date_debut).substring(0, 10) + "T00:00:00").getTime() : null;
+        var fin = ce.date_fin ? new Date(String(ce.date_fin).substring(0, 10) + "T00:00:00").getTime() : null;
+        if (deb !== null && d < deb) return;     // machine pas encore arrivee
+        if (fin !== null && d > fin) return;     // machine deja partie
+        nbActives++;
+        if (deb !== null && d - deb >= 0 && d - deb < 3 * dayMs) nbAdaptation++;
+      });
+      if (nbActives === 0) return 1;
+      // -30% applique proportionnellement aux machines en adaptation
+      return 1 - 0.30 * (nbAdaptation / nbActives);
+    }
+
     // Mapping weather code -> Lucide icon name + couleur (pour rendu visuel propre)
     // Plus pro que les emojis, coherent avec le reste de l'app qui utilise Lucide
     function meteoLucide(code, prec) {
@@ -9237,13 +9266,15 @@
                 var mMap = meteoByChantier[c.id];
                 var mDay = mMap ? mMap[ds] : null;
                 var fact = meteoMetrageFactor(mDay);
-                var fcVal = vQuot * fact;
+                // Facteur adaptation : machine fraichement arrivee (-30% sur 3 jours)
+                var adaptF = adaptationMachineFactor(c.id, ds, ctxAv.dbChantierEquipements);
+                var fcVal = vQuot * fact * adaptF;
                 if (fcVal > 0) {
                   forecastMet += fcVal;
                   forecastCA += fcVal * c.prixMetre;
                   hasForecast = true;
                   if (fact === 0) anyIntemp = true;
-                  else if (fact < 1) anyReduced = true;
+                  else if (fact < 1 || adaptF < 1) anyReduced = true;
                 } else {
                   // perdu : on considere quand meme qu'on a une prevision
                   hasForecast = true;
@@ -10264,9 +10295,11 @@
                       // Facteur meteo progressif (0 a 1) -> retire un % de metrage
                       // selon l'intensite de la pluie / vent / orage
                       var fFactor = meteoMetrageFactor(fMeteo);
-                      var fVal = pVitQuot * fFactor;
+                      // Facteur adaptation : -30% les 3 premiers jours d'une nouvelle machine
+                      var fAdapt = adaptationMachineFactor(chantier.id, fIso, ctxAv.dbChantierEquipements);
+                      var fVal = pVitQuot * fFactor * fAdapt;
                       var fIntemp = fFactor === 0; // perdu total
-                      var fReduced = fFactor > 0 && fFactor < 1; // production reduite
+                      var fReduced = (fFactor > 0 && fFactor < 1) || fAdapt < 1; // production reduite
                       if (fVal > 0) {
                         forecastVals.push({ idx: fd - 1, val: fVal, intemp: fIntemp, reduced: fReduced, factor: fFactor, hasMeteo: !!fMeteo });
                         if (fVal > maxDayVal) maxDayVal = fVal;
@@ -14487,11 +14520,13 @@
               var mMap = meteoByChantierStat[c.id];
               var mDay = mMap ? mMap[dStr] : null;
               var fact = meteoMetrageFactor(mDay);
-              var val = vQuot * fact;
+              // Facteur adaptation : -30% les 3 premiers jours d'une nouvelle machine
+              var adaptF = adaptationMachineFactor(c.id, dStr, ctx.dbChantierEquipements);
+              var val = vQuot * fact * adaptF;
               if (val > 0) {
                 fcVal += val;
                 fcCA += val * (parseFloat(c.prixMetre) || 0);
-                if (fact < 1) fcReduced = true;
+                if (fact < 1 || adaptF < 1) fcReduced = true;
               } else {
                 if (fact === 0) fcIntemp = true;
               }
