@@ -8573,33 +8573,149 @@
       return 1;                    // sec : 100%
     }
 
-    // ─ Facteur d'adaptation machine : -30% les 3 premiers jours apres l'arrivee
-    //   d'une machine sur un chantier (temps d'installation + prise en main).
-    //   Si plusieurs machines tournent en parallele et qu'une seule est en
-    //   adaptation, le -30% est proportionnel a sa part dans la flotte du jour.
-    //   Exemple : D38 remplace D36 (1 machine seule en adaptation) -> -30% pendant 3j.
-    //             D38 arrive en plus de D36 (2 machines, 1 en adaptation) -> -15% pendant 3j.
-    function adaptationMachineFactor(chantierId, dateStr, dbChantierEquipements) {
-      if (!chantierId || !dateStr) return 1;
+    // ─ Modele previsionnel machine (refonte) ─
+    // Logique metier :
+    //   J1-J3 (3 premiers jours) : moyenne de la PRECEDENTE machine sur ce chantier * 0.70 (adaptation)
+    //   J4-J7 (jusqu'a 7 jours)  : moyenne de la PRECEDENTE machine sur ce chantier (sans -30%)
+    //   J8+                       : moyenne PROPRE de la nouvelle machine (sur ce chantier d'abord, fallback global, fallback chantier)
+    //
+    // Helper : construit un index { mk: { _total: {dk:sum}, ck: {dk: max_metrage} } }
+    //          a partir de dbRelevesJourn (qui contient rapports + CSV) + equipements pour la
+    //          resolution equipement_id -> Title.
+    function buildMetByMachine(dbRelevesJourn, equipementsList) {
+      var idx = {};
+      var titleById = {};
+      (equipementsList || []).forEach(function(e) {
+        if (e && e.Id != null) titleById[String(e.Id)] = String(e.Title || "").toUpperCase().trim();
+      });
+      (dbRelevesJourn || []).forEach(function(r) {
+        if (!r || !r.dateReleve) return;
+        var mk = String(r.sondeuseCode || (r.equipementId != null ? titleById[String(r.equipementId)] : "") || "").toUpperCase().trim();
+        if (!mk) return;
+        var ck = String(r.chantierId || "");
+        var dk = String(r.dateReleve).substring(0, 10);
+        var v = parseFloat(r.metrage) || 0;
+        if (v <= 0) return;
+        if (!idx[mk]) idx[mk] = { _total: {} };
+        if (ck) {
+          if (!idx[mk][ck]) idx[mk][ck] = {};
+          if (v > (idx[mk][ck][dk] || 0)) idx[mk][ck][dk] = v;
+        }
+        idx[mk]._total[dk] = (idx[mk]._total[dk] || 0) + v;
+      });
+      return idx;
+    }
+
+    // Moyenne quotidienne (jours lun-jeu) d'une machine sur un chantier, sur 14 jours
+    // ouvres precedant refDateTs.
+    function vitesseMachineOnChantier(metByMk, mk, ck, refDateTs, nDays) {
+      if (!metByMk[mk] || !metByMk[mk][ck]) return 0;
+      var tot = 0, nb = 0, safe = 0;
+      var cursorDate = new Date(refDateTs); cursorDate.setHours(0, 0, 0, 0);
+      while (nb < nDays && safe < 80) {
+        cursorDate.setDate(cursorDate.getDate() - 1);
+        var dow = cursorDate.getDay();
+        if (dow >= 1 && dow <= 4) {
+          var iso = cursorDate.getFullYear() + "-" + String(cursorDate.getMonth() + 1).padStart(2, "0") + "-" + String(cursorDate.getDate()).padStart(2, "0");
+          var v = metByMk[mk][ck][iso] || 0;
+          if (v > 0) { tot += v; nb++; }
+        }
+        safe++;
+      }
+      return nb > 0 ? tot / nb : 0;
+    }
+
+    // Moyenne quotidienne d'une machine TOUS CHANTIERS confondus
+    function vitesseMachineGlobal(metByMk, mk, refDateTs, nDays) {
+      if (!metByMk[mk] || !metByMk[mk]._total) return 0;
+      var tot = 0, nb = 0, safe = 0;
+      var cursorDate = new Date(refDateTs); cursorDate.setHours(0, 0, 0, 0);
+      while (nb < nDays && safe < 80) {
+        cursorDate.setDate(cursorDate.getDate() - 1);
+        var dow = cursorDate.getDay();
+        if (dow >= 1 && dow <= 4) {
+          var iso = cursorDate.getFullYear() + "-" + String(cursorDate.getMonth() + 1).padStart(2, "0") + "-" + String(cursorDate.getDate()).padStart(2, "0");
+          var v = metByMk[mk]._total[iso] || 0;
+          if (v > 0) { tot += v; nb++; }
+        }
+        safe++;
+      }
+      return nb > 0 ? tot / nb : 0;
+    }
+
+    // Trouve la machine PRECEDENTE sur un chantier (juste avant l'arrivee de currentCe)
+    function findPrevMachineOnChantier(chantierEquips, chantierId, currentCe, titleById) {
+      var currentStart = currentCe && currentCe.dateDebut ? new Date(String(currentCe.dateDebut).substring(0, 10) + "T00:00:00").getTime() : null;
+      if (!currentStart) return null;
+      var candidates = [];
+      (chantierEquips || []).forEach(function(ce) {
+        if (!ce) return;
+        if (String(ce.chantierId) !== String(chantierId)) return;
+        if (ce === currentCe || (ce.id != null && currentCe.id != null && ce.id === currentCe.id)) return;
+        var debOther = ce.dateDebut ? new Date(String(ce.dateDebut).substring(0, 10) + "T00:00:00").getTime() : null;
+        if (debOther === null || debOther >= currentStart) return;
+        candidates.push({ ce: ce, deb: debOther });
+      });
+      if (candidates.length === 0) return null;
+      candidates.sort(function(a, b) { return b.deb - a.deb; });
+      var prev = candidates[0].ce;
+      return titleById[String(prev.equipementId)] || null;
+    }
+
+    // Construit le metrage previsionnel d'un chantier sur une date (avant facteur meteo)
+    // en respectant la logique d'adaptation machine. Retourne aussi des flags pour l'UI.
+    function previsionnelBaseChantierDay(chantierId, dateStr, dbChantierEquipements, equipementsList, metByMk, vitesseFallbackChantier) {
       var dayMs = 86400000;
       var iso = String(dateStr).substring(0, 10);
       var d = new Date(iso + "T00:00:00").getTime();
-      if (isNaN(d)) return 1;
-      var nbActives = 0;
-      var nbAdaptation = 0;
-      (dbChantierEquipements || []).forEach(function(ce) {
-        if (!ce) return;
-        if (String(ce.chantier_id) !== String(chantierId)) return;
-        var deb = ce.date_debut ? new Date(String(ce.date_debut).substring(0, 10) + "T00:00:00").getTime() : null;
-        var fin = ce.date_fin ? new Date(String(ce.date_fin).substring(0, 10) + "T00:00:00").getTime() : null;
-        if (deb !== null && d < deb) return;     // machine pas encore arrivee
-        if (fin !== null && d > fin) return;     // machine deja partie
-        nbActives++;
-        if (deb !== null && d - deb >= 0 && d - deb < 3 * dayMs) nbAdaptation++;
+      if (isNaN(d)) return { metrage: 0, anyAdapt: false, anyOldBaseline: false, anyOwn: false, machines: [] };
+      var titleById = {};
+      (equipementsList || []).forEach(function(e) {
+        if (e && e.Id != null) titleById[String(e.Id)] = String(e.Title || "").toUpperCase().trim();
       });
-      if (nbActives === 0) return 1;
-      // -30% applique proportionnellement aux machines en adaptation
-      return 1 - 0.30 * (nbAdaptation / nbActives);
+      // Machines actives ce jour
+      var actives = (dbChantierEquipements || []).filter(function(ce) {
+        if (!ce || String(ce.chantierId) !== String(chantierId)) return false;
+        var deb = ce.dateDebut ? new Date(String(ce.dateDebut).substring(0, 10) + "T00:00:00").getTime() : null;
+        var fin = ce.dateFin ? new Date(String(ce.dateFin).substring(0, 10) + "T00:00:00").getTime() : null;
+        if (deb !== null && d < deb) return false;
+        if (fin !== null && d > fin) return false;
+        return true;
+      });
+      if (actives.length === 0) {
+        // Pas de planning machines : fallback vitesse chantier
+        return { metrage: vitesseFallbackChantier || 0, anyAdapt: false, anyOldBaseline: false, anyOwn: false, machines: [] };
+      }
+      var totalMet = 0;
+      var anyAdapt = false, anyOldBaseline = false, anyOwn = false;
+      var machines = [];
+      actives.forEach(function(ce) {
+        var mk = titleById[String(ce.equipementId)];
+        if (!mk) return;
+        var debMs = ce.dateDebut ? new Date(String(ce.dateDebut).substring(0, 10) + "T00:00:00").getTime() : null;
+        var daysSinceArrival = debMs !== null ? Math.floor((d - debMs) / dayMs) : 999;
+        var contribution = 0, phase = "own";
+        if (daysSinceArrival < 7) {
+          // Baseline = moyenne de la machine precedente sur ce chantier
+          var prevMk = findPrevMachineOnChantier(dbChantierEquipements, chantierId, ce, titleById);
+          var prevVitesse = prevMk ? vitesseMachineOnChantier(metByMk, prevMk, String(chantierId), debMs, 14) : 0;
+          if (prevVitesse === 0) prevVitesse = vitesseFallbackChantier || 0;
+          contribution = prevVitesse * (daysSinceArrival < 3 ? 0.70 : 1.0);
+          anyOldBaseline = true;
+          phase = daysSinceArrival < 3 ? "adapt" : "old-baseline";
+          if (daysSinceArrival < 3) anyAdapt = true;
+        } else {
+          // Phase stable : moyenne propre de la machine
+          var ownVitesse = vitesseMachineOnChantier(metByMk, mk, String(chantierId), d, 14);
+          if (ownVitesse === 0) ownVitesse = vitesseMachineGlobal(metByMk, mk, d, 30);
+          if (ownVitesse === 0) ownVitesse = vitesseFallbackChantier || 0;
+          contribution = ownVitesse;
+          anyOwn = true;
+        }
+        totalMet += contribution;
+        machines.push({ code: mk, daysSince: daysSinceArrival, phase: phase, contribution: contribution });
+      });
+      return { metrage: totalMet, anyAdapt: anyAdapt, anyOldBaseline: anyOldBaseline, anyOwn: anyOwn, machines: machines };
     }
 
     // Mapping weather code -> Lucide icon name + couleur (pour rendu visuel propre)
@@ -9235,11 +9351,13 @@
       function buildChartData() {
         var pts = [];
         var bcToday = new Date(todayDate.getTime()); bcToday.setHours(0, 0, 0, 0);
-        // Pre-calcule la vitesse quotidienne par chantier (pour previsions)
+        // Pre-calcule la vitesse quotidienne par chantier (pour previsions / fallback)
         var vitesseParChantier = {};
         activeChantiers.forEach(function(c) {
           vitesseParChantier[c.id] = buildVitesseChantier(c);
         });
+        // Index per-machine pour le previsionnel avec adaptation
+        var metByMkBC = buildMetByMachine(ctxAv.dbRelevesJourn, ctxAv.equipements);
         for (var d = 1; d <= daysInMonth; d++) {
           var ds = year + "-" + (monthIdx + 1 < 10 ? "0" : "") + (monthIdx + 1) + "-" + (d < 10 ? "0" : "") + d;
           var dayMet = 0;
@@ -9266,18 +9384,20 @@
             // le deficit (target > reel) sur les jours passes ainsi que la projection future.
             if (isWorkDay) {
               var vQuot = vitesseParChantier[c.id] || 0;
-              if (vQuot > 0) {
+              // Previsionnel base sur logique machine (anciens 7j puis propre) :
+              var prev = previsionnelBaseChantierDay(c.id, ds, ctxAv.dbChantierEquipements, ctxAv.equipements, metByMkBC, vQuot);
+              var baseMet = prev.metrage || vQuot; // fallback chantier si aucune machine planifiee
+              if (baseMet > 0) {
                 var mMap = meteoByChantier[c.id];
                 var mDay = mMap ? mMap[ds] : null;
                 var fact = meteoMetrageFactor(mDay);
-                var adaptF = adaptationMachineFactor(c.id, ds, ctxAv.dbChantierEquipements);
-                var tVal = vQuot * fact * adaptF;
+                var tVal = baseMet * fact;
                 if (tVal > 0) {
                   targetMet += tVal;
                   targetCA += tVal * c.prixMetre;
                   hasTarget = true;
                   if (fact === 0) anyIntemp = true;
-                  else if (fact < 1 || adaptF < 1) anyReduced = true;
+                  else if (fact < 1 || prev.anyAdapt || prev.anyOldBaseline) anyReduced = true;
                 } else if (isFuture) {
                   hasTarget = true;
                   anyIntemp = true;
@@ -10316,11 +10436,13 @@
                       // Facteur meteo progressif (0 a 1) -> retire un % de metrage
                       // selon l'intensite de la pluie / vent / orage
                       var fFactor = meteoMetrageFactor(fMeteo);
-                      // Facteur adaptation : -30% les 3 premiers jours d'une nouvelle machine
-                      var fAdapt = adaptationMachineFactor(chantier.id, fIso, ctxAv.dbChantierEquipements);
-                      var fVal = pVitQuot * fFactor * fAdapt;
+                      // Previsionnel base sur logique machine (anciens 7j puis propre)
+                      var metByMkFC = buildMetByMachine(ctxAv.dbRelevesJourn, ctxAv.equipements);
+                      var fPrev = previsionnelBaseChantierDay(chantier.id, fIso, ctxAv.dbChantierEquipements, ctxAv.equipements, metByMkFC, pVitQuot);
+                      var fBase = fPrev.metrage || pVitQuot;
+                      var fVal = fBase * fFactor;
                       var fIntemp = fFactor === 0; // perdu total
-                      var fReduced = (fFactor > 0 && fFactor < 1) || fAdapt < 1; // production reduite
+                      var fReduced = (fFactor > 0 && fFactor < 1) || fPrev.anyAdapt || fPrev.anyOldBaseline; // production reduite
                       if (fVal > 0) {
                         forecastVals.push({ idx: fd - 1, val: fVal, intemp: fIntemp, reduced: fReduced, factor: fFactor, hasMeteo: !!fMeteo });
                         if (fVal > maxDayVal) maxDayVal = fVal;
@@ -14535,19 +14657,22 @@
           var isFuture = cur.getTime() >= bcToday.getTime();
           var fcVal = 0, fcCA = 0, fcIntemp = false, fcReduced = false;
           if (isFuture && dow >= 1 && dow <= 4 && realVal === 0) {
+            // Index per-machine (build once par render mais ici simplifie : appele par chantier)
+            var metByMkStat = buildMetByMachine(ctx.dbRelevesJourn, ctx.equipements);
             activeChForFc.forEach(function(c) {
               var vQuot = vitesseParChFc[c.id] || 0;
               if (vQuot <= 0) return;
               var mMap = meteoByChantierStat[c.id];
               var mDay = mMap ? mMap[dStr] : null;
               var fact = meteoMetrageFactor(mDay);
-              // Facteur adaptation : -30% les 3 premiers jours d'une nouvelle machine
-              var adaptF = adaptationMachineFactor(c.id, dStr, ctx.dbChantierEquipements);
-              var val = vQuot * fact * adaptF;
+              // Previsionnel base sur logique machine (anciens 7j puis propre)
+              var prev = previsionnelBaseChantierDay(c.id, dStr, ctx.dbChantierEquipements, ctx.equipements, metByMkStat, vQuot);
+              var baseMet = prev.metrage || vQuot;
+              var val = baseMet * fact;
               if (val > 0) {
                 fcVal += val;
                 fcCA += val * (parseFloat(c.prixMetre) || 0);
-                if (fact < 1 || adaptF < 1) fcReduced = true;
+                if (fact < 1 || prev.anyAdapt || prev.anyOldBaseline) fcReduced = true;
               } else {
                 if (fact === 0) fcIntemp = true;
               }
