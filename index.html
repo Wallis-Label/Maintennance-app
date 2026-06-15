@@ -33,6 +33,7 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
   <style>
     :root {
@@ -20084,9 +20085,53 @@
     }
 
     // ─── RhDocUploadModal : upload d'un document RH ───────────────────────
+    // Combine plusieurs images en un seul PDF via jsPDF (chaque image = 1 page).
+    // Format : A4 portrait, image centree, conserve l'aspect ratio.
+    async function combineImagesIntoPdf(files, outputName) {
+      if (!window.jspdf || !window.jspdf.jsPDF) throw new Error("jsPDF non charge");
+      var jsPDF = window.jspdf.jsPDF;
+      var pdf = new jsPDF({ unit: "mm", format: "a4" });
+      var pageW = pdf.internal.pageSize.getWidth();
+      var pageH = pdf.internal.pageSize.getHeight();
+      for (var i = 0; i < files.length; i++) {
+        var file = files[i];
+        // Lire l'image en dataURL
+        var dataUrl = await new Promise(function(resolve, reject) {
+          var reader = new FileReader();
+          reader.onload = function(e) { resolve(e.target.result); };
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+        // Charger l'image pour avoir ses dimensions
+        var img = await new Promise(function(resolve, reject) {
+          var im = new Image();
+          im.onload = function() { resolve(im); };
+          im.onerror = reject;
+          im.src = dataUrl;
+        });
+        // Calcul taille adaptee a la page (avec marge 10mm)
+        var marginMm = 10;
+        var maxW = pageW - 2 * marginMm;
+        var maxH = pageH - 2 * marginMm;
+        var ratio = Math.min(maxW / img.width, maxH / img.height);
+        var imgW = img.width * ratio;
+        var imgH = img.height * ratio;
+        var x = (pageW - imgW) / 2;
+        var y = (pageH - imgH) / 2;
+        if (i > 0) pdf.addPage();
+        var fmt = file.type === "image/png" ? "PNG" : "JPEG";
+        pdf.addImage(dataUrl, fmt, x, y, imgW, imgH);
+      }
+      // Genere un Blob PDF
+      var blob = pdf.output("blob");
+      // File construit a partir du Blob pour le renvoi
+      return new File([blob], outputName || "document.pdf", { type: "application/pdf" });
+    }
+
     function RhDocUploadModal({ personnelCode, personnelNom, uploaderEmail, onClose, onUploaded }) {
       var _type = useState("contrat"); var typeDoc = _type[0]; var setTypeDoc = _type[1];
-      var _file = useState(null); var file = _file[0]; var setFile = _file[1];
+      var _files = useState([]); var files = _files[0]; var setFiles = _files[1];
+      var _combining = useState(false); var combining = _combining[0]; var setCombining = _combining[1];
       var _emission = useState(""); var dateEmission = _emission[0]; var setDateEmission = _emission[1];
       var _expir = useState(""); var dateExpir = _expir[0]; var setDateExpir = _expir[1];
       var _notes = useState(""); var notes = _notes[0]; var setNotes = _notes[1];
@@ -20095,25 +20140,54 @@
       var _saving = useState(false); var saving = _saving[0]; var setSaving = _saving[1];
       var _err = useState(null); var err = _err[0]; var setErr = _err[1];
 
+      function handleFileChange(e) {
+        var fl = Array.from(e.target.files || []);
+        setFiles(fl);
+      }
+      function removeFileAt(idx) {
+        setFiles(files.filter(function(_, i) { return i !== idx; }));
+      }
+      function moveFile(idx, dir) {
+        var newFiles = files.slice();
+        var target = idx + dir;
+        if (target < 0 || target >= newFiles.length) return;
+        var tmp = newFiles[idx]; newFiles[idx] = newFiles[target]; newFiles[target] = tmp;
+        setFiles(newFiles);
+      }
+
+      // Detecte si le set est uniquement des images (combinables en 1 PDF)
+      var allImages = files.length > 1 && files.every(function(f) { return f.type && f.type.indexOf("image/") === 0; });
+      var singleFile = files.length === 1;
+      var multiPdfNotSupported = files.length > 1 && !allImages;
+
       async function handleUpload() {
-        if (!file) { setErr("Choisis un fichier"); return; }
+        if (files.length === 0) { setErr("Choisis au moins un fichier"); return; }
         if (!personnelCode) { setErr("Code employe manquant"); return; }
+        if (multiPdfNotSupported) { setErr("Pour combiner plusieurs PDF, utilise un outil externe ou uploade-les separement. Multi-fichiers OK uniquement pour les images."); return; }
         setSaving(true); setErr(null);
         try {
-          // Path : <code>/<timestamp>_<filename>
+          var fileToUpload;
+          if (allImages) {
+            setCombining(true);
+            // Combine en 1 PDF (1 image par page)
+            var basename = "doc_" + typeDoc + "_" + personnelCode + ".pdf";
+            fileToUpload = await combineImagesIntoPdf(files, basename);
+            setCombining(false);
+          } else {
+            fileToUpload = files[0];
+          }
           var ts = new Date().toISOString().replace(/[:.]/g, "-");
-          var cleanName = (file.name || "doc").replace(/[^a-zA-Z0-9._-]/g, "_");
+          var cleanName = (fileToUpload.name || "doc").replace(/[^a-zA-Z0-9._-]/g, "_");
           var storagePath = personnelCode + "/" + ts + "_" + cleanName;
-          var up = await supabase.storage.from("rh-documents").upload(storagePath, file, {
-            cacheControl: "3600", upsert: false, contentType: file.type || undefined
+          var up = await supabase.storage.from("rh-documents").upload(storagePath, fileToUpload, {
+            cacheControl: "3600", upsert: false, contentType: fileToUpload.type || undefined
           });
           if (up.error) throw new Error("Upload : " + up.error.message);
-          // Insert row dans rh_documents
           var row = {
             personnel_code: personnelCode,
             personnel_nom: personnelNom || null,
             type_document: typeDoc,
-            nom_fichier: file.name,
+            nom_fichier: fileToUpload.name,
             storage_path: storagePath,
             date_emission: dateEmission || null,
             date_expiration: dateExpir || null,
@@ -20125,7 +20199,6 @@
           };
           var ins = await supabase.from("rh_documents").insert(row).select("*").single();
           if (ins.error) {
-            // cleanup le fichier upload
             await supabase.storage.from("rh-documents").remove([storagePath]);
             throw new Error("Insert DB : " + ins.error.message);
           }
@@ -20133,11 +20206,12 @@
           if (onClose) onClose();
         } catch (e) {
           setErr(e.message || "Erreur upload");
+          setCombining(false);
         }
         setSaving(false);
       }
 
-      return h(Modal, { title: "Ajouter un document RH", onClose: onClose, size: 580 },
+      return h(Modal, { title: "Ajouter un document RH", onClose: onClose, size: 620 },
         h("div", { style: { display: "flex", flexDirection: "column", gap: 14 } },
           err ? h("div", { style: { padding: 10, borderRadius: 6, background: "rgba(244,63,94,0.15)", color: "#fda4af", fontSize: 12.5 } }, err) : null,
           h(FormField, { label: "Type de document" },
@@ -20145,10 +20219,34 @@
               RH_DOC_TYPES.map(function(t) { return h("option", { key: t.key, value: t.key }, t.label); })
             )
           ),
-          h(FormField, { label: "Fichier (PDF ou image, max 10 Mo)" },
-            h("input", { type: "file", accept: "application/pdf,image/*", onChange: function(e) { var f = e.target.files && e.target.files[0]; setFile(f || null); },
+          h(FormField, { label: "Fichier(s) - PDF ou plusieurs images (combinees en 1 PDF), max 10 Mo total" },
+            h("input", { type: "file", accept: "application/pdf,image/*", multiple: true, onChange: handleFileChange,
               style: { width: "100%", padding: 8, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.10)", color: "#fafafa", borderRadius: 6, fontSize: 13, fontFamily: "inherit" } })
           ),
+          // Apercu des fichiers selectionnes + reorganisation
+          files.length > 0 ? h("div", { style: { padding: 10, borderRadius: 8, background: "rgba(99,102,241,0.05)", border: "1px solid rgba(99,102,241,0.20)" } },
+            h("div", { style: { fontSize: 11, fontWeight: 700, color: "#a5b4fc", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 8 } },
+              files.length + " fichier(s) selectionne(s)" + (allImages ? " - seront combines en 1 PDF" : (multiPdfNotSupported ? " - multi-PDF non supporte" : ""))
+            ),
+            files.map(function(f, i) {
+              return h("div", { key: i, style: { display: "flex", alignItems: "center", gap: 8, padding: "6px 8px", marginBottom: 4, borderRadius: 6, background: "rgba(255,255,255,0.04)" } },
+                h("span", { style: { fontSize: 11, fontWeight: 700, color: "#a5b4fc", minWidth: 20 } }, (i + 1) + "."),
+                h(Icon, { name: f.type && f.type.indexOf("image/") === 0 ? "image" : "file-text", size: 14, color: "#cbd5e1" }),
+                h("div", { style: { flex: 1, fontSize: 12, color: "#fafafa", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } },
+                  f.name,
+                  h("span", { style: { color: "#94a3b8", fontSize: 11, marginLeft: 6 } }, "(" + (f.size / 1024).toFixed(0) + " ko)")
+                ),
+                allImages ? h(React.Fragment, null,
+                  h("button", { onClick: function() { moveFile(i, -1); }, disabled: i === 0, title: "Monter", style: { background: "transparent", border: "none", padding: 4, cursor: i === 0 ? "default" : "pointer", opacity: i === 0 ? 0.3 : 1 } }, h(Icon, { name: "arrow-up", size: 13, color: "#94a3b8" })),
+                  h("button", { onClick: function() { moveFile(i, 1); }, disabled: i === files.length - 1, title: "Descendre", style: { background: "transparent", border: "none", padding: 4, cursor: i === files.length - 1 ? "default" : "pointer", opacity: i === files.length - 1 ? 0.3 : 1 } }, h(Icon, { name: "arrow-down", size: 13, color: "#94a3b8" }))
+                ) : null,
+                h("button", { onClick: function() { removeFileAt(i); }, title: "Retirer", style: { background: "transparent", border: "none", padding: 4, cursor: "pointer", color: "#fda4af" } }, h(Icon, { name: "x", size: 13, color: "#fda4af" }))
+              );
+            }),
+            allImages ? h("div", { style: { fontSize: 11, color: "#a5b4fc", marginTop: 6, fontStyle: "italic" } },
+              h(Icon, { name: "info", size: 11, color: "#a5b4fc" }), " Reorganise les pages avec les fleches haut/bas si besoin"
+            ) : null
+          ) : null,
           h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 } },
             h(FormField, { label: "Date d'emission (optionnel)" }, h("input", { type: "date", value: dateEmission, onChange: function(e) { setDateEmission(e.target.value); }, style: inputStyle })),
             h(FormField, { label: "Date d'expiration (optionnel)" }, h("input", { type: "date", value: dateExpir, onChange: function(e) { setDateExpir(e.target.value); }, style: inputStyle }))
@@ -20170,7 +20268,9 @@
           ),
           h("div", { style: { display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 6 } },
             h(Button, { variant: "secondary", onClick: onClose, disabled: saving }, "Annuler"),
-            h(Button, { onClick: handleUpload, disabled: saving || !file }, saving ? "Upload..." : h(IconText, { icon: "upload-cloud", size: 14 }, "Telecharger"))
+            h(Button, { onClick: handleUpload, disabled: saving || files.length === 0 || multiPdfNotSupported },
+              combining ? "Combinaison PDF..." : (saving ? "Upload..." : h(IconText, { icon: "upload-cloud", size: 14 }, files.length > 1 ? "Combiner et telecharger" : "Telecharger"))
+            )
           )
         )
       );
