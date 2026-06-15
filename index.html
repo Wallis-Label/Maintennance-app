@@ -20208,10 +20208,24 @@
           var ts = new Date().toISOString().replace(/[:.]/g, "-");
           var cleanName = (fileToUpload.name || "doc").replace(/[^a-zA-Z0-9._-]/g, "_");
           var storagePath = personnelCode + "/" + ts + "_" + cleanName;
-          var up = await supabase.storage.from("rh-documents").upload(storagePath, fileToUpload, {
-            cacheControl: "3600", upsert: false, contentType: fileToUpload.type || undefined
+          // Upload via endpoint Vercel (service_role) pour bypasser les RLS storage
+          // qui posent probleme avec authenticated. L'endpoint verifie le JWT user.
+          var sessionRes = await supabase.auth.getSession();
+          var accessToken = sessionRes && sessionRes.data && sessionRes.data.session && sessionRes.data.session.access_token;
+          if (!accessToken) throw new Error("Session expiree, reconnecte-toi");
+          var fetchRes = await fetch("https://employes-psi.vercel.app/api/rh-upload", {
+            method: "POST",
+            headers: {
+              "Authorization": "Bearer " + accessToken,
+              "X-Storage-Path": storagePath,
+              "Content-Type": fileToUpload.type || "application/octet-stream"
+            },
+            body: fileToUpload
           });
-          if (up.error) throw new Error("Upload : " + up.error.message);
+          if (!fetchRes.ok) {
+            var errBody = await fetchRes.json().catch(function() { return { error: "HTTP " + fetchRes.status }; });
+            throw new Error("Upload : " + (errBody.error || "echec"));
+          }
           var row = {
             personnel_code: personnelCode,
             personnel_nom: personnelNom || null,
