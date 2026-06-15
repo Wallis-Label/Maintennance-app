@@ -8785,8 +8785,8 @@
         }
         machines.push({ code: mk, isReplacement: isReplacement, replacedBy: prevMk || null, realDays: realDays, daysSinceArrival: daysSinceArrival, phase: phase });
       });
-      // Application de la reduction -30% sur la part des machines en adaptation
-      var adjustedMetrage = baseMetrage * (1 - 0.30 * adaptingFraction);
+      // Application de la reduction -50% sur la part des machines en adaptation
+      var adjustedMetrage = baseMetrage * (1 - 0.50 * adaptingFraction);
       return {
         metrage: adjustedMetrage,
         anyAdapt: anyAdapt,
