@@ -8719,30 +8719,47 @@
       var totalMet = 0;
       var anyAdapt = false, anyOldBaseline = false, anyOwn = false;
       var machines = [];
+      var dayMs = 86400000;
       actives.forEach(function(ce) {
         var mk = titleById[String(ce.equipementId)];
         if (!mk) return;
-        // Compte les jours REELS deja travailles par cette machine sur ce chantier
-        var realDays = countRealWorkDaysBefore(metByMk, mk, String(chantierId), d);
         var debMs = ce.dateDebut ? new Date(String(ce.dateDebut).substring(0, 10) + "T00:00:00").getTime() : null;
+        // Determine si la machine est "fraichement arrivee" : dateDebut planning < 14 j calendaires.
+        // Les machines deja etablies sur le chantier (mois d'historique) sont directement
+        // sur leur propre moyenne, sans adaptation. Empêche un faux-positif d'adaptation
+        // sur les machines anciennes (cas ou metByMk serait mal indexe).
+        var daysSinceArrival = debMs !== null ? Math.floor((d - debMs) / dayMs) : 999;
+        var isNewArrival = daysSinceArrival < 14;
+        var realDays = 0;
         var contribution = 0, phase = "own";
-        if (realDays < 7) {
-          // Baseline ancienne machine sur ce chantier
-          var prevMk = findPrevMachineOnChantier(dbChantierEquipements, chantierId, ce, titleById);
-          var refForPrev = debMs || d;
-          var prevVitesse = prevMk ? vitesseMachineOnChantier(metByMk, prevMk, String(chantierId), refForPrev, 14) : 0;
-          if (prevVitesse === 0) prevVitesse = vitesseFallbackChantier || 0;
-          if (realDays < 3) {
-            contribution = prevVitesse * 0.70;
-            anyAdapt = true;
-            phase = "adapt";
+        if (isNewArrival) {
+          realDays = countRealWorkDaysBefore(metByMk, mk, String(chantierId), d);
+          if (realDays < 7) {
+            // Baseline ancienne machine sur ce chantier
+            var prevMk = findPrevMachineOnChantier(dbChantierEquipements, chantierId, ce, titleById);
+            var refForPrev = debMs || d;
+            var prevVitesse = prevMk ? vitesseMachineOnChantier(metByMk, prevMk, String(chantierId), refForPrev, 14) : 0;
+            if (prevVitesse === 0) prevVitesse = vitesseFallbackChantier || 0;
+            if (realDays < 3) {
+              contribution = prevVitesse * 0.70;
+              anyAdapt = true;
+              phase = "adapt";
+            } else {
+              contribution = prevVitesse;
+              phase = "old-baseline";
+            }
+            anyOldBaseline = true;
           } else {
-            contribution = prevVitesse;
-            phase = "old-baseline";
+            // 7+ jours reels accumules : passe sur la moyenne propre
+            var ownVitesseN = vitesseMachineOnChantier(metByMk, mk, String(chantierId), d, 14);
+            if (ownVitesseN === 0) ownVitesseN = vitesseMachineGlobal(metByMk, mk, d, 30);
+            if (ownVitesseN === 0) ownVitesseN = vitesseFallbackChantier || 0;
+            contribution = ownVitesseN;
+            anyOwn = true;
+            phase = "own";
           }
-          anyOldBaseline = true;
         } else {
-          // 7+ jours reels : moyenne propre
+          // Machine etablie : moyenne propre (sur ce chantier, fallback global, fallback chantier)
           var ownVitesse = vitesseMachineOnChantier(metByMk, mk, String(chantierId), d, 14);
           if (ownVitesse === 0) ownVitesse = vitesseMachineGlobal(metByMk, mk, d, 30);
           if (ownVitesse === 0) ownVitesse = vitesseFallbackChantier || 0;
@@ -8751,7 +8768,7 @@
           phase = "own";
         }
         totalMet += contribution;
-        machines.push({ code: mk, realDays: realDays, phase: phase, contribution: contribution });
+        machines.push({ code: mk, realDays: realDays, daysSinceArrival: daysSinceArrival, phase: phase, contribution: contribution });
       });
       return { metrage: totalMet, anyAdapt: anyAdapt, anyOldBaseline: anyOldBaseline, anyOwn: anyOwn, machines: machines };
     }
