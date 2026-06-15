@@ -15617,9 +15617,9 @@
           ) : null,
           // Evolution + Activites
           h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16, marginBottom: 16 } },
-            h("div", { style: sectionStyle },
+            h("div", { style: Object.assign({}, sectionStyle, { display: "flex", flexDirection: "column" }) },
               h("h3", { style: sectionTitleStyle }, h(Icon, { name: "trending-up", size: 16, color: "#a78bfa" }), isMonthlyView ? "Evolution metrage mensuel" : "Evolution metrage journalier"),
-              chartData.length === 0 ? h("div", { style: { color: "#a1a1aa", textAlign: "center", padding: 30, fontSize: 12 } }, "Pas assez de donnees") :
+              chartData.length === 0 ? h("div", { style: { color: "#a1a1aa", textAlign: "center", padding: 30, fontSize: 12, flex: 1 } }, "Pas assez de donnees") :
               (function() {
                 // SVG responsive : viewBox 100% width, pas de scroll horizontal.
                 // Le nombre de barres et leur largeur s'adaptent a la card.
@@ -15664,7 +15664,7 @@
                   return String(Math.round(v));
                 };
 
-                return h("svg", { viewBox: "0 0 " + totalW + " " + (chartH + topPad + 42), preserveAspectRatio: "none", style: { width: "100%", height: 200, display: "block" } },
+                return h("svg", { viewBox: "0 0 " + totalW + " " + (chartH + topPad + 42), preserveAspectRatio: "none", style: { width: "100%", minHeight: 200, flex: 1, display: "block" } },
                   // Bandes de fond par semaine (vue jour seulement)
                   !isMonthlyView ? weeks.map(function(w, wi) {
                     var x1 = paddingLR + w.startIdx * (barW + gap) - 1;
@@ -15754,10 +15754,10 @@
                 );
               }())
             ),
-            h("div", { style: sectionStyle },
+            h("div", { style: Object.assign({}, sectionStyle, { display: "flex", flexDirection: "column" }) },
               h("h3", { style: sectionTitleStyle }, h(Icon, { name: "pie-chart", size: 16, color: "#a78bfa" }), "Repartition activites"),
-              activitesAffichees.length === 0 ? h("div", { style: { color: "#a1a1aa", textAlign: "center", padding: 30, fontSize: 12 } }, "Aucune activite") :
-              h("div", { style: { display: "flex", gap: 18, alignItems: "center" } },
+              activitesAffichees.length === 0 ? h("div", { style: { color: "#a1a1aa", textAlign: "center", padding: 30, fontSize: 12, flex: 1 } }, "Aucune activite") :
+              h("div", { style: { flex: 1, display: "flex", gap: 18, alignItems: "center" } },
                 (function() {
                   // Donut SVG
                   var offset = 0;
@@ -15768,7 +15768,7 @@
                     offset += pct;
                     return seg;
                   });
-                  return h("div", { style: { width: 140, height: 140, flexShrink: 0, position: "relative" } },
+                  return h("div", { style: { width: "min(180px, 40%)", aspectRatio: "1/1", flexShrink: 0, position: "relative" } },
                     h("svg", { viewBox: "0 0 36 36", style: { width: "100%", height: "100%", transform: "rotate(-90deg)" } }, segments),
                     h("div", { style: { position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", pointerEvents: "none" } },
                       h("div", { style: { fontSize: 18, fontWeight: 800 } }, fmtH(sumActivites)),
