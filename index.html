@@ -21935,15 +21935,28 @@
       return isNaN(n2) ? null : n2;
     }
 
-    // Detecte le mode de paiement depuis le texte OCR (avec tolerance OCR)
+    // Detecte le mode de paiement depuis le texte OCR (stricte : evite faux positifs)
+    // IBAN/RIB seuls n'indiquent PAS virement (c'est juste info du vendeur)
     function detectModePaiement(text) {
       if (!text) return null;
-      var t = text.toUpperCase().replace(/[\/\\|]/g, " "); // separateur souvent mal lu
-      if (/MASTER\s*CARD|MASTERCARD|MASTER|VISA|CB\b|CARTE\s*BANCAIRE|CARTE\s*BLEUE|EMV|PAYWAVE|SANS\s*CONTACT|MAESTRO|AMEX/.test(t)) return "cb";
-      if (/CH[ÈE]QUE|CHEQ/.test(t)) return "cheque";
-      if (/ESP[ÈE]CES?|\bCASH\b|LIQUIDE/.test(t)) return "espece";
-      if (/VIREMENT|SEPA|RIB|IBAN/.test(t)) return "virement";
-      if (/BON\s*DE\s*COMMANDE|\bBDC\b|\bBC\s*N/.test(t)) return "bon_commande";
+      var t = text.toUpperCase().replace(/[\/\\|]/g, " ");
+      // CB : marqueurs explicites de paiement carte (presents UNIQUEMENT quand paye par CB)
+      // MASTER/VISA isole = nom marque sur ticket de paiement
+      if (/MASTERCARD|MASTER\s+CARD|VISA\s+(?:CLASSIC|GOLD|PREMIER|ELECTRON)/.test(t)) return "cb";
+      if (/\bMASTER\s+VISA\b|\bVISA\s+MASTER\b/.test(t)) return "cb"; // ticket POS NC
+      if (/\bCB\s*\(?XPF/.test(t)) return "cb";
+      if (/PAIEMENT\s+CARTE|REGLEMENT\s+CARTE|REGLE\s+PAR\s+CARTE|CARTE\s+BANCAIRE|CARTE\s+BLEUE/.test(t)) return "cb";
+      if (/PAYWAVE|SANS\s+CONTACT|CONTACTLESS/.test(t)) return "cb";
+      // Cheque
+      if (/CH[ÈE]QUE\s+N|N[°O]\s*CH[ÈE]QUE|REGLE\s+PAR\s+CH[ÈE]QUE|PAYE\s+PAR\s+CH[ÈE]QUE/.test(t)) return "cheque";
+      if (/\bCH[ÈE]QUE\b/.test(t) && !/CHEQUIER/.test(t)) return "cheque";
+      // Especes
+      if (/ESP[ÈE]CES?|PAYE\s+EN\s+ESP|REGLE\s+EN\s+ESP|\bCASH\b|EN\s+LIQUIDE/.test(t)) return "espece";
+      // Virement : exige le mot "virement" explicite (pas IBAN/RIB seul)
+      if (/VIREMENT\s+(?:BANCAIRE|SEPA|RECU|EMIS)?/.test(t)) return "virement";
+      if (/PAYE\s+PAR\s+VIREMENT|REGLE\s+PAR\s+VIREMENT/.test(t)) return "virement";
+      // Bon de commande
+      if (/BON\s+DE\s+COMMANDE|\bBDC\s+N|\bBC\s+N\b/.test(t)) return "bon_commande";
       return null;
     }
 
@@ -21988,16 +22001,14 @@
           if (val && val > 0 && val < 99999999) return val;
         }
       }
-      // Fallback : prendre le plus grand nombre du texte (souvent le total)
+      // Fallback 1 : majoritaire (le TTC apparait souvent 2-3 fois sur un ticket)
       var nums = [];
       var rx = /\b(\d[\d.,\s]{2,12}\d)\b/g, mm;
       while ((mm = rx.exec(t)) !== null) {
         var v = parseMontantNc(mm[1]);
-        if (v && v >= 100 && v < 9999999) nums.push(v);
+        if (v && v >= 50 && v < 9999999) nums.push(v);
       }
       if (nums.length > 0) {
-        // Le montant TTC apparait souvent plusieurs fois (TTC + paiement + recap)
-        // Le mode = le plus frequent
         var counts = {};
         nums.forEach(function(n) { counts[n] = (counts[n] || 0) + 1; });
         var best = null, bestCount = 0;
@@ -22005,6 +22016,8 @@
           if (counts[k] > bestCount) { best = parseFloat(k); bestCount = counts[k]; }
         });
         if (best && bestCount >= 2) return best;
+        // Fallback 2 : si pas de doublon, prendre le PLUS GRAND nombre (souvent le total)
+        return Math.max.apply(null, nums);
       }
       return null;
     }
