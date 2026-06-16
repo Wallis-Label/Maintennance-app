@@ -22036,33 +22036,41 @@
       return null;
     }
 
-    // Detecte le nom du fournisseur : marqueurs connus, ou ligne juste avant "AGENCE"
+    // Detecte le nom du fournisseur : tres tolerant aux erreurs OCR
     function detectFournisseur(text) {
       if (!text) return null;
       var t = text.toUpperCase();
-      // OPT : detection via marqueur "AGENCE" (typique des recepisses OPT)
-      // Ex: "OPT - Agence : NOUMEA SUD" ou "0PT - Agence: noumea sud"
-      var optAgence = t.match(/\b(?:OPT|0PT|QPT|OPI|OFT|OP1|OFFICE\s+DES\s+POSTES)\b[\s\-]*AGENCE\s*[:.]?\s*([A-Z][A-Z\s\-]{2,40}?)(?:\s*\n|\s*MATRIC|\s*CONTEN|$)/i);
+      // ─── 1. PRIORITE : Markers OPT / Office des Postes ─────────────────
+      // Variantes OCR : O peut etre lu 0/Q, P peut etre lu F, T peut etre lu I/1/7
+      var optVar = "(?:OPT|0PT|QPT|OFT|OPI|OP1|OPJ|OP7|0P7|0FT|0PI|QPI|OFI)";
+      // 1a. OPT + AGENCE + ville (cas ideal)
+      var optAgence = t.match(new RegExp("\\b" + optVar + "\\b[\\s\\-]*AG[EÉ]?NCE\\s*[:.]?\\s*([A-Z][A-Z\\s\\-]{2,40}?)(?:\\s*\\n|\\s*MATRIC|\\s*CONTEN|$)", "i"));
       if (optAgence) return "OPT " + optAgence[1].trim();
-      // Si "AGENCE : XXX" sans OPT explicite mais format OPT
-      if (/RECEPISSE/i.test(t) && /AGENCE/i.test(t)) {
-        var agOnly = t.match(/AGENCE\s*[:.]?\s*([A-Z][A-Z\s\-]{2,40}?)(?:\s*\n|\s*MATRIC|\s*CONTEN|$)/i);
-        if (agOnly) return "OPT " + agOnly[1].trim();
+      // 1b. AGENCE + ville (sans OPT explicite mais sur recepisse / format OPT)
+      if (/RECEPISSE|RECEPISS|RECEPIS|RECEPISE/i.test(t)) {
+        var ag = t.match(/AG[EÉ]?NCE\s*[:.]?\s*([A-Z][A-Z\s\-]{2,40}?)(?:\s*\n|\s*MATRIC|\s*CONTEN|$)/i);
+        if (ag) return "OPT " + ag[1].trim();
+        return "OPT"; // recepisse OPT meme sans agence lisible
       }
-      // Connus NC
+      // 1c. AGENCE + ville NC sans recepisse - typique OPT
+      var ag2 = t.match(/AG[EÉ]?NCE\s*[:.]?\s*(NOUMEA[\s\-A-Z]*|DUMBEA[\s\-A-Z]*|MONT[\s\-]*DORE[\s\-A-Z]*|PA[IÏ]TA[\s\-A-Z]*|KONE[\s\-A-Z]*|BOURAIL[\s\-A-Z]*|POYA[\s\-A-Z]*|LA\s*FOA[\s\-A-Z]*|VOH[\s\-A-Z]*|HOUAILOU[\s\-A-Z]*)/i);
+      if (ag2) return "OPT " + ag2[1].trim();
+      // 1d. OPT seul (sans AGENCE lisible)
+      if (new RegExp("\\b" + optVar + "\\b").test(t)) return "OPT";
+      // ─── 2. Autres fournisseurs NC connus ──────────────────────────────
       var connus = ["CARREFOUR", "GEANT CASINO", "JOHNSTON", "TOTAL NC", "MOBIL", "PACIFIQUE PETROLEUM", "WHARF", "CHAMPION", "NUMERICABLE", "OPT-NC", "EEC", "ENERCAL", "BCI", "SOCREDO", "BNC", "SOCALMO", "ALMA", "LECLERC", "ENGIE", "AIRCAL", "AIRCALIN", "ATI"];
       for (var i = 0; i < connus.length; i++) {
         if (t.indexOf(connus[i]) >= 0) return connus[i];
       }
-      // Fallback : 1ere ligne 'utile' (assez longue, pas du bruit)
-      var lines = text.split("\n").map(function(l) { return l.trim(); }).filter(function(l) { return l.length >= 3; });
-      var noise = /^(RECEPISSE|RECU|RECEIPT|FACTURE|TICKET|INVOICE|DATE|CLIENT|VENDEUR|MERCI|ADRESSE|TEL|TELEPHONE|N[°O]?\s*\d)/i;
-      for (var j = 0; j < Math.min(lines.length, 6); j++) {
+      // ─── 3. Fallback : 1ere ligne 'utile' (plus permissif) ─────────────
+      var lines = text.split("\n").map(function(l) { return l.trim(); }).filter(function(l) { return l.length >= 2; });
+      var noise = /^(RECEPISSE|RECU|RECEIPT|FACTURE|TICKET|INVOICE|DATE|CLIENT|VENDEUR|MERCI|ADRESSE|TEL|TELEPHONE|MATRICULE|CONTENEUR|QTE|DESCRIPTION|PRIX|N[°O]?\s*\d)/i;
+      for (var j = 0; j < Math.min(lines.length, 8); j++) {
         var l = lines[j];
         if (noise.test(l)) continue;
         if (/^[\d\s.,:\/\-]+$/.test(l)) continue;
-        if (l.length > 60) continue;
-        if (!/[A-Za-zÀ-ÿ]/.test(l)) continue;
+        if (l.length > 70) continue;
+        if (!/[A-Za-zÀ-ÿ]{2,}/.test(l)) continue;
         return l;
       }
       return null;
