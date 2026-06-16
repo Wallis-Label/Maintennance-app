@@ -21904,10 +21904,25 @@
       { value: "virement", label: "Virement", icon: "arrow-right-left", color: "#67e8f9" },
       { value: "a_payer", label: "A payer (en attente)", icon: "clock", color: "#fb7185" }
     ];
+    // Nettoie le texte OCR : corrige fautes frequentes (0 ↔ O dans mots, l ↔ I, multiple espaces)
+    function normalizeOcr(text) {
+      if (!text) return "";
+      var t = text;
+      // OCR confond souvent O et 0 dans les MOTS en majuscules (mais pas dans les chiffres)
+      // ex: "0PT" -> "OPT", "T0TAL" -> "TOTAL", "MASTERIVISA" -> "MASTER/VISA"
+      t = t.replace(/\b0PT\b/g, "OPT");
+      t = t.replace(/T0TAL/gi, "TOTAL");
+      t = t.replace(/TICKET/gi, "TICKET");
+      t = t.replace(/MASTERIVISA/gi, "MASTER/VISA");
+      // Espaces multiples -> un seul
+      return t;
+    }
+
     // Parse les montants NC : "1.245" / "1 245" / "1245" / "1.245,50" -> nombre
     function parseMontantNc(s) {
       if (!s) return null;
-      var t = String(s).trim().replace(/\s/g, "");
+      var t = String(s).trim().replace(/[^\d.,\s]/g, "").replace(/\s/g, "");
+      if (!t) return null;
       // Cas "1.245,50" (decimales avec virgule) -> 1245.50
       if (/,\d{2}$/.test(t)) {
         t = t.replace(/\./g, "").replace(",", ".");
@@ -21915,22 +21930,20 @@
         return isNaN(n) ? null : n;
       }
       // Cas "1.245" ou "12.345" -> point = milliers (NC/FR)
-      // Heuristique : si point suivi de 3 chiffres exactement et pas a la fin, c'est un milliers
       t = t.replace(/\.(\d{3})(?!\d)/g, "$1");
-      // Si encore un point restant avec 1-2 chiffres apres -> decimales
-      var n = parseFloat(t);
-      return isNaN(n) ? null : n;
+      var n2 = parseFloat(t);
+      return isNaN(n2) ? null : n2;
     }
 
-    // Detecte le mode de paiement depuis le texte OCR
+    // Detecte le mode de paiement depuis le texte OCR (avec tolerance OCR)
     function detectModePaiement(text) {
       if (!text) return null;
-      var t = text.toUpperCase();
-      if (/\b(MASTER|VISA|MASTERCARD|CB|CARTE\s*BANCAIRE|CARTE\s*BLEUE|EMV|PAYWAVE|SANS\s*CONTACT)\b/.test(t)) return "cb";
-      if (/CH[ÈE]QUE/.test(t)) return "cheque";
-      if (/\b(ESP[ÈE]CES?|CASH|LIQUIDE)\b/.test(t)) return "espece";
+      var t = text.toUpperCase().replace(/[\/\\|]/g, " "); // separateur souvent mal lu
+      if (/MASTER\s*CARD|MASTERCARD|MASTER|VISA|CB\b|CARTE\s*BANCAIRE|CARTE\s*BLEUE|EMV|PAYWAVE|SANS\s*CONTACT|MAESTRO|AMEX/.test(t)) return "cb";
+      if (/CH[ÈE]QUE|CHEQ/.test(t)) return "cheque";
+      if (/ESP[ÈE]CES?|\bCASH\b|LIQUIDE/.test(t)) return "espece";
       if (/VIREMENT|SEPA|RIB|IBAN/.test(t)) return "virement";
-      if (/\b(BON\s*DE\s*COMMANDE|BDC)\b/.test(t)) return "bon_commande";
+      if (/BON\s*DE\s*COMMANDE|\bBDC\b|\bBC\s*N/.test(t)) return "bon_commande";
       return null;
     }
 
@@ -21951,24 +21964,47 @@
       return null;
     }
 
-    // Detecte le montant TTC : cherche "Total TTC" / "Total" / "TTC" + nombre
+    // Detecte le montant TTC : cherche "Total TTC" / "Total" / "TTC" / "MASTER/VISA" + nombre
     function detectMontantTtc(text) {
       if (!text) return null;
+      var t = text;
       var patterns = [
-        /TOTAL\s*TTC\s*\(?XPF\)?\s*[:.]*\s*([\d.,\s]+)/i,
-        /MONTANT\s*TTC\s*[:.]*\s*([\d.,\s]+)/i,
-        /TOTAL\s*A\s*PAYER\s*[:.]*\s*([\d.,\s]+)/i,
-        /NET\s*A\s*PAYER\s*[:.]*\s*([\d.,\s]+)/i,
-        /TOTAL\s*[:.]+\s*([\d.,\s]+)\s*(?:XPF|F|FCFP)?/i,
-        /TTC\s*[:.]*\s*([\d.,\s]+)\s*(?:XPF|F|FCFP)?/i,
-        /MASTER\s*\/?\s*VISA\s*\(?XPF\)?\s*[:.]*\s*([\d.,\s]+)/i
+        // Capture jusqu'a la fin de ligne
+        /TOTAL\s*TTC\s*\(?\s*XPF\s*\)?[:.\s]*([\d][\d.,\s]*\d)/i,
+        /MONTANT\s*TTC[:.\s]*([\d][\d.,\s]*\d)/i,
+        /TOTAL\s*A?\s*PAYER[:.\s]*([\d][\d.,\s]*\d)/i,
+        /NET\s*A\s*PAYER[:.\s]*([\d][\d.,\s]*\d)/i,
+        /MASTER[\/\s]*VISA\s*\(?\s*XPF\s*\)?[:.\s]*([\d][\d.,\s]*\d)/i,
+        /CB\s*\(?\s*XPF\s*\)?[:.\s]*([\d][\d.,\s]*\d)/i,
+        /TOTAL[:.\s]+([\d][\d.,\s]*\d)\s*(?:XPF|F|FCFP)?/i,
+        /TTC[:.\s]+([\d][\d.,\s]*\d)\s*(?:XPF|F|FCFP)?/i,
+        // Format "Totaux ... 1.245" en bas de ticket
+        /TOTAUX[:.\s]*\d*[:.\s]+([\d][\d.,\s]*\d)/i
       ];
       for (var i = 0; i < patterns.length; i++) {
-        var m = text.match(patterns[i]);
+        var m = t.match(patterns[i]);
         if (m && m[1]) {
-          var val = parseMontantNc(m[1].split("\n")[0]);
+          var val = parseMontantNc(m[1].split(/[\r\n]/)[0]);
           if (val && val > 0 && val < 99999999) return val;
         }
+      }
+      // Fallback : prendre le plus grand nombre du texte (souvent le total)
+      var nums = [];
+      var rx = /\b(\d[\d.,\s]{2,12}\d)\b/g, mm;
+      while ((mm = rx.exec(t)) !== null) {
+        var v = parseMontantNc(mm[1]);
+        if (v && v >= 100 && v < 9999999) nums.push(v);
+      }
+      if (nums.length > 0) {
+        // Le montant TTC apparait souvent plusieurs fois (TTC + paiement + recap)
+        // Le mode = le plus frequent
+        var counts = {};
+        nums.forEach(function(n) { counts[n] = (counts[n] || 0) + 1; });
+        var best = null, bestCount = 0;
+        Object.keys(counts).forEach(function(k) {
+          if (counts[k] > bestCount) { best = parseFloat(k); bestCount = counts[k]; }
+        });
+        if (best && bestCount >= 2) return best;
       }
       return null;
     }
@@ -21977,24 +22013,30 @@
     function detectFournisseur(text) {
       if (!text) return null;
       var t = text.toUpperCase();
-      // Connus
-      var connus = ["OPT", "CARREFOUR", "GEANT CASINO", "JOHNSTON", "TOTAL NC", "MOBIL", "PACIFIQUE PETROLEUM", "WHARF", "CHAMPION", "NUMERICABLE", "OPT-NC", "EEC", "ENERCAL", "BCI", "SOCREDO", "BNC", "SOCALMO", "ALMA", "LECLERC"];
+      // Connus NC
+      var connus = ["OPT", "CARREFOUR", "GEANT CASINO", "JOHNSTON", "TOTAL NC", "MOBIL", "PACIFIQUE PETROLEUM", "WHARF", "CHAMPION", "NUMERICABLE", "OPT-NC", "EEC", "ENERCAL", "BCI", "SOCREDO", "BNC", "SOCALMO", "ALMA", "LECLERC", "ENGIE", "AIRCAL", "AIRCALIN", "ATI"];
       for (var i = 0; i < connus.length; i++) {
         if (t.indexOf(connus[i]) >= 0) {
-          // Si "OPT" trouve : tenter "OPT - Agence : XXX" pour preciser
           if (connus[i] === "OPT") {
-            var m = t.match(/OPT[\s\-]*AGENCE\s*[:.]?\s*([A-Z ]+)/);
+            var m = t.match(/OPT[\s\-]*AGENCE\s*[:.]?\s*([A-Z][A-Z\s]+?)(?:\n|MATRIC|CONTEN|$)/);
             if (m) return "OPT " + m[1].trim();
             return "OPT";
           }
           return connus[i];
         }
       }
-      // Sinon prendre la 1ere ligne 'utile' (assez longue, pas du bruit)
-      var lines = text.split("\n").map(function(l) { return l.trim(); }).filter(function(l) { return l.length >= 4; });
-      var noise = /^(RECEPISSE|RECU|RECEIPT|FACTURE|TICKET|INVOICE|DATE|CLIENT|VENDEUR)$/i;
-      for (var j = 0; j < Math.min(lines.length, 5); j++) {
-        if (!noise.test(lines[j]) && lines[j].length <= 50) return lines[j];
+      // Fallback : prendre la 1ere ligne 'utile' (assez longue, pas du bruit)
+      var lines = text.split("\n").map(function(l) { return l.trim(); }).filter(function(l) { return l.length >= 3; });
+      var noise = /^(RECEPISSE|RECU|RECEIPT|FACTURE|TICKET|INVOICE|DATE|CLIENT|VENDEUR|MERCI|ADRESSE|TEL|TELEPHONE|N[°O]?\s*\d)/i;
+      for (var j = 0; j < Math.min(lines.length, 6); j++) {
+        var l = lines[j];
+        // Ignore lignes courtes / lignes en bruit / lignes contenant juste des chiffres
+        if (noise.test(l)) continue;
+        if (/^[\d\s.,:\/\-]+$/.test(l)) continue;
+        if (l.length > 60) continue;
+        // Doit contenir au moins une lettre
+        if (!/[A-Za-zÀ-ÿ]/.test(l)) continue;
+        return l;
       }
       return null;
     }
@@ -22028,12 +22070,13 @@
     // Parseur global : extrait tous les champs en une fois
     function extractInvoiceDataFromOcr(text) {
       if (!text) return {};
-      var ref = extractReferenceFromOcr(text);
+      var t = normalizeOcr(text);
+      var ref = extractReferenceFromOcr(t);
       return {
-        fournisseur: detectFournisseur(text),
-        dateFacture: detectDateFacture(text),
-        montantTtc: detectMontantTtc(text),
-        modePaiement: detectModePaiement(text),
+        fournisseur: detectFournisseur(t),
+        dateFacture: detectDateFacture(t),
+        montantTtc: detectMontantTtc(t),
+        modePaiement: detectModePaiement(t),
         reference: ref ? ref.ref : null,
         referenceType: ref ? ref.type : null
       };
@@ -22078,6 +22121,7 @@
       const [ocrStatus, setOcrStatus] = useState(null); // null | "running" | "done" | "fail"
       const [ocrError, setOcrError] = useState(null);
       const [ocrCount, setOcrCount] = useState(0);
+      const [ocrDetected, setOcrDetected] = useState({});
       const [ocrTextOpen, setOcrTextOpen] = useState(false);
       const [chantiers, setChantiers] = useState([]);
       const [submitting, setSubmitting] = useState(false);
@@ -22102,14 +22146,14 @@
         setFournisseur(""); setTtc(""); setHt(""); setDateFact(new Date().toISOString().substring(0, 10));
         setCategorie(""); setChantierId(""); setNotes("");
         setModePaiement(""); setRefPaiement(""); setOcrText(""); setOcrStatus(null);
-        setOcrError(null); setOcrCount(0); setOcrTextOpen(false);
+        setOcrError(null); setOcrCount(0); setOcrDetected({}); setOcrTextOpen(false);
         setFeedback(null);
       };
 
       // Lance l'OCR + parse + remplit les champs vides
       const runOcrAndFill = async function(dataUrl, opts) {
         opts = opts || {};
-        setOcrStatus("running"); setOcrError(null); setOcrCount(0);
+        setOcrStatus("running"); setOcrError(null); setOcrCount(0); setOcrDetected({});
         try {
           const text = await runOcrOnImage(dataUrl);
           setOcrText(text || "");
@@ -22118,11 +22162,13 @@
           }
           const data = extractInvoiceDataFromOcr(text);
           let n = 0;
-          if (data.fournisseur && (opts.force || !fournisseur)) { setFournisseur(data.fournisseur); n++; }
-          if (data.dateFacture && (opts.force || true)) { setDateFact(data.dateFacture); n++; }
-          if (data.montantTtc && (opts.force || !ttc)) { setTtc(String(data.montantTtc)); n++; }
-          if (data.modePaiement && (opts.force || !modePaiement)) { setModePaiement(data.modePaiement); n++; }
-          if (data.reference && (opts.force || !refPaiement)) { setRefPaiement(data.reference); n++; }
+          const det = {};
+          if (data.fournisseur) { det.fournisseur = data.fournisseur; if (opts.force || !fournisseur) { setFournisseur(data.fournisseur); n++; } }
+          if (data.dateFacture) { det.dateFacture = data.dateFacture; setDateFact(data.dateFacture); n++; }
+          if (data.montantTtc) { det.montantTtc = data.montantTtc; if (opts.force || !ttc) { setTtc(String(data.montantTtc)); n++; } }
+          if (data.modePaiement) { det.modePaiement = data.modePaiement; if (opts.force || !modePaiement) { setModePaiement(data.modePaiement); n++; } }
+          if (data.reference) { det.reference = data.reference; if (opts.force || !refPaiement) { setRefPaiement(data.reference); n++; } }
+          setOcrDetected(det);
           setOcrCount(n);
           setOcrStatus("done");
         } catch (e) {
@@ -22237,6 +22283,23 @@
                 ),
                 ocrStatus !== "running" && photo ? h("button", { type: "button", onClick: function() { runOcrAndFill(photo, { force: true }); }, style: { background: "transparent", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 6, padding: "4px 10px", fontSize: 11, color: "#cbd5e1", cursor: "pointer", fontFamily: "inherit" } }, "Re-analyser") : null
               ),
+              // Detail champ par champ
+              ocrStatus === "done" ? h("div", { style: { marginTop: 8, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 4, fontSize: 11 } },
+                [
+                  { key: "fournisseur", label: "Fournisseur" },
+                  { key: "dateFacture", label: "Date" },
+                  { key: "montantTtc", label: "Montant TTC" },
+                  { key: "modePaiement", label: "Mode paiement" },
+                  { key: "reference", label: "N° reference" }
+                ].map(function(f) {
+                  var found = ocrDetected[f.key];
+                  return h("div", { key: f.key, style: { display: "flex", alignItems: "center", gap: 4, color: found ? "#86efac" : "#94a3b8", padding: "2px 0" } },
+                    h(Icon, { name: found ? "check" : "x", size: 11, color: found ? "#86efac" : "#71717a" }),
+                    h("span", { style: { fontSize: 10.5, fontWeight: 600 } }, f.label + (found ? ": " + (typeof found === "number" ? found.toLocaleString("fr-FR") : found) : "")
+                    )
+                  );
+                })
+              ) : null,
               ocrText ? h("div", { style: { marginTop: 8 } },
                 h("button", { type: "button", onClick: function() { setOcrTextOpen(!ocrTextOpen); }, style: { background: "transparent", border: "none", color: "#94a3b8", fontSize: 11, cursor: "pointer", padding: 0, textDecoration: "underline", fontFamily: "inherit" } }, ocrTextOpen ? "Cacher texte OCR brut" : "Voir texte OCR brut (debug)"),
                 ocrTextOpen ? h("pre", { style: { marginTop: 6, padding: 8, background: "rgba(0,0,0,0.35)", borderRadius: 6, fontSize: 10.5, color: "#cbd5e1", whiteSpace: "pre-wrap", maxHeight: 160, overflow: "auto", fontFamily: "ui-monospace, monospace" } }, ocrText) : null
