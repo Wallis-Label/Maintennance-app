@@ -21943,27 +21943,33 @@
       return isNaN(n2) ? null : n2;
     }
 
-    // Detecte le mode de paiement depuis le texte OCR (stricte : evite faux positifs)
-    // IBAN/RIB seuls n'indiquent PAS virement (c'est juste info du vendeur)
+    // Detecte le mode de paiement depuis le texte OCR
+    // Strategie : sur un ticket / recepisse / recu, voir MASTER ou VISA = paye par CB
     function detectModePaiement(text) {
       if (!text) return null;
-      var t = text.toUpperCase().replace(/[\/\\|]/g, " ");
-      // CB : marqueurs explicites de paiement carte (presents UNIQUEMENT quand paye par CB)
-      // MASTER/VISA isole = nom marque sur ticket de paiement
+      // Normaliser : separateurs OCR (/, \, |, I, L) souvent confondus + corrige fautes courantes
+      var t = text.toUpperCase()
+        .replace(/[\/\\|]/g, " ")
+        .replace(/MASTER[ILSJ]?V[1I]SA/g, "MASTER VISA")
+        .replace(/MAS7ER|MA5TER|MASIER/g, "MASTER")
+        .replace(/V[1IL]SA/g, "VISA");
+      // ─── CB ───────────────────────────────────────────────────────────
       if (/MASTERCARD|MASTER\s+CARD|VISA\s+(?:CLASSIC|GOLD|PREMIER|ELECTRON)/.test(t)) return "cb";
       if (/\bMASTER\s+VISA\b|\bVISA\s+MASTER\b/.test(t)) return "cb"; // ticket POS NC
-      if (/\bCB\s*\(?XPF/.test(t)) return "cb";
-      if (/PAIEMENT\s+CARTE|REGLEMENT\s+CARTE|REGLE\s+PAR\s+CARTE|CARTE\s+BANCAIRE|CARTE\s+BLEUE/.test(t)) return "cb";
-      if (/PAYWAVE|SANS\s+CONTACT|CONTACTLESS/.test(t)) return "cb";
-      // Cheque
+      // MASTER ou VISA seul sur un ticket/recepisse/recu/facture = paiement CB
+      if (/\b(MASTER|VISA|MAESTRO|AMEX|AMERICAN\s+EXPRESS)\b/.test(t)) return "cb";
+      if (/\bCB\s*\(?XPF|XPF\s*\)?\s*CB\b/.test(t)) return "cb";
+      if (/PAIEMENT\s+CARTE|REGLEMENT\s+CARTE|REGLE\s+PAR\s+CARTE|PAYE\s+PAR\s+CARTE|CARTE\s+BANCAIRE|CARTE\s+BLEUE/.test(t)) return "cb";
+      if (/PAYWAVE|SANS\s+CONTACT|CONTACTLESS|\bEMV\b/.test(t)) return "cb";
+      // ─── Cheque ───────────────────────────────────────────────────────
       if (/CH[ÈE]QUE\s+N|N[°O]\s*CH[ÈE]QUE|REGLE\s+PAR\s+CH[ÈE]QUE|PAYE\s+PAR\s+CH[ÈE]QUE/.test(t)) return "cheque";
       if (/\bCH[ÈE]QUE\b/.test(t) && !/CHEQUIER/.test(t)) return "cheque";
-      // Especes
+      // ─── Especes ──────────────────────────────────────────────────────
       if (/ESP[ÈE]CES?|PAYE\s+EN\s+ESP|REGLE\s+EN\s+ESP|\bCASH\b|EN\s+LIQUIDE/.test(t)) return "espece";
-      // Virement : exige le mot "virement" explicite (pas IBAN/RIB seul)
+      // ─── Virement (strict, IBAN/RIB NE comptent PAS) ─────────────────
       if (/VIREMENT\s+(?:BANCAIRE|SEPA|RECU|EMIS)?/.test(t)) return "virement";
       if (/PAYE\s+PAR\s+VIREMENT|REGLE\s+PAR\s+VIREMENT/.test(t)) return "virement";
-      // Bon de commande
+      // ─── Bon de commande ──────────────────────────────────────────────
       if (/BON\s+DE\s+COMMANDE|\bBDC\s+N|\bBC\s+N\b/.test(t)) return "bon_commande";
       return null;
     }
