@@ -21904,19 +21904,115 @@
       { value: "virement", label: "Virement", icon: "arrow-right-left", color: "#67e8f9" },
       { value: "a_payer", label: "A payer (en attente)", icon: "clock", color: "#fb7185" }
     ];
-    // Helpers OCR : detecte les N° de reference / facture / cheque / TRX CB dans un texte
+    // Parse les montants NC : "1.245" / "1 245" / "1245" / "1.245,50" -> nombre
+    function parseMontantNc(s) {
+      if (!s) return null;
+      var t = String(s).trim().replace(/\s/g, "");
+      // Cas "1.245,50" (decimales avec virgule) -> 1245.50
+      if (/,\d{2}$/.test(t)) {
+        t = t.replace(/\./g, "").replace(",", ".");
+        var n = parseFloat(t);
+        return isNaN(n) ? null : n;
+      }
+      // Cas "1.245" ou "12.345" -> point = milliers (NC/FR)
+      // Heuristique : si point suivi de 3 chiffres exactement et pas a la fin, c'est un milliers
+      t = t.replace(/\.(\d{3})(?!\d)/g, "$1");
+      // Si encore un point restant avec 1-2 chiffres apres -> decimales
+      var n = parseFloat(t);
+      return isNaN(n) ? null : n;
+    }
+
+    // Detecte le mode de paiement depuis le texte OCR
+    function detectModePaiement(text) {
+      if (!text) return null;
+      var t = text.toUpperCase();
+      if (/\b(MASTER|VISA|MASTERCARD|CB|CARTE\s*BANCAIRE|CARTE\s*BLEUE|EMV|PAYWAVE|SANS\s*CONTACT)\b/.test(t)) return "cb";
+      if (/CH[ÈE]QUE/.test(t)) return "cheque";
+      if (/\b(ESP[ÈE]CES?|CASH|LIQUIDE)\b/.test(t)) return "espece";
+      if (/VIREMENT|SEPA|RIB|IBAN/.test(t)) return "virement";
+      if (/\b(BON\s*DE\s*COMMANDE|BDC)\b/.test(t)) return "bon_commande";
+      return null;
+    }
+
+    // Detecte la date au format DD/MM/YYYY ou YYYY-MM-DD ou DD-MM-YYYY
+    function detectDateFacture(text) {
+      if (!text) return null;
+      // DD/MM/YYYY ou DD-MM-YYYY ou DD.MM.YYYY
+      var m = text.match(/\b(\d{1,2})[\/\.\-](\d{1,2})[\/\.\-](20\d{2})\b/);
+      if (m) {
+        var d = m[1].padStart(2, "0"), mo = m[2].padStart(2, "0"), y = m[3];
+        // Valide : jour 1-31, mois 1-12
+        var di = parseInt(d), mi = parseInt(mo);
+        if (di >= 1 && di <= 31 && mi >= 1 && mi <= 12) return y + "-" + mo + "-" + d;
+      }
+      // YYYY-MM-DD
+      m = text.match(/\b(20\d{2})-(\d{2})-(\d{2})\b/);
+      if (m) return m[1] + "-" + m[2] + "-" + m[3];
+      return null;
+    }
+
+    // Detecte le montant TTC : cherche "Total TTC" / "Total" / "TTC" + nombre
+    function detectMontantTtc(text) {
+      if (!text) return null;
+      var patterns = [
+        /TOTAL\s*TTC\s*\(?XPF\)?\s*[:.]*\s*([\d.,\s]+)/i,
+        /MONTANT\s*TTC\s*[:.]*\s*([\d.,\s]+)/i,
+        /TOTAL\s*A\s*PAYER\s*[:.]*\s*([\d.,\s]+)/i,
+        /NET\s*A\s*PAYER\s*[:.]*\s*([\d.,\s]+)/i,
+        /TOTAL\s*[:.]+\s*([\d.,\s]+)\s*(?:XPF|F|FCFP)?/i,
+        /TTC\s*[:.]*\s*([\d.,\s]+)\s*(?:XPF|F|FCFP)?/i,
+        /MASTER\s*\/?\s*VISA\s*\(?XPF\)?\s*[:.]*\s*([\d.,\s]+)/i
+      ];
+      for (var i = 0; i < patterns.length; i++) {
+        var m = text.match(patterns[i]);
+        if (m && m[1]) {
+          var val = parseMontantNc(m[1].split("\n")[0]);
+          if (val && val > 0 && val < 99999999) return val;
+        }
+      }
+      return null;
+    }
+
+    // Detecte le nom du fournisseur : marqueurs OPT, ou 1ere ligne en MAJUSCULES non-bruit
+    function detectFournisseur(text) {
+      if (!text) return null;
+      var t = text.toUpperCase();
+      // Connus
+      var connus = ["OPT", "CARREFOUR", "GEANT CASINO", "JOHNSTON", "TOTAL NC", "MOBIL", "PACIFIQUE PETROLEUM", "WHARF", "CHAMPION", "NUMERICABLE", "OPT-NC", "EEC", "ENERCAL", "BCI", "SOCREDO", "BNC", "SOCALMO", "ALMA", "LECLERC"];
+      for (var i = 0; i < connus.length; i++) {
+        if (t.indexOf(connus[i]) >= 0) {
+          // Si "OPT" trouve : tenter "OPT - Agence : XXX" pour preciser
+          if (connus[i] === "OPT") {
+            var m = t.match(/OPT[\s\-]*AGENCE\s*[:.]?\s*([A-Z ]+)/);
+            if (m) return "OPT " + m[1].trim();
+            return "OPT";
+          }
+          return connus[i];
+        }
+      }
+      // Sinon prendre la 1ere ligne 'utile' (assez longue, pas du bruit)
+      var lines = text.split("\n").map(function(l) { return l.trim(); }).filter(function(l) { return l.length >= 4; });
+      var noise = /^(RECEPISSE|RECU|RECEIPT|FACTURE|TICKET|INVOICE|DATE|CLIENT|VENDEUR)$/i;
+      for (var j = 0; j < Math.min(lines.length, 5); j++) {
+        if (!noise.test(lines[j]) && lines[j].length <= 50) return lines[j];
+      }
+      return null;
+    }
+
+    // Detecte une reference / N° de facture / ID session / N° cheque / N° TRX
     function extractReferenceFromOcr(text) {
       if (!text) return null;
       var t = text.replace(/\s+/g, " ");
-      // Patterns ordonnes par priorite
       var patterns = [
+        // ID session OPT / paiement (ex. 540-983460-3-12142168-3)
+        { rx: /ID\s*session\s*[:.]?\s*([0-9][0-9\-]{8,30})/i, label: "session" },
         // N° de facture / Reference / Ref
         { rx: /(?:facture|fact)[\s.:]*n?[°o]?\s*([A-Z0-9][A-Z0-9\-\/]{3,20})/i, label: "facture" },
         { rx: /(?:reference|r[eé]f\.?)[\s.:]*([A-Z0-9][A-Z0-9\-\/]{3,20})/i, label: "ref" },
         // N° de cheque (6-10 chiffres)
         { rx: /(?:ch[eè]que|cheq)[\s.:]*n?[°o]?\s*([0-9]{6,10})/i, label: "cheque" },
         // N° de transaction CB (souvent alphanumerique)
-        { rx: /(?:transaction|trx|auth)[\s.:]*n?[°o]?\s*([A-Z0-9]{6,16})/i, label: "trx" },
+        { rx: /(?:transaction|trx|auth(?:orisation)?|ticket\s*n)[\s.:]*n?[°o]?\s*([A-Z0-9]{6,16})/i, label: "trx" },
         // Bon de commande
         { rx: /(?:bon de commande|b\.?c\.?|bdc|cmd)[\s.:]*n?[°o]?\s*([A-Z0-9][A-Z0-9\-\/]{2,20})/i, label: "bc" },
         // N° generique (en dernier recours)
@@ -21927,6 +22023,20 @@
         if (m && m[1]) return { ref: m[1].toUpperCase(), type: patterns[i].label };
       }
       return null;
+    }
+
+    // Parseur global : extrait tous les champs en une fois
+    function extractInvoiceDataFromOcr(text) {
+      if (!text) return {};
+      var ref = extractReferenceFromOcr(text);
+      return {
+        fournisseur: detectFournisseur(text),
+        dateFacture: detectDateFacture(text),
+        montantTtc: detectMontantTtc(text),
+        modePaiement: detectModePaiement(text),
+        reference: ref ? ref.ref : null,
+        referenceType: ref ? ref.type : null
+      };
     }
     // Lazy-load Tesseract.js depuis CDN (~5MB) une seule fois
     var _tesseractPromise = null;
@@ -22007,13 +22117,14 @@
             setOcrStatus("running");
             runOcrOnImage(dataUrl).then(function(text) {
               setOcrText(text || "");
-              var detected = extractReferenceFromOcr(text);
-              if (detected && detected.ref) {
-                setRefPaiement(detected.ref);
-                setOcrStatus("done");
-              } else {
-                setOcrStatus("done");
-              }
+              var data = extractInvoiceDataFromOcr(text);
+              // Pre-remplit chaque champ uniquement s'il est encore vide (laisse les saisies manuelles intactes)
+              if (data.fournisseur && !fournisseur) setFournisseur(data.fournisseur);
+              if (data.dateFacture) setDateFact(data.dateFacture);
+              if (data.montantTtc && !ttc) setTtc(String(data.montantTtc));
+              if (data.modePaiement && !modePaiement) setModePaiement(data.modePaiement);
+              if (data.reference && !refPaiement) setRefPaiement(data.reference);
+              setOcrStatus("done");
             }).catch(function() { setOcrStatus("fail"); });
           }
         };
