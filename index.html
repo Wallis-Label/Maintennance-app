@@ -21896,6 +21896,61 @@
       { value: "energie", label: "Eau / electricite / gaz" },
       { value: "autre", label: "Autre" }
     ];
+    var MODES_PAIEMENT = [
+      { value: "cb", label: "Carte bancaire", icon: "credit-card", color: "#60a5fa" },
+      { value: "cheque", label: "Cheque", icon: "file-text", color: "#a78bfa" },
+      { value: "espece", label: "Especes", icon: "banknote", color: "#86efac" },
+      { value: "bon_commande", label: "Bon de commande", icon: "clipboard-list", color: "#fbbf24" },
+      { value: "virement", label: "Virement", icon: "arrow-right-left", color: "#67e8f9" },
+      { value: "a_payer", label: "A payer (en attente)", icon: "clock", color: "#fb7185" }
+    ];
+    // Helpers OCR : detecte les N° de reference / facture / cheque / TRX CB dans un texte
+    function extractReferenceFromOcr(text) {
+      if (!text) return null;
+      var t = text.replace(/\s+/g, " ");
+      // Patterns ordonnes par priorite
+      var patterns = [
+        // N° de facture / Reference / Ref
+        { rx: /(?:facture|fact)[\s.:]*n?[°o]?\s*([A-Z0-9][A-Z0-9\-\/]{3,20})/i, label: "facture" },
+        { rx: /(?:reference|r[eé]f\.?)[\s.:]*([A-Z0-9][A-Z0-9\-\/]{3,20})/i, label: "ref" },
+        // N° de cheque (6-10 chiffres)
+        { rx: /(?:ch[eè]que|cheq)[\s.:]*n?[°o]?\s*([0-9]{6,10})/i, label: "cheque" },
+        // N° de transaction CB (souvent alphanumerique)
+        { rx: /(?:transaction|trx|auth)[\s.:]*n?[°o]?\s*([A-Z0-9]{6,16})/i, label: "trx" },
+        // Bon de commande
+        { rx: /(?:bon de commande|b\.?c\.?|bdc|cmd)[\s.:]*n?[°o]?\s*([A-Z0-9][A-Z0-9\-\/]{2,20})/i, label: "bc" },
+        // N° generique (en dernier recours)
+        { rx: /\bn[°o]\s*([A-Z0-9][A-Z0-9\-\/]{4,18})/i, label: "n°" }
+      ];
+      for (var i = 0; i < patterns.length; i++) {
+        var m = t.match(patterns[i].rx);
+        if (m && m[1]) return { ref: m[1].toUpperCase(), type: patterns[i].label };
+      }
+      return null;
+    }
+    // Lazy-load Tesseract.js depuis CDN (~5MB) une seule fois
+    var _tesseractPromise = null;
+    function ensureTesseract() {
+      if (typeof window.Tesseract !== "undefined") return Promise.resolve(window.Tesseract);
+      if (_tesseractPromise) return _tesseractPromise;
+      _tesseractPromise = new Promise(function(resolve, reject) {
+        var s = document.createElement("script");
+        s.src = "https://cdn.jsdelivr.net/npm/tesseract.js@5.0.5/dist/tesseract.min.js";
+        s.onload = function() { resolve(window.Tesseract); };
+        s.onerror = function() { reject(new Error("Tesseract CDN load failed")); };
+        document.head.appendChild(s);
+      });
+      return _tesseractPromise;
+    }
+    async function runOcrOnImage(dataUrl) {
+      try {
+        var Tess = await ensureTesseract();
+        var worker = await Tess.createWorker("fra", 1, { logger: function() {} });
+        var result = await worker.recognize(dataUrl);
+        await worker.terminate();
+        return result && result.data && result.data.text || "";
+      } catch (e) { console.warn("OCR failed:", e); return ""; }
+    }
 
     function QuickEnvoiFactureFab() {
       const [open, setOpen] = useState(false);
@@ -21909,6 +21964,10 @@
       const [categorie, setCategorie] = useState("");
       const [chantierId, setChantierId] = useState("");
       const [notes, setNotes] = useState("");
+      const [modePaiement, setModePaiement] = useState("");
+      const [refPaiement, setRefPaiement] = useState("");
+      const [ocrText, setOcrText] = useState("");
+      const [ocrStatus, setOcrStatus] = useState(null); // null | "running" | "done" | "fail"
       const [chantiers, setChantiers] = useState([]);
       const [submitting, setSubmitting] = useState(false);
       const [feedback, setFeedback] = useState(null);
@@ -21931,6 +21990,7 @@
         setPhoto(null); setPhotoName(null); setPhotoMime(null);
         setFournisseur(""); setTtc(""); setHt(""); setDateFact(new Date().toISOString().substring(0, 10));
         setCategorie(""); setChantierId(""); setNotes("");
+        setModePaiement(""); setRefPaiement(""); setOcrText(""); setOcrStatus(null);
         setFeedback(null);
       };
 
@@ -21939,7 +21999,24 @@
         if (!f) return;
         if (f.size > 10 * 1024 * 1024) { setFeedback({ type: "err", msg: "Fichier > 10 Mo" }); return; }
         const reader = new FileReader();
-        reader.onload = function() { setPhoto(reader.result); setPhotoName(f.name); setPhotoMime(f.type); };
+        reader.onload = function() {
+          var dataUrl = reader.result;
+          setPhoto(dataUrl); setPhotoName(f.name); setPhotoMime(f.type);
+          // Lance OCR auto si c'est une image (pas PDF)
+          if (f.type && f.type.indexOf("image/") === 0) {
+            setOcrStatus("running");
+            runOcrOnImage(dataUrl).then(function(text) {
+              setOcrText(text || "");
+              var detected = extractReferenceFromOcr(text);
+              if (detected && detected.ref) {
+                setRefPaiement(detected.ref);
+                setOcrStatus("done");
+              } else {
+                setOcrStatus("done");
+              }
+            }).catch(function() { setOcrStatus("fail"); });
+          }
+        };
         reader.readAsDataURL(f);
       };
 
@@ -21958,7 +22035,10 @@
               fileBase64: photo, fileName: photoName, fileMime: photoMime,
               fournisseur: fournisseur || null, montantTtc: ttc, montantHt: ht || null,
               dateFacture: dateFact, categorie: categorie || null,
-              chantierId: chantierId || null, notes: notes || null
+              chantierId: chantierId || null, notes: notes || null,
+              modePaiement: modePaiement || null,
+              referencePaiement: refPaiement || null,
+              ocrText: ocrText || null
             })
           });
           const j = await resp.json();
@@ -22053,6 +22133,31 @@
                 h("option", { value: "" }, "— Aucun —"),
                 chantiers.map(function(c) { return h("option", { key: c.id, value: c.id }, (c.code ? "[" + c.code + "] " : "") + c.nom); })
               )
+            ),
+            // Mode de paiement (boutons)
+            h("div", { style: { marginBottom: 12 } },
+              h("label", { style: lblStyle }, "Mode de paiement *"),
+              h("div", { style: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6 } },
+                MODES_PAIEMENT.map(function(m) {
+                  var active = modePaiement === m.value;
+                  return h("button", { key: m.value, type: "button", onClick: function() { setModePaiement(active ? "" : m.value); },
+                    style: { padding: "8px 6px", background: active ? m.color + "30" : "rgba(0,0,0,0.25)", border: "1px solid " + (active ? m.color : "rgba(255,255,255,0.1)"), borderRadius: 8, color: active ? m.color : "#cbd5e1", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, fontFamily: "inherit", fontSize: 11, fontWeight: 600 } },
+                    h(Icon, { name: m.icon, size: 16, color: active ? m.color : "#a1a1aa" }),
+                    m.label
+                  );
+                })
+              )
+            ),
+            // Reference paiement avec OCR auto
+            h("div", { style: { marginBottom: 12 } },
+              h("label", { style: Object.assign({}, lblStyle, { display: "flex", justifyContent: "space-between", alignItems: "center" }) },
+                h("span", null, "N° reference (auto-detecte sur la photo)"),
+                ocrStatus === "running" ? h("span", { style: { color: "#67e8f9", fontWeight: 700, fontSize: 10, display: "flex", alignItems: "center", gap: 4 } }, h("span", { className: "loader", style: { width: 10, height: 10, borderWidth: 2 } }), "Detection...") :
+                ocrStatus === "done" && refPaiement ? h("span", { style: { color: "#86efac", fontWeight: 700, fontSize: 10 } }, "Detecte") :
+                ocrStatus === "done" ? h("span", { style: { color: "#a1a1aa", fontSize: 10 } }, "Aucun n° detecte") :
+                ocrStatus === "fail" ? h("span", { style: { color: "#fb7185", fontSize: 10 } }, "OCR indispo") : null
+              ),
+              h("input", { type: "text", value: refPaiement, onChange: function(e) { setRefPaiement(e.target.value.toUpperCase()); }, placeholder: "Ex. FACT-2026-1234, BC-789, ...", style: inputStyle })
             ),
             // Notes
             h("div", { style: { marginBottom: 12 } },
