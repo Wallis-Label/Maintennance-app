@@ -22403,7 +22403,14 @@
           setOcrStatus("done");
         } catch (e) {
           setOcrStatus("fail");
-          setOcrError(e && e.message ? e.message : "Erreur OCR inconnue");
+          var msg = "Erreur OCR inconnue";
+          if (typeof e === "string") msg = e;
+          else if (e && e.message) msg = e.message;
+          else if (e && e.toString) msg = String(e);
+          // Tronque pour rester lisible
+          if (msg.length > 200) msg = msg.substring(0, 200) + "...";
+          setOcrError(msg);
+          try { console.error("[OCR] Erreur :", e); } catch (e2) {}
         }
       };
 
