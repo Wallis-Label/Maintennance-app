@@ -11162,8 +11162,12 @@
                 iter.setDate(iter.getDate() + 1);
               }
             });
-            // Ratio sur jours ouvres (meme base que Machines theoriques)
-            var nbMachinesReel = joursOuvres > 0 ? machineDaysTotal / joursOuvres : 0;
+            // Capacite reelle (machine-jours / jours ouvres) - sert au calcul de l'ecart
+            var nbMachinesCapacity = joursOuvres > 0 ? machineDaysTotal / joursOuvres : 0;
+            // Affichage : nombre distinct de machines affectees (intuition utilisateur)
+            var nbMachinesReel = nbEnginsDistinct;
+            // Couverture = % du temps de chantier couvert par les affectations en moyenne
+            var couverturePct = nbEnginsDistinct > 0 && joursOuvres > 0 ? Math.round((machineDaysTotal / nbEnginsDistinct) / joursOuvres * 100) : 0;
 
             // ── Calcul du nombre de MACHINES THEORIQUES pour tenir les delais ──
             // SOURCE PRIORITAIRE : moyenne_jour des paliers de primes du site du chantier
@@ -11186,7 +11190,9 @@
             var capacite1MachineSurChantier = prodMoyMachineJour * joursOuvres;
             var nbMachinesTheoriques = capacite1MachineSurChantier > 0 ? effortReel / capacite1MachineSurChantier : 0;
             // Difference entre theorique et reel (negative = sous-affecte)
-            var ecartMachines = nbMachinesReel - nbMachinesTheoriques;
+            // Comparaison faite en CAPACITE (machine-jours equivalent) pour rester equitable
+            // vs nbMachinesTheoriques qui suppose machines a 100% sur la duree
+            var ecartMachines = nbMachinesCapacity - nbMachinesTheoriques;
             var prevColor = joursAvantDeb < 0 ? "#f43f5e" : joursAvantDeb <= 7 ? "#fbbf24" : "#6366f1";
             var prevBg = joursAvantDeb < 0 ? "rgba(244,63,94,0.15)" : joursAvantDeb <= 7 ? "rgba(251,191,36,0.15)" : "rgba(99,102,241,0.15)";
 
@@ -11234,8 +11240,8 @@
                   ),
                   h("div", { style: { background: nbMachinesReel > 0 ? "rgba(251,191,36,0.08)" : "rgba(244,63,94,0.06)", padding: "12px 14px", borderRadius: 10, border: "1px solid " + (nbMachinesReel > 0 ? "rgba(251,191,36,0.18)" : "rgba(244,63,94,0.18)") } },
                     h("div", { style: { fontSize: 10, fontWeight: 800, color: nbMachinesReel > 0 ? "#fde68a" : "#fb7185", textTransform: "uppercase", letterSpacing: 1, marginBottom: 5 } }, "Engins reel"),
-                    h("div", { style: { fontSize: 20, fontWeight: 900, color: "#fafafa", fontFamily: "monospace" } }, nbMachinesReel.toFixed(2) + " mach."),
-                    h("div", { style: { fontSize: 10.5, color: nbMachinesReel === 0 ? "#fb7185" : "#94a3b8", marginTop: 3 } }, nbMachinesReel === 0 ? "A definir Planning" : nbEnginsDistinct + " engin(s) / " + joursOuvres + " j ouvres")
+                    h("div", { style: { fontSize: 20, fontWeight: 900, color: "#fafafa", fontFamily: "monospace" } }, nbMachinesReel + " mach."),
+                    h("div", { style: { fontSize: 10.5, color: nbMachinesReel === 0 ? "#fb7185" : "#94a3b8", marginTop: 3 } }, nbMachinesReel === 0 ? "A definir Planning" : "Couverture " + couverturePct + "% (capa " + nbMachinesCapacity.toFixed(2) + ")")
                   ),
                   // Machines theoriques (selon meteo + pannes + arrets)
                   capacite1MachineSurChantier > 0 ? h("div", { style: { background: ecartMachines >= -0.1 ? "rgba(34,197,94,0.10)" : "rgba(244,63,94,0.10)", padding: "12px 14px", borderRadius: 10, border: "1px solid " + (ecartMachines >= -0.1 ? "rgba(34,197,94,0.25)" : "rgba(244,63,94,0.25)") } },
