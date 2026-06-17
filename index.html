@@ -9201,7 +9201,7 @@
 
       // ── Cout/m global moyen sur 90 derniers jours ──
       // Reproduit la formule de l'Accueil (Statistiques) :
-      //   Personnel x 1.30 + Charges fixes + Emprunts + Carburant + Primes x 1.30
+      //   Personnel x 1.40 + Charges fixes + Emprunts + Carburant + Primes x 1.40
       //   tout sur 90 jours, divise par les metres realises sur 90j.
       // Le seul poste non inclus = consommables sondeuses (typiquement < 5% du total).
       var coutMetreGlobalEstime = (function() {
@@ -9212,7 +9212,7 @@
           var chargesFixesMensuel = (ctxAv.dbChargesFixes || []).filter(function(c) { return c && c.actif !== false; }).reduce(function(s, c) { return s + (parseFloat(c.montant_mensuel) || 0); }, 0);
           var empruntsMensuel = (ctxAv.dbEmprunts || []).filter(function(e) { return (e.statut || "actif") === "actif"; }).reduce(function(s, e) { return s + (parseFloat(e.mensualite) || 0); }, 0);
           var nbMois90j = 3; // 90j = 3 mois
-          var coutPersonnel90j = masseSalarialeMensuelle * 1.30 * nbMois90j;
+          var coutPersonnel90j = masseSalarialeMensuelle * 1.40 * nbMois90j;
           var coutChargesFixes90j = chargesFixesMensuel * nbMois90j;
           var coutEmprunts90j = empruntsMensuel * nbMois90j;
           // Carburant 90j (toutes machines)
@@ -9275,7 +9275,7 @@
               releves: ctxAv.dbRelevesJourn || [],
               rapportsForage: ctxAv.dbRapportsForage || []
             });
-            coutPrimes90j = (totalPrimesBrutes || 0) * 1.30;
+            coutPrimes90j = (totalPrimesBrutes || 0) * 1.40;
           } catch (e) {}
           // Total couts 90j (alignement complet avec la formule Accueil)
           var coutTotal90j = coutPersonnel90j + coutChargesFixes90j + coutEmprunts90j + coutCarburant90j + coutPrimes90j + coutConsoSondeuses90j;
@@ -15383,7 +15383,7 @@
         var days = Math.max(1, Math.round((periodEnd.getTime() - periodStart.getTime()) / (24 * 3600 * 1000)));
         return days / 30;
       })();
-      var coutPersonnelTotal = masseSalarialeMensuelle * 1.30 * nbMoisPeriode;
+      var coutPersonnelTotal = masseSalarialeMensuelle * 1.40 * nbMoisPeriode;
       // Charges fixes mensuelles (actives) x nb mois
       var chargesFixesMensuelles = (dbChargesFixes || [])
         .filter(function(c) { return c && c.actif !== false; })
@@ -15391,7 +15391,7 @@
       var coutChargesFixesTotal = chargesFixesMensuelles * nbMoisPeriode;
       // ── Primes de metrage : calcul EXACT via le module computeTotalPrimesForPeriod ──
       // Replique exactement la logique de la page Primes (rattrapages, multi-sites, etc.).
-      // x 1.30 pour ajouter les charges patronales sur les primes (meme regle que salaires).
+      // x 1.40 pour ajouter les charges patronales sur les primes (meme regle que salaires).
       var coutPrimesMetrageTotal = 0;
       try {
         var primesPaliers = ctx.dbPaliers || [];
@@ -15415,7 +15415,7 @@
           releves: ctx.dbRelevesJourn || [],
           rapportsForage: ctx.dbRapportsForage || []
         });
-        coutPrimesMetrageTotal = totalPrimesBrutes * 1.30; // +30% charges patronales
+        coutPrimesMetrageTotal = totalPrimesBrutes * 1.40; // +40% charges patronales
       } catch (e) {
         console.warn("[Stats] calcul primes :", e.message);
         coutPrimesMetrageTotal = 0;
@@ -15482,13 +15482,13 @@
       // Pour ventiler les charges indirectes (carburant VL, salaires hors-equipe, charges fixes)
       // au prorata des metres realises par chaque sondeuse sur la periode.
       var sumPersonnelTerrainAll = 0;
-      Object.keys(sondeusesMap).forEach(function(code) { sumPersonnelTerrainAll += sondeusesMap[code].coutPersonnel * 1.30; });
+      Object.keys(sondeusesMap).forEach(function(code) { sumPersonnelTerrainAll += sondeusesMap[code].coutPersonnel * 1.40; });
       var coutPersonnelHorsTerrain = Math.max(0, coutPersonnelTotal - sumPersonnelTerrainAll);
       var chargesIndirectesTotal = coutCarburantVL + coutPersonnelHorsTerrain + coutChargesFixesTotal;
 
       var sondeusesDetail = Object.keys(sondeusesMap).map(function(code) {
         var s = sondeusesMap[code];
-        var coutCharges = s.coutPersonnel * 0.30;  // 30% charges patronales sur personnel terrain
+        var coutCharges = s.coutPersonnel * 0.40;  // 40% charges patronales sur personnel terrain
         // Part des charges indirectes au prorata des metres
         var partMetres = totalMetresAll > 0 ? (s.metres / totalMetresAll) : 0;
         var coutIndirect = chargesIndirectesTotal * partMetres;
@@ -15979,7 +15979,7 @@
                   h("th", { style: thRightStyle, title: "Metres par heure de foration uniquement" }, "Prod. fo."),
                   h("th", { style: thRightStyle, title: "Cout des consommables perdus / casses" }, "Consos"),
                   h("th", { style: thRightStyle, title: "Salaires journaliers cumules des membres d'equipe" }, "Salaires"),
-                  h("th", { style: thRightStyle, title: "Charges patronales (30% des salaires)" }, "Charges 30%"),
+                  h("th", { style: thRightStyle, title: "Charges patronales (40% des salaires)" }, "Charges 40%"),
                   h("th", { style: thRightStyle, title: "Quote-part des emprunts au prorata des metres fores. 100% des mensualites du mois sont absorbees ; une machine qui fore plus absorbe plus." }, "Emprunts"),
                   h("th", { style: thRightStyle, title: "Charges indirectes ventilees au prorata des metres : carburant VL + salaires hors-equipe + charges fixes mensuelles (loyer, electricite, comptable, etc.)" }, "Indirect"),
                   h("th", { style: thRightStyle, title: "Total : consos + salaires + charges + emprunts + charges indirectes" }, "Cout total"),
