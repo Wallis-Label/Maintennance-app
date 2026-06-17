@@ -10220,50 +10220,34 @@
                       h("span", { style: { marginRight: 8 } }, "Mois : " + fmtNum(monthMet) + " m"),
                       h("span", { style: { marginRight: 8 } }, "Reste : " + fmtNum(remaining) + " m"),
                       avanceMoisInfo && avanceMoisInfo.hasData ? h("span", {
-                        title: "Avance/retard du MOIS - base sur les DATES du chantier (independant du planning engin).\n" +
-                          "Formule : rythme_contractuel = metrage_total / jours_ouvres_chantier (Lun-Jeu)\n" +
-                          "          attendu_mois = rythme_contractuel x jours_travailles_ce_mois\n" +
-                          "- Jours ouvres total chantier (Lun-Jeu de dDeb a dFin) : " + avanceMoisInfo.joursOuvresTotalChantier + " j\n" +
-                          "- Rythme contractuel : " + avanceMoisInfo.rythmeContractuelJour.toFixed(1) + " m / jour ouvre\n" +
-                          "- Jours travailles ce mois (Lun-Jeu hors feries/intemperies/pannes) : " + avanceMoisInfo.joursTravailles + " j\n" +
-                          "- Metrage contractuel total : " + fmtNum(avanceMoisInfo.metrageTotal) + " m\n" +
-                          "- Attendu ce mois (dates) : " + fmtNum(Math.round(avanceMoisInfo.attendu)) + " m\n" +
-                          "- Realise ce mois : " + fmtNum(Math.round(monthMet)) + " m",
-                        style: { fontWeight: 700, padding: "2px 10px", borderRadius: 999, fontSize: 11.5, background: avanceMoisInfo.avance >= 0 ? "rgba(34,197,94,0.15)" : "rgba(244,63,94,0.15)", border: "1px solid " + (avanceMoisInfo.avance >= 0 ? "rgba(34,197,94,0.35)" : "rgba(244,63,94,0.35)"), color: avanceMoisInfo.avance >= 0 ? "#86efac" : "#fda4af" }
-                      }, "Mois (dates) " + (avanceMoisInfo.avance >= 0 ? "+" : "") + fmtNum(Math.round(avanceMoisInfo.avance)) + " m") : null,
-                      avanceMoisInfo && avanceMoisInfo.hasDataPlan ? h("span", {
-                        title: "Avance/retard du MOIS - base sur le PLANNING ENGIN.\n" +
-                          "Formule : attendu = (jours_machine_reels x metrage_total) / jours_machine_annuel_planifies\n" +
-                          "- Jours-machine reels ce mois (releves) : " + avanceMoisInfo.joursMachinePasses + "\n" +
-                          "- Jours-machine annuels planifies (chantier_equipements) : " + avanceMoisInfo.joursMachineAnnuelPlanifies + (avanceMoisInfo.hasPlanning ? "" : " (fallback : 1 mach/jour)") + "\n" +
-                          "- Metrage contractuel total : " + fmtNum(avanceMoisInfo.metrageTotal) + " m\n" +
-                          "- Attendu ce mois (plan) : " + fmtNum(Math.round(avanceMoisInfo.attenduPlan)) + " m\n" +
-                          "  (= " + avanceMoisInfo.joursMachinePasses + " x " + fmtNum(avanceMoisInfo.metrageTotal) + " / " + avanceMoisInfo.joursMachineAnnuelPlanifies + ")\n" +
-                          "- Realise ce mois : " + fmtNum(Math.round(monthMet)) + " m",
-                        style: { fontWeight: 700, padding: "2px 10px", borderRadius: 999, fontSize: 11.5, background: avanceMoisInfo.avancePlan >= 0 ? "rgba(99,102,241,0.15)" : "rgba(244,114,182,0.15)", border: "1px solid " + (avanceMoisInfo.avancePlan >= 0 ? "rgba(99,102,241,0.35)" : "rgba(244,114,182,0.35)"), color: avanceMoisInfo.avancePlan >= 0 ? "#a5b4fc" : "#f9a8d4" }
-                      }, "Mois (plan) " + (avanceMoisInfo.avancePlan >= 0 ? "+" : "") + fmtNum(Math.round(avanceMoisInfo.avancePlan)) + " m") : null,
+                        title: "AVANCE MOIS = realise - attendu\n\n" +
+                          "REEL (sur dates contractuelles) :\n" +
+                          "  rythme = " + avanceMoisInfo.metrageTotal + " m / " + avanceMoisInfo.joursOuvresTotalChantier + " j ouvres = " + avanceMoisInfo.rythmeContractuelJour.toFixed(1) + " m/jour\n" +
+                          "  attendu = " + avanceMoisInfo.rythmeContractuelJour.toFixed(1) + " x " + avanceMoisInfo.joursTravailles + " j travailles = " + fmtNum(Math.round(avanceMoisInfo.attendu)) + " m\n" +
+                          "  realise = " + fmtNum(Math.round(monthMet)) + " m\n" +
+                          "  -> avance reel = " + (avanceMoisInfo.avance >= 0 ? "+" : "") + fmtNum(Math.round(avanceMoisInfo.avance)) + " m\n\n" +
+                          (avanceMoisInfo.hasDataPlan ? "PLAN (selon planning engin) :\n" +
+                            "  attendu = " + avanceMoisInfo.joursMachinePasses + " x " + fmtNum(avanceMoisInfo.metrageTotal) + " / " + avanceMoisInfo.joursMachineAnnuelPlanifies + " = " + fmtNum(Math.round(avanceMoisInfo.attenduPlan)) + " m\n" +
+                            "  -> avance plan = " + (avanceMoisInfo.avancePlan >= 0 ? "+" : "") + fmtNum(Math.round(avanceMoisInfo.avancePlan)) + " m" : ""),
+                        style: { fontWeight: 700, padding: "2px 10px", borderRadius: 999, fontSize: 11.5, background: avanceMoisInfo.avance >= 0 ? "rgba(34,197,94,0.15)" : "rgba(244,63,94,0.15)", border: "1px solid " + (avanceMoisInfo.avance >= 0 ? "rgba(34,197,94,0.35)" : "rgba(244,63,94,0.35)"), color: avanceMoisInfo.avance >= 0 ? "#86efac" : "#fda4af", display: "inline-flex", alignItems: "center", gap: 6 } },
+                        h("span", null, "Mois " + (avanceMoisInfo.avance >= 0 ? "+" : "") + fmtNum(Math.round(avanceMoisInfo.avance)) + " m"),
+                        avanceMoisInfo.hasDataPlan ? h("span", { style: { fontSize: 10, opacity: 0.7, fontWeight: 600, paddingLeft: 4, borderLeft: "1px solid currentColor" } }, "plan " + (avanceMoisInfo.avancePlan >= 0 ? "+" : "") + fmtNum(Math.round(avanceMoisInfo.avancePlan))) : null
+                      ) : null,
                       avanceInfo && avanceInfo.hasData ? h("span", {
-                        title: "Avance/retard TOTAL - base sur les DATES du chantier (independant du planning engin).\n" +
-                          "Formule : rythme_contractuel x jours_travailles_ecoules\n" +
-                          "- Rythme contractuel : " + avanceInfo.rythmeContractuelJour.toFixed(1) + " m / jour ouvre\n" +
-                          "- Jours travailles depuis le debut : " + avanceInfo.joursTravailles + " j\n" +
-                          "- Metrage contractuel total : " + fmtNum(avanceInfo.metrageTotal) + " m\n" +
-                          "- Attendu a ce jour (dates) : " + fmtNum(Math.round(avanceInfo.attendu)) + " m\n" +
-                          "- Realise : " + fmtNum(Math.round(realise)) + " m",
-                        style: { fontWeight: 700, padding: "2px 10px", borderRadius: 999, fontSize: 11.5, background: avanceInfo.avance >= 0 ? "rgba(34,197,94,0.15)" : "rgba(244,63,94,0.15)", border: "1px solid " + (avanceInfo.avance >= 0 ? "rgba(34,197,94,0.35)" : "rgba(244,63,94,0.35)"), color: avanceInfo.avance >= 0 ? "#86efac" : "#fda4af" }
-                      }, "Total (dates) " + (avanceInfo.avance >= 0 ? "+" : "") + fmtNum(Math.round(avanceInfo.avance)) + " m") : null,
-                      avanceInfo && avanceInfo.hasDataPlan ? h("span", {
-                        title: "Avance/retard TOTAL - base sur le PLANNING ENGIN.\n" +
-                          "Formule : (jours_machine_reels x metrage_total) / jours_machine_annuel_planifies\n" +
-                          "- Machines distinctes detectees : " + avanceInfo.nbMachinesDistinctes + "\n" +
-                          "- Jours-machine reels ecoules : " + avanceInfo.joursMachinePasses + "\n" +
-                          "- Jours-machine annuels planifies : " + avanceInfo.joursMachineAnnuelPlanifies + (avanceInfo.hasPlanning ? "" : " (fallback : 1 mach/jour)") + "\n" +
-                          "- Metrage contractuel total : " + fmtNum(avanceInfo.metrageTotal) + " m\n" +
-                          "- Attendu a ce jour (plan) : " + fmtNum(Math.round(avanceInfo.attenduPlan)) + " m\n" +
-                          "  (= " + avanceInfo.joursMachinePasses + " x " + fmtNum(avanceInfo.metrageTotal) + " / " + avanceInfo.joursMachineAnnuelPlanifies + ")\n" +
-                          "- Realise : " + fmtNum(Math.round(realise)) + " m",
-                        style: { fontWeight: 700, padding: "2px 10px", borderRadius: 999, fontSize: 11.5, background: avanceInfo.avancePlan >= 0 ? "rgba(99,102,241,0.15)" : "rgba(244,114,182,0.15)", border: "1px solid " + (avanceInfo.avancePlan >= 0 ? "rgba(99,102,241,0.35)" : "rgba(244,114,182,0.35)"), color: avanceInfo.avancePlan >= 0 ? "#a5b4fc" : "#f9a8d4" }
-                      }, "Total (plan) " + (avanceInfo.avancePlan >= 0 ? "+" : "") + fmtNum(Math.round(avanceInfo.avancePlan)) + " m") : null
+                        title: "AVANCE TOTAL = realise - attendu\n\n" +
+                          "REEL (sur dates contractuelles) :\n" +
+                          "  rythme = " + avanceInfo.metrageTotal + " m / " + avanceInfo.joursOuvresTotalChantier + " j ouvres = " + avanceInfo.rythmeContractuelJour.toFixed(1) + " m/jour\n" +
+                          "  attendu = " + avanceInfo.rythmeContractuelJour.toFixed(1) + " x " + avanceInfo.joursTravailles + " j travailles = " + fmtNum(Math.round(avanceInfo.attendu)) + " m\n" +
+                          "  realise = " + fmtNum(Math.round(realise)) + " m\n" +
+                          "  -> avance reel = " + (avanceInfo.avance >= 0 ? "+" : "") + fmtNum(Math.round(avanceInfo.avance)) + " m\n\n" +
+                          (avanceInfo.hasDataPlan ? "PLAN (selon planning engin) :\n" +
+                            "  attendu = " + avanceInfo.joursMachinePasses + " x " + fmtNum(avanceInfo.metrageTotal) + " / " + avanceInfo.joursMachineAnnuelPlanifies + " = " + fmtNum(Math.round(avanceInfo.attenduPlan)) + " m\n" +
+                            "  -> avance plan = " + (avanceInfo.avancePlan >= 0 ? "+" : "") + fmtNum(Math.round(avanceInfo.avancePlan)) + " m\n" +
+                            "  Machines distinctes detectees : " + avanceInfo.nbMachinesDistinctes : ""),
+                        style: { fontWeight: 700, padding: "2px 10px", borderRadius: 999, fontSize: 11.5, background: avanceInfo.avance >= 0 ? "rgba(34,197,94,0.15)" : "rgba(244,63,94,0.15)", border: "1px solid " + (avanceInfo.avance >= 0 ? "rgba(34,197,94,0.35)" : "rgba(244,63,94,0.35)"), color: avanceInfo.avance >= 0 ? "#86efac" : "#fda4af", display: "inline-flex", alignItems: "center", gap: 6 } },
+                        h("span", null, "Total " + (avanceInfo.avance >= 0 ? "+" : "") + fmtNum(Math.round(avanceInfo.avance)) + " m"),
+                        avanceInfo.hasDataPlan ? h("span", { style: { fontSize: 10, opacity: 0.7, fontWeight: 600, paddingLeft: 4, borderLeft: "1px solid currentColor" } }, "plan " + (avanceInfo.avancePlan >= 0 ? "+" : "") + fmtNum(Math.round(avanceInfo.avancePlan))) : null
+                      ) : null
                     ),
                     h("div", { style: { width: "100%", height: 10, background: "rgba(255,255,255,0.08)", borderRadius: 4, overflow: "hidden", marginBottom: 4 } },
                       h("div", { style: { width: Math.min(avancement, 100) + "%", height: "100%", background: avancement >= 75 ? "#059669" : avancement >= 50 ? "#d97706" : "#a1a1aa", transition: "width 0.3s" } })
