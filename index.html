@@ -11062,19 +11062,82 @@
             var monthMet = getMonthMetrage(chantier.id);
             var remaining = Math.max(0, chantier.metrage - realise);
 
+            // ── KPI previsionnels (chantier A venir) ──
+            var dDebPrev = chantier.dateDebut ? new Date(chantier.dateDebut + "T00:00:00") : null;
+            var dFinPrev = chantier.dateFin ? new Date(chantier.dateFin + "T00:00:00") : null;
+            var nowPrev = new Date(); nowPrev.setHours(0, 0, 0, 0);
+            var dureeTotal = (dDebPrev && dFinPrev) ? Math.max(1, Math.round((dFinPrev - dDebPrev) / 86400000) + 1) : 0;
+            // Compte les jours ouvres (lun-sam, dim exclu)
+            var joursOuvres = 0;
+            if (dDebPrev && dFinPrev) {
+              var cur = new Date(dDebPrev);
+              while (cur <= dFinPrev) { if (cur.getDay() !== 0) joursOuvres++; cur.setDate(cur.getDate() + 1); }
+            }
+            var metragePrev = parseFloat(chantier.metrage) || 0;
+            var prixPrev = parseFloat(chantier.prixMetre) || 0;
+            var caTotalPrev = metragePrev * prixPrev;
+            var metragesParJour = joursOuvres > 0 ? metragePrev / joursOuvres : 0;
+            var caParJour = caTotalPrev / Math.max(1, dureeTotal);
+            // Productivite requise si 10h foration / jour
+            var prodRequise = metragesParJour / 10;
+            // Date de demarrage (relative)
+            var joursAvantDeb = dDebPrev ? Math.ceil((dDebPrev - nowPrev) / 86400000) : 0;
+            var libDebut = joursAvantDeb < 0 ? "Demarrage retarde" : joursAvantDeb === 0 ? "Demarrage AUJOURD'HUI" : "Dans " + joursAvantDeb + " jour" + (joursAvantDeb > 1 ? "s" : "");
+            // Affectations connues (planning) pour ce chantier
+            var affChantier = (ctxAv.dbAffectations || []).filter(function(a) { return a.chantierId === chantier.id; });
+            var personnelAffectes = {};
+            affChantier.forEach(function(a) { if (a.personnelId) personnelAffectes[a.personnelId] = true; });
+            var nbPersonnelAffectes = Object.keys(personnelAffectes).length;
+            // Affectations machines (depuis chantier_equipements - Planning Engins)
+            var affEngins = (ctxAv.dbChantierEquipements || []).filter(function(ce) { return ce.chantierId === chantier.id; });
+            var enginsAffectes = {};
+            affEngins.forEach(function(ce) { if (ce.equipementId) enginsAffectes[ce.equipementId] = true; });
+            var nbEnginsAffectes = Object.keys(enginsAffectes).length;
+            var prevColor = joursAvantDeb < 0 ? "#f43f5e" : joursAvantDeb <= 7 ? "#fbbf24" : "#6366f1";
+            var prevBg = joursAvantDeb < 0 ? "rgba(244,63,94,0.15)" : joursAvantDeb <= 7 ? "rgba(251,191,36,0.15)" : "rgba(99,102,241,0.15)";
+
             return h("div", { key: chantier.id, style: { marginBottom: 16 } },
               h("div", { style: { background: isExpanded ? "rgba(99,102,241,0.10)" : "rgba(99,102,241,0.06)", backdropFilter: "blur(12px)", borderRadius: 12, padding: 20, border: "1px solid rgba(99,102,241,0.3)", borderLeft: "4px solid #6366f1", boxShadow: "0 8px 24px rgba(0,0,0,0.2)" } },
-                h("div", { onClick: function() { setExpandedChantier(isExpanded ? null : chantier.id); }, style: { cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "start" } },
+                h("div", { onClick: function() { setExpandedChantier(isExpanded ? null : chantier.id); }, style: { cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "start", marginBottom: 14 } },
                   h("div", { style: { flex: 1 } },
-                    h("div", { style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 8 } },
+                    h("div", { style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" } },
                       h("h3", { style: { fontSize: 16, fontWeight: 700, margin: 0 } }, chantier.titre),
                       h("span", { style: { fontSize: 11, fontWeight: 600, color: "#6366f1", background: "rgba(99,102,241,0.15)", padding: "2px 8px", borderRadius: 3 } }, "A venir"),
+                      h("span", { style: { fontSize: 11, fontWeight: 700, color: prevColor, background: prevBg, padding: "2px 10px", borderRadius: 999, border: "1px solid " + prevColor + "60" } }, libDebut),
                       h("button", { onClick: function(e) { e.stopPropagation(); openEditChantier(chantier); }, style: actionBtnStyleAv, title: "Modifier" }, h(Icon, { name: "pencil", size: 14, color: "#a1a1aa" })),
                       h("button", { onClick: function(e) { e.stopPropagation(); setToDelete({ id: chantier.id, titre: chantier.titre }); }, style: actionBtnStyleAv, title: "Supprimer" }, h(Icon, { name: "trash-2", size: 14, color: "#ef4444" }))
                     ),
-                    h("div", { style: { fontSize: 12, color: "#a1a1aa" } }, formatDateFrAv(chantier.dateDebut) + " - " + formatDateFrAv(chantier.dateFin))
+                    h("div", { style: { fontSize: 12, color: "#a1a1aa" } }, formatDateFrAv(chantier.dateDebut) + " - " + formatDateFrAv(chantier.dateFin) + " · " + dureeTotal + " jours calendaires · " + joursOuvres + " jours ouvres")
                   ),
                   h(Icon, { name: isExpanded ? "chevron-up" : "chevron-down", size: 20, color: "#a1a1aa" })
+                ),
+                // ── Grille KPI previsionnels (visible direct, pas besoin d'expand) ──
+                h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 } },
+                  h("div", { style: { background: "rgba(0,0,0,0.20)", padding: "10px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.05)" } },
+                    h("div", { style: { fontSize: 10, fontWeight: 700, color: "#a1a1aa", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 } }, "Metrage prevu"),
+                    h("div", { style: { fontSize: 16, fontWeight: 800, color: "#fafafa", fontFamily: "monospace" } }, fmtNum(metragePrev) + " m"),
+                    h("div", { style: { fontSize: 10.5, color: "#94a3b8", marginTop: 2 } }, joursOuvres > 0 ? fmtNum(Math.round(metragesParJour)) + " m/jour · " + prodRequise.toFixed(1) + " m/h" : "—")
+                  ),
+                  h("div", { style: { background: "rgba(0,0,0,0.20)", padding: "10px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.05)" } },
+                    h("div", { style: { fontSize: 10, fontWeight: 700, color: "#a1a1aa", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 } }, "CA total prevu"),
+                    h("div", { style: { fontSize: 16, fontWeight: 800, color: "#86efac", fontFamily: "monospace" } }, fmtNum(caTotalPrev) + " XPF"),
+                    h("div", { style: { fontSize: 10.5, color: "#94a3b8", marginTop: 2 } }, prixPrev > 0 ? fmtNum(prixPrev) + " XPF/m" : "Prix non defini")
+                  ),
+                  h("div", { style: { background: "rgba(0,0,0,0.20)", padding: "10px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.05)" } },
+                    h("div", { style: { fontSize: 10, fontWeight: 700, color: "#a1a1aa", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 } }, "Personnel affecte"),
+                    h("div", { style: { fontSize: 16, fontWeight: 800, color: nbPersonnelAffectes > 0 ? "#a5b4fc" : "#71717a", fontFamily: "monospace" } }, nbPersonnelAffectes + " personne" + (nbPersonnelAffectes > 1 ? "s" : "")),
+                    h("div", { style: { fontSize: 10.5, color: nbPersonnelAffectes === 0 ? "#fb7185" : "#94a3b8", marginTop: 2 } }, nbPersonnelAffectes === 0 ? "A definir dans Planning" : "Planning Employes")
+                  ),
+                  h("div", { style: { background: "rgba(0,0,0,0.20)", padding: "10px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.05)" } },
+                    h("div", { style: { fontSize: 10, fontWeight: 700, color: "#a1a1aa", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 } }, "Engins affectes"),
+                    h("div", { style: { fontSize: 16, fontWeight: 800, color: nbEnginsAffectes > 0 ? "#fbbf24" : "#71717a", fontFamily: "monospace" } }, nbEnginsAffectes + " engin" + (nbEnginsAffectes > 1 ? "s" : "")),
+                    h("div", { style: { fontSize: 10.5, color: nbEnginsAffectes === 0 ? "#fb7185" : "#94a3b8", marginTop: 2 } }, nbEnginsAffectes === 0 ? "A definir dans Planning" : "Planning Engins")
+                  ),
+                  h("div", { style: { background: "rgba(0,0,0,0.20)", padding: "10px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.05)" } },
+                    h("div", { style: { fontSize: 10, fontWeight: 700, color: "#a1a1aa", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 } }, "CA / jour"),
+                    h("div", { style: { fontSize: 16, fontWeight: 800, color: "#67e8f9", fontFamily: "monospace" } }, fmtNum(Math.round(caParJour)) + " XPF"),
+                    h("div", { style: { fontSize: 10.5, color: "#94a3b8", marginTop: 2 } }, "sur " + dureeTotal + " jours")
+                  )
                 )
               )
             );
