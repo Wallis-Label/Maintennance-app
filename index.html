@@ -4095,14 +4095,29 @@
         return "autre";
       }
 
-      // Prix unitaire mazout (depuis pieces)
+      // Prix unitaire mazout - 3 sources par priorite :
+      //  1. parametres.prix_mazout_litre (configure dans Parametres)
+      //  2. pieces avec "mazout" dans Designation/Reference (legacy)
+      //  3. defaut 175 XPF/L (prix moyen NC, evite cout=0 si rien n'est configure)
       var prixMazout = (function() {
+        var parametresList = ctx.parametres || [];
+        var pmRow = parametresList.find(function(p) {
+          return p && (p.cle === "prix_mazout_litre" || p.categorie === "prix_mazout_litre");
+        });
+        if (pmRow && pmRow.valeur) {
+          var v = parseFloat(pmRow.valeur);
+          if (v > 0) return v;
+        }
         var match = pieces.find(function(p) {
           var d = String(p.Designation || "").toLowerCase();
           var r = String(p.Reference || "").toLowerCase();
           return d.indexOf("mazout") >= 0 || r.indexOf("mazout") >= 0;
         });
-        return match ? (parseFloat(match.PrixUnitaire) || 0) : 0;
+        if (match) {
+          var v2 = parseFloat(match.PrixUnitaire) || 0;
+          if (v2 > 0) return v2;
+        }
+        return 175;
       })();
 
       // Filtre + enrichissement
