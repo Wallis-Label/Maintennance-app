@@ -5380,7 +5380,7 @@
           h(FormField, { label: "Date de naissance" }, h("input", { type: "date", style: inputStyle, value: _dateNaissance[0], onChange: function(e) { _dateNaissance[1](e.target.value); } })),
           h(FormField, { label: "Date d'embauche" }, h("input", { type: "date", style: inputStyle, value: _dateEmbauche[0], onChange: function(e) { _dateEmbauche[1](e.target.value); } })),
           h(FormField, { label: "Type de contrat" }, h("select", { style: selectStyle, value: _typeContrat[0], onChange: function(e) { _typeContrat[1](e.target.value); } },
-            ["CDI", "CDD", "Stage", "Apprentissage", "Alternance", "Interim", "Saisonnier", "Mission / Prestation", "Auto-entrepreneur", "Essai"].map(function(t) { return h("option", { key: t, value: t }, t); })
+            ["CDI", "CDD", "Auto-entrepreneur"].map(function(t) { return h("option", { key: t, value: t }, t); })
           )),
           h(FormField, { label: "Lieu de contrat" }, h("input", { style: Object.assign({}, inputStyle, { textTransform: "uppercase" }), value: _lieuContrat[0], onChange: function(e) { _lieuContrat[1](e.target.value.toUpperCase()); }, placeholder: "EX: NOUMEA, BOURAIL..." })),
           h(FormField, { label: "Salaire (XPF)" }, h("input", { type: "number", style: inputStyle, value: _salaire[0], onChange: function(e) { _salaire[1](e.target.value); }, placeholder: "Montant mensuel" })),
@@ -6032,7 +6032,7 @@
         // Filtre type contrat
         h("div", { style: { display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap", alignItems: "center" } },
           h("span", { style: { fontSize: 11, color: "#a1a1aa", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, marginRight: 6 } }, "Type contrat :"),
-          ["all", "CDI", "CDD", "Stage", "Apprentissage", "Alternance", "Interim", "Saisonnier", "Mission / Prestation", "Auto-entrepreneur", "Essai"].map(function(t) {
+          ["all", "CDI", "CDD", "Auto-entrepreneur"].map(function(t) {
             var active = typeFilter === t;
             var label = t === "all" ? "Tous" : t;
             return h("button", { key: t, onClick: function() { setTypeFilter(t); }, style: { padding: "5px 11px", borderRadius: 8, fontSize: 11.5, fontWeight: 700, border: "1px solid " + (active ? "rgba(99,102,241,0.45)" : "rgba(255,255,255,0.08)"), background: active ? "rgba(99,102,241,0.20)" : "rgba(255,255,255,0.04)", color: active ? "#c4b5fd" : "#a1a1aa", cursor: "pointer", fontFamily: "inherit" } }, label);
