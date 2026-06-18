@@ -10396,14 +10396,20 @@
             ));
           }
           // Ligne moyenne quotidienne reelle de la semaine (m/jour ouvre)
-          // Affichee uniquement si la semaine a au moins 1 jour ouvre AVEC saisie reelle.
+          // Centree sur le milieu de la bande de semaine, largeur = 2 barres.
           if (w.avgPerDay > 0 && maxMet > 0) {
             var ay = padT + chartHt - (w.avgPerDay / maxMet) * chartHt;
             var avgLabel = Math.round(w.avgPerDay) + " m/j";
+            var halfW = barW + gap / 2; // demi-largeur = 2 barres + 1 gap
+            var ax1 = cx - halfW;
+            var ax2 = cx + halfW;
+            // Clamp pour ne pas deborder de la bande de semaine si elle est etroite
+            if (ax1 < x1 + 2) ax1 = x1 + 2;
+            if (ax2 > x2 - 2) ax2 = x2 - 2;
             weekAvgLines.push(h("g", { key: "wkavg" + wIdx },
-              h("line", { x1: x1 + 2, x2: x2 - 2, y1: ay, y2: ay, stroke: "#34d399", strokeWidth: 2, strokeDasharray: "4 3", opacity: 0.85 }),
-              h("rect", { x: x2 - 56, y: ay - 12, width: 54, height: 14, rx: 3, fill: "rgba(15,40,30,0.85)", stroke: "rgba(52,211,153,0.55)", strokeWidth: 0.8 }),
-              h("text", { x: x2 - 4, y: ay - 1, textAnchor: "end", fontSize: 10, fontWeight: 700, fill: "#86efac" }, "moy " + avgLabel)
+              h("line", { x1: ax1, x2: ax2, y1: ay, y2: ay, stroke: "#34d399", strokeWidth: 2, strokeDasharray: "4 3", opacity: 0.9 }),
+              h("rect", { x: cx - 28, y: ay - 14, width: 56, height: 12, rx: 3, fill: "rgba(15,40,30,0.85)", stroke: "rgba(52,211,153,0.55)", strokeWidth: 0.8 }),
+              h("text", { x: cx, y: ay - 4, textAnchor: "middle", fontSize: 10, fontWeight: 700, fill: "#86efac" }, avgLabel)
             ));
           }
         });
@@ -11491,16 +11497,22 @@
                             );
                           }),
                           // Ligne moyenne quotidienne reelle par semaine (m/jour ouvre)
+                          // Centree sur la bande de semaine, largeur = 2 barres.
                           weeksMini.map(function(w, wIdx) {
                             if (w.avgPerDay <= 0 || maxDayVal <= 0) return null;
-                            var ax1 = 20 + w.startIdx * (barW + 2) + 1;
-                            var ax2 = 20 + w.endIdx * (barW + 2) + barW - 1;
+                            var wx1 = 20 + w.startIdx * (barW + 2);
+                            var wx2 = 20 + w.endIdx * (barW + 2) + barW;
+                            var cxm = (wx1 + wx2) / 2;
+                            var halfWm = barW + 1; // demi-largeur = 2 barres + 1 gap (gap=2)
+                            var ax1 = cxm - halfWm;
+                            var ax2 = cxm + halfWm;
+                            if (ax1 < wx1) ax1 = wx1;
+                            if (ax2 > wx2) ax2 = wx2;
                             var ay = chartH2 - (w.avgPerDay / maxDayVal) * (chartH2 - topPad);
-                            var lblW = Math.min(ax2 - ax1, 46);
                             return h("g", { key: "miwavg" + wIdx },
-                              h("line", { x1: ax1, x2: ax2, y1: ay, y2: ay, stroke: "#34d399", strokeWidth: 1.6, strokeDasharray: "3 2", opacity: 0.85 }),
-                              h("rect", { x: ax2 - lblW, y: ay - 10, width: lblW, height: 11, rx: 2, fill: "rgba(15,40,30,0.85)", stroke: "rgba(52,211,153,0.55)", strokeWidth: 0.6 }),
-                              h("text", { x: ax2 - 3, y: ay - 1, textAnchor: "end", fontSize: 8, fontWeight: 700, fill: "#86efac" }, Math.round(w.avgPerDay) + " m/j")
+                              h("line", { x1: ax1, x2: ax2, y1: ay, y2: ay, stroke: "#34d399", strokeWidth: 1.6, strokeDasharray: "3 2", opacity: 0.9 }),
+                              h("rect", { x: cxm - 22, y: ay - 11, width: 44, height: 10, rx: 2, fill: "rgba(15,40,30,0.85)", stroke: "rgba(52,211,153,0.55)", strokeWidth: 0.6 }),
+                              h("text", { x: cxm, y: ay - 3, textAnchor: "middle", fontSize: 8, fontWeight: 700, fill: "#86efac" }, Math.round(w.avgPerDay) + " m/j")
                             );
                           }),
                           h("line", { x1: 18, x2: svgW2 - 2, y1: chartH2, y2: chartH2, stroke: "rgba(255,255,255,0.1)", strokeWidth: 1 })
