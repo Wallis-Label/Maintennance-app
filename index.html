@@ -10343,7 +10343,10 @@
         // CA semaine : reel pour jours passes, reel + previsionnel pour jours futurs.
         // Le previsionnel reste affiche pour les jours passes mais n'est PAS compte
         // dans le total semaine - sinon les semaines passees auraient un CA fictif.
-        // metReelSum + nbWorkDays : sert au calcul de la moyenne quotidienne (ligne verte).
+        // metReelSum + nbDaysSaisis : sert au calcul de la moyenne quotidienne (ligne verte).
+        // nbDaysSaisis compte UNIQUEMENT les jours avec metrage reel > 0 (jamais les
+        // jours futurs non realises ni les jours sans saisie). Ca donne la "perf moyenne
+        // des jours travailles" et non une moyenne diluee par les jours encore a venir.
         var weeks = [];
         var curW = null;
         for (var wi = 0; wi < n; wi++) {
@@ -10351,22 +10354,22 @@
           var dow = dD.getDay(); // 0=Dim, 1=Lun, ..., 6=Sam
           var weekCA = chartData[wi].ca + (chartData[wi].isFuture ? chartData[wi].forecastCA : 0);
           var weekMet = chartData[wi].metrage + (chartData[wi].isFuture ? chartData[wi].forecast : 0);
-          var wdInc = chartData[wi].isWorkDay ? 1 : 0;
+          var saisiInc = chartData[wi].metrage > 0 ? 1 : 0;
           if (curW === null || dow === 1) {
             if (curW) weeks.push(curW);
-            curW = { startIdx: wi, endIdx: wi, caSum: weekCA, metSum: weekMet, metReelSum: chartData[wi].metrage, nbWorkDays: wdInc };
+            curW = { startIdx: wi, endIdx: wi, caSum: weekCA, metSum: weekMet, metReelSum: chartData[wi].metrage, nbDaysSaisis: saisiInc };
           } else {
             curW.endIdx = wi;
             curW.caSum += weekCA;
             curW.metSum += weekMet;
             curW.metReelSum += chartData[wi].metrage;
-            curW.nbWorkDays += wdInc;
+            curW.nbDaysSaisis += saisiInc;
           }
         }
         if (curW) weeks.push(curW);
-        // Moyenne quotidienne reelle (m/jour ouvre) pour la ligne verte par semaine
+        // Moyenne quotidienne reelle (m/jour saisi) pour la ligne verte par semaine
         weeks.forEach(function(w) {
-          w.avgPerDay = w.nbWorkDays > 0 ? w.metReelSum / w.nbWorkDays : 0;
+          w.avgPerDay = w.nbDaysSaisis > 0 ? w.metReelSum / w.nbDaysSaisis : 0;
         });
 
         // Grid lines
@@ -10486,7 +10489,7 @@
           // Legende
           h("div", { style: { display: "flex", gap: 14, fontSize: 11, color: "#94a3b8", marginTop: 10, flexWrap: "wrap" } },
             h("span", { style: { display: "flex", alignItems: "center", gap: 5 } }, h("span", { style: { width: 10, height: 10, borderRadius: 2, background: "#7c3aed" } }), "Réalisé (saisies)"),
-            h("span", { style: { display: "flex", alignItems: "center", gap: 5 } }, h("span", { style: { display: "inline-block", width: 14, height: 0, borderTop: "2px dashed #34d399" } }), "Moyenne quotidienne semaine (m/jour ouvré)"),
+            h("span", { style: { display: "flex", alignItems: "center", gap: 5 } }, h("span", { style: { display: "inline-block", width: 14, height: 0, borderTop: "2px dashed #34d399" } }), "Moyenne quotidienne semaine (m/jour saisi)"),
             totalForecastMet > 0 ? h("span", { style: { display: "flex", alignItems: "center", gap: 5 } }, h("span", { style: { width: 10, height: 10, borderRadius: 2, background: "#c4b5fd", border: "1px dashed #7c3aed" } }), "Prévision météo OK") : null,
             totalForecastMet > 0 ? h("span", { style: { display: "flex", alignItems: "center", gap: 5 } }, h("span", { style: { width: 10, height: 10, borderRadius: 2, background: "#93c5fd", border: "1px dashed #3b82f6" } }), "Pluie (réduit)") : null,
             totalForecastMet > 0 ? h("span", { style: { display: "flex", alignItems: "center", gap: 5 } }, h("span", { style: { width: 10, height: 10, borderRadius: 2, background: "#fda4af", border: "1px dashed #dc2626" } }), "Intempéries (perdu)") : null
@@ -11408,27 +11411,30 @@
                     var svgW2 = daysInMonth * (barW + 2) + 40;
                     var prixMet = chantier.prixMetre || 0;
                     // Construction des semaines (lundi -> dimanche) - intègre les forecasts au CA
-                    // metReelSum + nbWorkDays : pour ligne moyenne quotidienne par semaine.
+                    // metReelSum + nbDaysSaisis : pour la ligne moyenne quotidienne par semaine.
+                    // nbDaysSaisis compte UNIQUEMENT les jours avec metrage reel > 0 (pas
+                    // les jours futurs forecast, pas les jours sans saisie). Donne la "perf
+                    // moyenne des jours travailles" non diluee par le previsionnel.
                     var weeksMini = [];
                     var curMW = null;
                     for (var wj = 0; wj < daysInMonth; wj++) {
                       var dwj = new Date(year, monthIdx, wj + 1).getDay();
                       var weekVal = dayVals[wj] || 0;
                       if (weekVal === 0 && forecastVals[wj]) weekVal = forecastVals[wj].val;
-                      var isWDmini = dwj >= 1 && dwj <= 4;
                       var realDayMini = dayVals[wj] || 0;
+                      var saisiIncMini = realDayMini > 0 ? 1 : 0;
                       if (curMW === null || dwj === 1) {
                         if (curMW) weeksMini.push(curMW);
-                        curMW = { startIdx: wj, endIdx: wj, caSum: weekVal * prixMet, metReelSum: realDayMini, nbWorkDays: isWDmini ? 1 : 0 };
+                        curMW = { startIdx: wj, endIdx: wj, caSum: weekVal * prixMet, metReelSum: realDayMini, nbDaysSaisis: saisiIncMini };
                       } else {
                         curMW.endIdx = wj;
                         curMW.caSum += weekVal * prixMet;
                         curMW.metReelSum += realDayMini;
-                        if (isWDmini) curMW.nbWorkDays += 1;
+                        curMW.nbDaysSaisis += saisiIncMini;
                       }
                     }
                     if (curMW) weeksMini.push(curMW);
-                    weeksMini.forEach(function(w) { w.avgPerDay = w.nbWorkDays > 0 ? w.metReelSum / w.nbWorkDays : 0; });
+                    weeksMini.forEach(function(w) { w.avgPerDay = w.nbDaysSaisis > 0 ? w.metReelSum / w.nbDaysSaisis : 0; });
                     return h("div", { style: { background: "rgba(255,255,255,0.04)", borderRadius: 8, padding: "12px 16px", marginBottom: 14, border: "1px solid rgba(255,255,255,0.07)" } },
                       h("div", { style: { fontSize: 12, fontWeight: 700, color: "#e5e7eb", marginBottom: 8 } }, h(IconText, { icon: "bar-chart-3", size: 14 }, "Metrage par jour - " + currentMonth.toLocaleDateString("fr-FR", { month: "long", year: "numeric" }))),
                       h("div", { style: { overflowX: "auto" } },
@@ -11521,7 +11527,7 @@
                       // Legende barres reelles vs previsionnelles (gradient meteo)
                       h("div", { style: { display: "flex", gap: 12, fontSize: 10, color: "#94a3b8", marginTop: 8, flexWrap: "wrap" } },
                         h("span", { style: { display: "flex", alignItems: "center", gap: 5 } }, h("span", { style: { width: 10, height: 10, borderRadius: 2, background: "#7c3aed" } }), "Réalisé"),
-                        h("span", { style: { display: "flex", alignItems: "center", gap: 5 } }, h("span", { style: { display: "inline-block", width: 14, height: 0, borderTop: "2px dashed #34d399" } }), "Moyenne / jour ouvré (semaine)"),
+                        h("span", { style: { display: "flex", alignItems: "center", gap: 5 } }, h("span", { style: { display: "inline-block", width: 14, height: 0, borderTop: "2px dashed #34d399" } }), "Moyenne / jour saisi (semaine)"),
                         h("span", { style: { display: "flex", alignItems: "center", gap: 5 } }, h("span", { style: { width: 10, height: 10, borderRadius: 2, background: "#c4b5fd", border: "1px dashed #7c3aed" } }), "Sec (100 %)"),
                         h("span", { style: { display: "flex", alignItems: "center", gap: 5 } }, h("span", { style: { width: 10, height: 10, borderRadius: 2, background: "#a5b4fc", border: "1px dashed #6366f1" } }), "Pluie légère (×0,85-0,95)"),
                         h("span", { style: { display: "flex", alignItems: "center", gap: 5 } }, h("span", { style: { width: 10, height: 10, borderRadius: 2, background: "#93c5fd", border: "1px dashed #3b82f6" } }), "Pluie modérée (×0,65)"),
