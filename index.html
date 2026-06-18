@@ -3086,7 +3086,7 @@
 
       return h("div", null,
         h(PageHeader, {
-          title: h(IconText, { icon: "wrench", size: 20 }, "🔧 Mecaniciens / Facturation"),
+          title: h(IconText, { icon: "wrench", size: 20 }, "Mecaniciens"),
           subtitle: nbInterv + " intervention" + (nbInterv > 1 ? "s" : "") + " terminee" + (nbInterv > 1 ? "s" : "") + " · " + heuresTotales.toFixed(1) + " h · " + fmtNum(Math.round(facturable)) + " XPF",
           action: h("div", { style: { display: "flex", gap: 8 } },
             h(Button, { variant: "secondary", onClick: exportCSV }, h(IconText, { icon: "table", size: 14 }, "CSV")),
@@ -14501,7 +14501,7 @@
         { key: "emprunts", label: "Emprunts", icon: "landmark" },
         { key: "charges-fixes", label: "Charges fixes", icon: "receipt" },
         { key: "personnel", label: "Personnel", icon: "user-round" },
-        { key: "stats-mecaniciens", label: "Mecaniciens / Facturation", icon: "wrench" },
+        { key: "stats-mecaniciens", label: "Mecaniciens", icon: "wrench" },
         { key: "coffre-rh", label: "Coffre-fort RH", icon: "folder-lock" },
         { key: "messages", label: "Messages", icon: "mail" },
         { key: "soumissions", label: "Soumissions employes", icon: "inbox" },
@@ -22617,7 +22617,7 @@
         ]},
         { name: "Equipe", pages: [
           { key: "personnel", label: "Personnel", lucide: "user-round" },
-          { key: "stats-mecaniciens", label: "🔧 Mecaniciens / Facturation", lucide: "wrench" },
+          { key: "stats-mecaniciens", label: "Mecaniciens", lucide: "wrench" },
           { key: "coffre-rh", label: "Coffre-fort RH", lucide: "folder-lock" },
           { key: "messages", label: "Messages", lucide: "mail" },
         ]},
