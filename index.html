@@ -3089,8 +3089,10 @@
         return true;
       });
 
-      // Interventions terminees (a facturer)
-      var terminees = filteredInterv.filter(function(i) { return i.Statut_Intervention === "Termine"; });
+      // Interventions a facturer : toute intervention avec heures saisies (peu importe le statut DB).
+      // Une intervention "En cours" ou "Partiellement terminee" mais avec DureeHeures > 0 doit etre
+      // comptee dans le total facturable - sinon le KPI reste a 0 tant que rien n'est cloture.
+      var terminees = filteredInterv.filter(function(i) { return (parseFloat(i.DureeHeures) || 0) > 0; });
       var enCours = filteredInterv.filter(function(i) { return i.Statut_Intervention === "En cours" || i.Statut_Intervention === "Pieces a commander"; });
       var demandesEnAttente = filteredInterv.filter(function(i) { return i.Statut_Intervention === "Demande en attente"; });
       var rejetees = filteredInterv.filter(function(i) { return i.Statut_Intervention === "Rejetee"; });
@@ -3269,7 +3271,7 @@
         // Tableau detaille
         h(Card, { style: { marginBottom: 16 } },
           h("h3", { style: { margin: "0 0 12px", fontSize: 15, color: "#fafafa" } }, "Detail des interventions a facturer"),
-          tableRows.length === 0 ? h("p", { style: { textAlign: "center", color: "#71717a", padding: 20 } }, "Aucune intervention terminee sur cette periode.") :
+          tableRows.length === 0 ? h("p", { style: { textAlign: "center", color: "#71717a", padding: 20 } }, "Aucune intervention avec heures saisies sur cette periode.") :
           h("div", { style: { overflowX: "auto", maxHeight: 500 } },
             h("table", { style: { width: "100%", borderCollapse: "collapse", fontSize: 13 } },
               h("thead", { style: { position: "sticky", top: 0, background: "rgba(28,30,42,0.98)", backdropFilter: "blur(8px)" } }, h("tr", { style: { textAlign: "left" } },
