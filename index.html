@@ -334,6 +334,7 @@
         PiecesUtilisees: Array.isArray(r.pieces_utilisees) ? r.pieces_utilisees : (r.pieces_utilisees || []),
         Photos: Array.isArray(r.photos) ? r.photos : (r.photos || []),
         TauxHoraireApplique: r.taux_horaire_applique != null ? parseFloat(r.taux_horaire_applique) : 0,
+        TauxAppliqueLignes: Array.isArray(r.taux_applique_lignes) ? r.taux_applique_lignes : (r.taux_applique_lignes || []),
         Urgence: r.urgence || "normale",
         DateDemande: r.date_demande || "",
         ValidePar: r.valide_par || "",
@@ -366,6 +367,7 @@
         pieces_utilisees: Array.isArray(i.PiecesUtilisees) && i.PiecesUtilisees.length > 0 ? i.PiecesUtilisees : null,
         photos: Array.isArray(i.Photos) && i.Photos.length > 0 ? i.Photos : null,
         taux_horaire_applique: i.TauxHoraireApplique != null && i.TauxHoraireApplique > 0 ? parseFloat(i.TauxHoraireApplique) : null,
+        taux_applique_lignes: Array.isArray(i.TauxAppliqueLignes) && i.TauxAppliqueLignes.length > 0 ? i.TauxAppliqueLignes : null,
         urgence: i.Urgence || null,
         date_demande: i.DateDemande || null,
         valide_par: i.ValidePar || null,
@@ -2200,8 +2202,40 @@
             h(FormField, { label: "Description du probleme (saisi par le demandeur)" },
               h("textarea", { style: Object.assign({}, inputStyle, { minHeight: 70, resize: "vertical" }), value: f.DescriptionProbleme, onChange: function(e) { upd("DescriptionProbleme", e.target.value); }, placeholder: "Le probleme constate avant intervention..." })
             ),
-            // Pre-calcul facturation
-            facturable > 0 ? h("div", { style: { marginTop: 12, padding: 12, background: "rgba(34,197,94,0.10)", border: "1px solid rgba(34,197,94,0.30)", borderRadius: 10, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 } },
+            // Breakdown des lignes de temps si le mecano a facture sur plusieurs taux.
+            // Affiche un tableau Prestation / Heures / Taux / Sous-total + ligne Total.
+            Array.isArray(f.TauxAppliqueLignes) && f.TauxAppliqueLignes.length > 0 ? h("div", { style: { marginTop: 12, padding: 12, background: "rgba(245,158,11,0.05)", border: "1px solid rgba(245,158,11,0.20)", borderRadius: 10 } },
+              h("div", { style: { fontSize: 10, fontWeight: 800, color: "#fde68a", textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 } }, h(IconText, { icon: "list", size: 10, color: "#fde68a" }, "Detail facturation par prestation")),
+              h("table", { style: { width: "100%", borderCollapse: "collapse", fontSize: 12.5 } },
+                h("thead", null, h("tr", null,
+                  h("th", { style: { textAlign: "left", padding: "6px 8px", fontWeight: 700, color: "#a1a1aa", fontSize: 10.5, textTransform: "uppercase", letterSpacing: 0.4, borderBottom: "1px solid rgba(255,255,255,0.10)" } }, "Prestation"),
+                  h("th", { style: { textAlign: "right", padding: "6px 8px", fontWeight: 700, color: "#a1a1aa", fontSize: 10.5, textTransform: "uppercase", letterSpacing: 0.4, borderBottom: "1px solid rgba(255,255,255,0.10)", width: 70 } }, "Heures"),
+                  h("th", { style: { textAlign: "right", padding: "6px 8px", fontWeight: 700, color: "#a1a1aa", fontSize: 10.5, textTransform: "uppercase", letterSpacing: 0.4, borderBottom: "1px solid rgba(255,255,255,0.10)", width: 90 } }, "Taux"),
+                  h("th", { style: { textAlign: "right", padding: "6px 8px", fontWeight: 700, color: "#a1a1aa", fontSize: 10.5, textTransform: "uppercase", letterSpacing: 0.4, borderBottom: "1px solid rgba(255,255,255,0.10)", width: 110 } }, "Sous-total")
+                )),
+                h("tbody", null, f.TauxAppliqueLignes.map(function(l, idx) {
+                  var st = (parseFloat(l.heures) || 0) * (parseFloat(l.taux) || 0);
+                  return h("tr", { key: idx },
+                    h("td", { style: { padding: "8px", color: "#fafafa", borderBottom: "1px solid rgba(255,255,255,0.04)" } }, l.label || "Taux"),
+                    h("td", { style: { padding: "8px", textAlign: "right", fontFamily: "monospace", color: "#cbd5e1", borderBottom: "1px solid rgba(255,255,255,0.04)" } }, (Math.round((parseFloat(l.heures) || 0) * 100) / 100) + " h"),
+                    h("td", { style: { padding: "8px", textAlign: "right", fontFamily: "monospace", color: "#cbd5e1", borderBottom: "1px solid rgba(255,255,255,0.04)" } }, fmtNum(parseFloat(l.taux) || 0)),
+                    h("td", { style: { padding: "8px", textAlign: "right", fontFamily: "monospace", color: "#86efac", fontWeight: 700, borderBottom: "1px solid rgba(255,255,255,0.04)" } }, fmtNum(Math.round(st)) + " XPF")
+                  );
+                })),
+                h("tfoot", null, h("tr", null,
+                  h("td", { style: { padding: "10px 8px", fontWeight: 800, color: "#fde68a" } }, "Total facturable"),
+                  h("td", { style: { padding: "10px 8px", textAlign: "right", fontFamily: "monospace", fontWeight: 800, color: "#fde68a" } }, (Math.round(f.TauxAppliqueLignes.reduce(function(s, l) { return s + (parseFloat(l.heures) || 0); }, 0) * 100) / 100) + " h"),
+                  h("td", { style: { padding: "10px 8px", textAlign: "right", fontFamily: "monospace", color: "#a1a1aa", fontSize: 11 } }, "moy. " + (function() {
+                    var totH = f.TauxAppliqueLignes.reduce(function(s, l) { return s + (parseFloat(l.heures) || 0); }, 0);
+                    var totX = f.TauxAppliqueLignes.reduce(function(s, l) { return s + (parseFloat(l.heures) || 0) * (parseFloat(l.taux) || 0); }, 0);
+                    return totH > 0 ? fmtNum(Math.round(totX / totH)) : "0";
+                  }())),
+                  h("td", { style: { padding: "10px 8px", textAlign: "right", fontFamily: "monospace", fontWeight: 800, color: "#86efac" } }, fmtNum(Math.round(f.TauxAppliqueLignes.reduce(function(s, l) { return s + (parseFloat(l.heures) || 0) * (parseFloat(l.taux) || 0); }, 0))) + " XPF")
+                ))
+              )
+            ) : null,
+            // Pre-calcul facturation (mono-taux, fallback)
+            (!Array.isArray(f.TauxAppliqueLignes) || f.TauxAppliqueLignes.length === 0) && facturable > 0 ? h("div", { style: { marginTop: 12, padding: 12, background: "rgba(34,197,94,0.10)", border: "1px solid rgba(34,197,94,0.30)", borderRadius: 10, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 } },
               h("div", null,
                 h("div", { style: { fontSize: 10, fontWeight: 800, color: "#86efac", textTransform: "uppercase", letterSpacing: 1 } }, "Pre-calcul facturation"),
                 h("div", { style: { fontSize: 11, color: "#a1a1aa", marginTop: 3 } }, dureeNum + " h x " + fmtNum(tauxNum) + " XPF/h")
