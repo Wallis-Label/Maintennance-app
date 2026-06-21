@@ -2933,6 +2933,12 @@
         const ms = !sS || effStatus.toLowerCase().includes(sS.toLowerCase());
         const mSource = sSource === "all" || i.Source === sSource;
         return mt && mm && md && mi && ms && mSource;
+      }).sort(function(a, b) {
+        // Tri par date d'intervention decroissante (plus recent en haut).
+        // Fallback sur DateDemande si pas de Date_Intervention.
+        var dA = String(a.Date_Intervention || a.DateDemande || "");
+        var dB = String(b.Date_Intervention || b.DateDemande || "");
+        return dB.localeCompare(dA);
       });
       return h("div", null,
         h(PageHeader, { title: h(IconText, { icon: "wrench", size: 20 }, "Interventions"), subtitle: interventions.length + " interventions" + (demandesEnAttente.length > 0 ? " · " + demandesEnAttente.length + " demande" + (demandesEnAttente.length > 1 ? "s" : "") + " en attente" : ""), action: h(Button, { onClick: openNew }, h(IconText, { icon: "plus", size: 14 }, "Nouvelle intervention")) }),
