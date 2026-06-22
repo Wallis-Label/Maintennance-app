@@ -23789,12 +23789,14 @@
         { rx: /TTC[:.\s]+([\d][\d.,\s]*\d)\s*(?:XPF|F|FCFP)?/i, label: "ttc" },
         { rx: /TOTAUX[:.\s]*\d*[:.\s]+([\d][\d.,\s]*\d)/i, label: "totaux" }
       ];
+      // Pour chaque pattern contextuel : on prend la DERNIERE occurrence (le TTC
+      // d'une facture est en bas, et il est souvent repete dans le pied = recap)
       for (var i = 0; i < patternsContextuels.length; i++) {
-        var m = t.match(patternsContextuels[i].rx);
-        if (m && m[1]) {
-          var val = parseMontantNc(m[1].split(/[\r\n]/)[0]);
+        var lm = lastMatch(t, patternsContextuels[i].rx);
+        if (lm && lm[1]) {
+          var val = parseMontantNc(lm[1].split(/[\r\n]/)[0]);
           if (val && val > 0 && val < 99999999) {
-            try { console.log("[OCR TTC v3] match", patternsContextuels[i].label, "->", val); } catch (e) {}
+            try { console.log("[OCR TTC v3] match", patternsContextuels[i].label, "(last) ->", val); } catch (e) {}
             return val;
           }
         }
