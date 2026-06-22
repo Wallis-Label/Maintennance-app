@@ -1100,26 +1100,48 @@
     // ─── Helpers Gamme (checklist d'operations) ─────────────────────────
     // Calcule le statut effectif d'une intervention en fonction de sa gamme.
     // - Pas de gamme : retourne le statut brut.
+    // - Statut manuel EXPLICITE (autre que Planifiee = defaut) : respecte ce statut.
+    //   Permet a l'admin de re-ouvrir une intervention Termine en remettant 'En cours'
+    //   manuellement, sans que computeIntervStatus le force a 'Termine' a cause de
+    //   la gamme deja cochee.
     // - Toutes cases cochees : "Termine".
     // - Au moins une case cochee mais pas toutes : "Partiellement terminee".
     // - Aucune case cochee : retourne le statut brut.
     function computeIntervStatus(interv) {
       if (!interv) return "Planifiee";
+      var statut = interv.Statut_Intervention || "Planifiee";
       var gamme = Array.isArray(interv.Gamme) ? interv.Gamme : [];
-      if (gamme.length === 0) return interv.Statut_Intervention || "Planifiee";
+      // Statut manuel explicite (l'admin a choisi autre chose que la valeur par
+      // defaut Planifiee) : on respecte le choix - prioritaire sur le derive gamme.
+      if (statut !== "Planifiee") return statut;
+      if (gamme.length === 0) return statut;
       var done = gamme.filter(function(g) { return g && g.done; }).length;
       if (done === gamme.length) return "Termine";
       // Si TOUTES les etapes du PLAN (fromPlan=true) sont done, l'intervention de
       // maintenance est consideree comme terminee pour le plan officiel - meme si
       // le mecano a ajoute des etapes custom non cochees a cote (ex: chaine de mat
-      // a retendre, fuite constatee). Sans ce traitement, le statut restait bloque
-      // a 'Partiellement terminee' et la prochaine maintenance auto n'avancait pas.
+      // a retendre, fuite constatee).
       var planSteps = gamme.filter(function(g) { return g && g.fromPlan === true; });
       if (planSteps.length > 0 && planSteps.every(function(g) { return g.done; })) {
         return "Termine";
       }
       if (done > 0) return "Partiellement terminee";
-      return interv.Statut_Intervention || "Planifiee";
+      return statut;
+    }
+    // Variante : derive UNIQUEMENT depuis la gamme (ignore le statut manuel).
+    // Utilisee par le useEffect d'auto-bascule pour declencher 'Termine' quand
+    // l'admin coche la derniere etape PENDANT l'edition - meme si avant ca il
+    // avait positionne manuellement 'En cours' (cas extreme, peu probable).
+    function derivedStatusFromGamme(interv) {
+      if (!interv) return null;
+      var gamme = Array.isArray(interv.Gamme) ? interv.Gamme : [];
+      if (gamme.length === 0) return null;
+      var done = gamme.filter(function(g) { return g && g.done; }).length;
+      if (done === gamme.length) return "Termine";
+      var planSteps = gamme.filter(function(g) { return g && g.fromPlan === true; });
+      if (planSteps.length > 0 && planSteps.every(function(g) { return g.done; })) return "Termine";
+      if (done > 0) return "Partiellement terminee";
+      return null;
     }
     // Compte progression gamme : { done, total }
     function gammeProgress(gamme) {
@@ -2097,24 +2119,26 @@
         var custom = current.filter(function(g) { return !g.fromPlan; });
         setF(function(prev) { return Object.assign({}, prev, { Gamme: planItems.concat(custom) }); });
       }, [f.Plan, f.Equipement, plans, equipements, pieces, piecesEquipements]);
-      // Statut effectif calcule a la volee depuis la gamme
+      // Statut effectif calcule a la volee : pour le badge + filtres, on respecte
+      // un override manuel. Pour l'auto-bascule, on regarde uniquement la gamme.
       const effectiveStatus = computeIntervStatus(f);
+      const gammeDerivedStatus = derivedStatusFromGamme(f);
       const progress = gammeProgress(f.Gamme);
-      // Auto-passage du Statut a "Termine" quand effectiveStatus passe a Termine.
-      // effectiveStatus prend en compte le cas "toutes etapes PLAN done" meme si des
-      // etapes custom restent non cochees (cf computeIntervStatus).
-      // IMPORTANT : on skip le premier render pour ne PAS auto-cloturer en ouvrant
-      // une intervention dont la gamme PLAN etait deja toute cochee (sinon ouvrir
-      // la modal pour corriger une session journaliere cloture par accident).
-      // L'auto-passage ne se declenche que si l'utilisateur coche une etape pendant
-      // l'edition (= changement de effectiveStatus apres le mount).
+      // Auto-passage du Statut a "Termine" UNIQUEMENT quand la gamme PASSE a Termine
+      // (= l'utilisateur coche la derniere etape pendant l'edition).
+      // - Skip le premier render : ouvrir une intervention dont la gamme etait deja
+      //   toute cochee ne cloture pas a nouveau (sinon impossible de la rouvrir).
+      // - Watch gammeDerivedStatus (et pas effectiveStatus) pour que le useEffect
+      //   reagisse aux changements de gamme meme si l'utilisateur a manuellement
+      //   positionne 'En cours' (effectiveStatus reste 'En cours' grace au respect
+      //   du statut manuel dans computeIntervStatus).
       const skipFirstAutoStatusRef = React.useRef(true);
       React.useEffect(function() {
         if (skipFirstAutoStatusRef.current) { skipFirstAutoStatusRef.current = false; return; }
-        if (effectiveStatus === "Termine" && f.Statut_Intervention !== "Termine") {
+        if (gammeDerivedStatus === "Termine" && f.Statut_Intervention !== "Termine") {
           setF(function(prev) { return Object.assign({}, prev, { Statut_Intervention: "Termine" }); });
         }
-      }, [effectiveStatus]);
+      }, [gammeDerivedStatus]);
       const submit = async () => {
         if (!f.Title || !f.Equipement) return alert("Veuillez remplir au minimum le titre et l'equipement.");
         setSaving(true);
