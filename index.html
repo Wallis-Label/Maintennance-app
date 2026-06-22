@@ -23801,6 +23801,29 @@
           }
         }
       }
+      // Fallback FACTURE TABLEAU : si aucun pattern "TOTAL TTC" ne matche, mais
+      // que le tableau d'articles a des lignes avec >= 2 montants XPF (prix
+      // unitaire + total), on somme les DERNIERS montants de chaque ligne =
+      // total TTC. Tres robuste pour les factures NC ou Tesseract loupe le pied.
+      var lignes = t.split("\n");
+      var totauxParLigne = [];
+      for (var li = 0; li < lignes.length; li++) {
+        var ln = lignes[li];
+        var rxLigne = /(\d[\d\s.,]*\d|\d)\s*(?:XPF|FCFP|F\s*CFP)/gi;
+        var matchesLigne = [], mL;
+        while ((mL = rxLigne.exec(ln)) !== null) matchesLigne.push(mL[1]);
+        if (matchesLigne.length >= 2) {
+          var dernier = parseMontantNc(matchesLigne[matchesLigne.length - 1]);
+          if (dernier && dernier > 0 && dernier < 99999999) totauxParLigne.push(dernier);
+        }
+      }
+      if (totauxParLigne.length >= 2) {
+        var somme = totauxParLigne.reduce(function(s, x) { return s + x; }, 0);
+        if (somme > 0 && somme < 99999999) {
+          try { console.log("[OCR TTC v3] somme de", totauxParLigne.length, "lignes article ->", somme, "(details:", totauxParLigne, ")"); } catch (e) {}
+          return somme;
+        }
+      }
       // Pattern XPF generique - DERNIERE occurrence dans le texte
       // (le TTC d'une facture est typiquement en bas - le 1er XPF en haut
       // est souvent un prix unitaire ou un sous-total, pas le TTC final)
@@ -23967,8 +23990,9 @@
       var patterns = [
         // ID session OPT / paiement (ex. 540-983460-3-12142168-3)
         { rx: /ID\s*session\s*[:.]?\s*([0-9][0-9\-]{8,30})/i, label: "session" },
-        // N° de facture - gere "FACTURE N. 0802391" / "FACTURE No 0802391" / "Facture # 12345"
-        { rx: /(?:facture|fact)\s*(?:n[°o.]?|#)\s*[.:]*\s*([A-Z0-9][A-Z0-9\-\/]{3,20})/i, label: "facture" },
+        // N° de facture - gere "FACTURE N. 0802391" / "FACTURE No 0802391" / "Facture # 12345" / "Facture N° 103"
+        // Minimum 2 chars (pour matcher "103" / "12" courts mais reels sur factures internes)
+        { rx: /(?:facture|fact)\s*(?:n[°o.]?|#)\s*[.:]*\s*([A-Z0-9][A-Z0-9\-\/]{1,20})/i, label: "facture" },
         // Facture SANS le mot 'N°' devant : "Facture WL-110626" / "FCT WL 110626" / "INVOICE 2026-001"
         // Capture le prefixe alpha optionnel + separateur + chiffres
         { rx: /(?:facture|fact|invoice|fct)\s+([A-Z]{1,5}[\-\s_]?[0-9]{4,12})\b/i, label: "facture-direct" },
