@@ -12713,11 +12713,17 @@
       var setAffectations = ctx.setDbAffectations;
       var saisiesPe = ctx.dbSaisies || {};
       var parametres = ctx.parametres;
-      // Filtre les ex-employes (dateFinContrat passee) ET les sous-traitants - non utiles dans le planning
-      var personnel = loadPersonnelFromParametres(parametres).filter(function(p) { return isActiveEmploye(p) && !p.roleMecanicien; });
 
       var _cm = useState(new Date());
       var currentMonth = _cm[0]; var setCurrentMonth = _cm[1];
+      // Filtre : sous-traitants exclus, ex-employes inclus si leur fin de contrat
+      // est >= debut du mois affiche. Un employe parti mi-juin doit etre visible
+      // sur juin (il y a bosse une partie du mois), mais plus sur juillet.
+      var firstDayOfMonthPe = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
+      var personnel = loadPersonnelFromParametres(parametres).filter(function(p) {
+        if (p.roleMecanicien) return false; // sous-traitants exclus
+        return isActiveEmploye(p, firstDayOfMonthPe);
+      });
       // Selected chantier brush for painting
       var _brush = useState(null);
       var brush = _brush[0]; var setBrush = _brush[1];
