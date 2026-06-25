@@ -275,9 +275,11 @@ module.exports = async function handler(req, res) {
     });
 
     const updateBody = { ia_triage: triagePayload };
-    // Si verdict ok : auto-valide le releve (statut "approuvee")
-    if (verdict.verdict === 'ok' && releve.statut === 'soumise') {
-      updateBody.statut = 'approuvee';
+    // Si verdict ok : auto-valide le releve (statut "valide_admin")
+    // Convention du projet : en_attente -> valide_admin (avec valide_at timestamp)
+    if (verdict.verdict === 'ok' && (releve.statut === 'en_attente' || releve.statut == null)) {
+      updateBody.statut = 'valide_admin';
+      updateBody.valide_at = new Date().toISOString();
     }
 
     const upResp = await fetch(SUPABASE_URL + '/rest/v1/releves_heures?id=eq.' + releveId, {

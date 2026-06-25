@@ -18898,7 +18898,10 @@
               return curr.map(function(x) {
                 if (x.id !== releveId) return x;
                 var upd = Object.assign({}, x, { ia_triage: data.triage });
-                if (data.auto_validated) upd.statut = "approuvee";
+                if (data.auto_validated) {
+                  upd.statut = "valide_admin";
+                  upd.valide_at = new Date().toISOString();
+                }
                 return upd;
               });
             });
