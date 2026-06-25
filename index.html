@@ -18874,6 +18874,51 @@
           if (showToast) showToast("Statut mis a jour", "success");
         });
       };
+
+      // ── Triage IA : analyse Claude des releves d'heures ──
+      // Etat : Set des IDs en cours d'analyse, pour eviter les doublons d'appel API
+      var _triageInProgress = useState({}); var triageInProgress = _triageInProgress[0]; var setTriageInProgress = _triageInProgress[1];
+      var triageReleve = async function(releveId) {
+        if (triageInProgress[releveId]) return;
+        try {
+          setTriageInProgress(function(p) { var n = Object.assign({}, p); n[releveId] = true; return n; });
+          var sess = await supabase.auth.getSession();
+          var token = sess && sess.data && sess.data.session && sess.data.session.access_token;
+          if (!token) return;
+          var resp = await fetch("/api/triage-releve", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token },
+            body: JSON.stringify({ releve_id: releveId })
+          });
+          if (!resp.ok) { console.warn("[triage-ia]", releveId, "HTTP", resp.status); return; }
+          var data = await resp.json();
+          if (data && data.triage) {
+            // Maj locale : on remet a jour le releve avec ia_triage + statut si auto-valide
+            setRels(function(curr) {
+              return curr.map(function(x) {
+                if (x.id !== releveId) return x;
+                var upd = Object.assign({}, x, { ia_triage: data.triage });
+                if (data.auto_validated) upd.statut = "approuvee";
+                return upd;
+              });
+            });
+          }
+        } catch (e) {
+          console.warn("[triage-ia] erreur", releveId, e);
+        } finally {
+          setTriageInProgress(function(p) { var n = Object.assign({}, p); delete n[releveId]; return n; });
+        }
+      };
+      // Auto-trigger au mount + a chaque update de rels : analyse les releves
+      // qui n'ont pas encore d'ia_triage (max 3 en parallele pour pas spammer)
+      useEffect(function() {
+        if (!Array.isArray(rels) || rels.length === 0) return;
+        var toAnalyze = rels.filter(function(r) {
+          return r && r.id != null && r.ia_triage == null && !triageInProgress[r.id];
+        }).slice(0, 3);
+        toAnalyze.forEach(function(r) { triageReleve(r.id); });
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, [rels]);
       var statutStyle = function(s) {
         var base = { display: "inline-block", fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 999, textTransform: "uppercase", letterSpacing: 0.3, border: "1px solid rgba(255,255,255,0.1)" };
         if (s === "en_attente" || s === "soumis") return Object.assign(base, { background: "rgba(251,191,36,0.15)", color: "#fde68a", borderColor: "rgba(251,191,36,0.35)" });
@@ -19246,17 +19291,38 @@
           return na.localeCompare(nb);
         });
         if (list.length === 0) return h("div", { style: { padding: 40, textAlign: "center", color: "#71717a" } }, "Aucun releve d'heure.");
-        return h("div", null, list.map(function(c) {
+        // Compte d'analyses IA en cours + bandeau resume
+        var nbAnalyzing = list.filter(function(r) { return triageInProgress[r.id]; }).length;
+        var iaReview = list.filter(function(r) { return r.ia_triage && r.ia_triage.verdict === "review"; });
+        var iaAlert = list.filter(function(r) { return r.ia_triage && r.ia_triage.verdict === "alert"; });
+        var iaOk = list.filter(function(r) { return r.ia_triage && r.ia_triage.verdict === "ok"; });
+        var iaBandeau = (nbAnalyzing > 0 || iaReview.length > 0 || iaAlert.length > 0 || iaOk.length > 0) ? h("div", {
+          style: { marginBottom: 12, padding: "10px 14px", borderRadius: 10, background: "rgba(167,139,250,0.08)", border: "1px solid rgba(167,139,250,0.30)", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", fontSize: 12.5 }
+        },
+          h(Icon, { name: "sparkles", size: 14, color: "#c4b5fd" }),
+          h("strong", { style: { color: "#c4b5fd" } }, "Triage IA :"),
+          iaAlert.length > 0 ? h("span", { style: { color: "#fda4af", fontWeight: 700 } }, "🚨 " + iaAlert.length + " alerte" + (iaAlert.length > 1 ? "s" : "")) : null,
+          iaReview.length > 0 ? h("span", { style: { color: "#fde68a", fontWeight: 700 } }, "⚠ " + iaReview.length + " a verifier") : null,
+          iaOk.length > 0 ? h("span", { style: { color: "#86efac", fontWeight: 700 } }, "✓ " + iaOk.length + " valide" + (iaOk.length > 1 ? "s" : "") + " auto") : null,
+          nbAnalyzing > 0 ? h("span", { style: { color: "#94a3b8", fontStyle: "italic" } }, "⏳ " + nbAnalyzing + " en cours d'analyse") : null
+        ) : null;
+        return h("div", null, iaBandeau, list.map(function(c) {
           var isExp = expanded === ("h-" + c.id);
           var name = personnelLabel(c.personnel_id);
           var totalStr = minToHHMM(c.total_minutes || 0);
           var sondLabel = c.sondeuse_code || equipementLabel(c.equipement_id) || "-";
           var heureRange = (c.heure_debut || "") + (c.heure_fin ? " - " + c.heure_fin : "");
           var statut = c.statut || "en_attente"; // fallback pour les rows pre-migration
+          // Prefixe IA : badge selon le verdict (ok=vert, review=jaune, alert=rouge)
+          var iaPrefix = "";
+          if (triageInProgress[c.id]) iaPrefix = "⏳ ";
+          else if (c.ia_triage && c.ia_triage.verdict === "alert") iaPrefix = "🚨 IA: " + (c.ia_triage.summary || "Alerte") + " · ";
+          else if (c.ia_triage && c.ia_triage.verdict === "review") iaPrefix = "⚠ IA: " + (c.ia_triage.summary || "Verifier") + " · ";
+          else if (c.ia_triage && c.ia_triage.verdict === "ok") iaPrefix = "✓ IA OK · ";
           return h(React.Fragment, { key: "h-" + c.id },
             rowHeader({
               name: name + " - " + sondLabel,
-              sub: (c.fonction ? c.fonction + " - " : "") + (heureRange || "Heures non renseignees") + " (" + totalStr + ")" + (c.absence_type ? " - " + c.absence_type : ""),
+              sub: iaPrefix + (c.fonction ? c.fonction + " - " : "") + (heureRange || "Heures non renseignees") + " (" + totalStr + ")" + (c.absence_type ? " - " + c.absence_type : ""),
               sender: responsableLabel(c),
               right: c.created_at ? "Envoye le " + fmtDateTime(c.created_at) : fmtDate(c.date_releve),
               statut: statut,
