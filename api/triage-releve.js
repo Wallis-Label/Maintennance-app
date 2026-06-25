@@ -144,7 +144,13 @@ module.exports = async function handler(req, res) {
       headers: { apikey: ANON_KEY, Authorization: 'Bearer ' + jwt }
     });
     if (!meResp.ok) {
-      return res.status(401).json({ error: 'Token invalide' });
+      const errText = await meResp.text();
+      return res.status(401).json({
+        error: 'Token invalide',
+        supabase_status: meResp.status,
+        supabase_response: errText.slice(0, 500),
+        hint: 'Verifier que SUPABASE_ANON_KEY correspond bien au meme projet que SUPABASE_URL. JWT length = ' + jwt.length
+      });
     }
     const me = await meResp.json();
     // Verifier que l'user est admin (lookup dans la table users)
