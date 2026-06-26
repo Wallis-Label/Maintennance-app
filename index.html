@@ -810,14 +810,19 @@
         // Rattrapage = min(metrage de SA machine ce jour, siteMoyenne).
         // Si la machine fait moins que la moyenne, on prend la valeur reelle.
         // Si pas de machine identifiable, fallback siteMoyenne.
+        // Feries totalement ignores (comme pour un employe present).
         if (dateEmbStr || dateFinStr) {
+          var feriesSetHE2 = {};
+          (affectations || []).forEach(function(a) {
+            if ((a.typeJour || "") === "ferie" && a.dateAffectation) feriesSetHE2[a.dateAffectation] = true;
+          });
           var dCur = typeof periodStart === "string" ? new Date(periodStart + "T00:00:00") : new Date(periodStart);
           var dE = typeof periodEnd === "string" ? new Date(periodEnd + "T00:00:00") : new Date(periodEnd);
           while (dCur <= dE) {
             var dStr2 = dCur.getFullYear() + "-" + String(dCur.getMonth() + 1).padStart(2, "0") + "-" + String(dCur.getDate()).padStart(2, "0");
             if (!inEmpWindow(dStr2)) {
               var dow2 = dCur.getDay();
-              if (dow2 !== 0 && dow2 !== 6) {
+              if (dow2 !== 0 && dow2 !== 6 && !feriesSetHE2[dStr2]) {
                 var machineHE2 = getMachineEmpForDate(emp.id, dStr2);
                 var metrageMachineHE2 = machineHE2 ? getMetrageMachineForDate(machineHE2, dStr2) : null;
                 var rattrapageHE2 = (metrageMachineHE2 !== null) ? Math.min(metrageMachineHE2, siteMoyenne) : siteMoyenne;
@@ -14776,7 +14781,14 @@
           // ce jour-la, siteMoyenne). Si la machine a fait moins que la moyenne, on
           // donne la valeur reelle (et pas la moyenne gonflee). Sinon siteMoyenne.
           // Sans machine identifiable (jamais bosse sur ce site), fallback siteMoyenne.
+          // Les FERIES sont totalement ignores (comme pour un employe present) :
+          // detection via la presence d'une affectation typeJour=ferie ce jour-la.
           if (dateEmbStr || dateFinStr) {
+            // Set des dates feriees identifiees dans les affectations de la periode
+            var feriesSetHE = {};
+            (affectations || []).forEach(function(a) {
+              if ((a.typeJour || "") === "ferie" && a.dateAffectation) feriesSetHE[a.dateAffectation] = true;
+            });
             var dCursor = typeof period.start === "string" ? new Date(period.start + "T00:00:00") : new Date(period.start);
             var dEnd = typeof period.end === "string" ? new Date(period.end + "T00:00:00") : new Date(period.end);
             while (dCursor <= dEnd) {
@@ -14786,7 +14798,7 @@
               if (dateFinStr && dStr >= dateFinStr) horsEmploi = true;
               if (horsEmploi) {
                 var dow = dCursor.getDay(); // 0=dim, 6=sam
-                if (dow !== 0 && dow !== 6) {
+                if (dow !== 0 && dow !== 6 && !feriesSetHE[dStr]) {
                   var machineHE = getMachineEmpForDate(emp.id, dStr);
                   var metrageMachineHE = machineHE ? getMetrageMachineForDate(machineHE, dStr) : null;
                   var rattrapageHE = (metrageMachineHE !== null) ? Math.min(metrageMachineHE, siteMoyenne) : siteMoyenne;
