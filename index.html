@@ -11732,6 +11732,11 @@
                     }
 
                     // ─ Projection jour par jour : on accumule jusqu'au metrage restant ─
+                    // CORRECTIF : on applique le tauxAbsence historique (jours feries/intemperies/
+                    // pannes/maintenances/conges/...) au rythme futur. Sans ca, la projection
+                    // supposait que tous les Lun-Jeu futurs seraient 100% productifs, ce qui
+                    // donnait une surestimation systematique de la capacite.
+                    var coefDispoFutur = Math.max(0, 1 - tauxAbsence);
                     var metresProjetes = 0;
                     var joursRestants = 0;
                     var dateFinEst = new Date(today.getTime());
@@ -11753,7 +11758,7 @@
                           else nbMach = planned;
                         }
                         if (nbMach > 0) {
-                          metresProjetes += vitesseParMachine * nbMach;
+                          metresProjetes += vitesseParMachine * nbMach * coefDispoFutur;
                           joursRestants++;
                         }
                       }
