@@ -964,6 +964,34 @@
       return list.map((p) => p.valeur);
     }
 
+    // ─── Helpers : coefficient de rentabilite prix/m ───────────────────
+    // Rentabilite d'un chantier = (prix_m du chantier) / (prix_m moyen de tous
+    // les chantiers). > 1 = plus rentable au metre que la moyenne, < 1 = moins.
+    // On exclut les chantiers "A venir" (devis speculatifs) pour ne pas fausser
+    // la reference. On garde En cours + Termine.
+    function computePrixMetreMoyen(chantiers) {
+      var prix = (chantiers || [])
+        .filter(function(c) { return c && c.statut !== "A venir"; })
+        .map(function(c) { return parseFloat(c && c.prixMetre) || 0; })
+        .filter(function(v) { return v > 0; });
+      if (prix.length === 0) return 0;
+      var sum = prix.reduce(function(s, v) { return s + v; }, 0);
+      return sum / prix.length;
+    }
+    function computeCoefPrixMetre(chantier, prixMoyen) {
+      if (!chantier || !prixMoyen || prixMoyen <= 0) return null;
+      var p = parseFloat(chantier.prixMetre) || 0;
+      if (p <= 0) return null;
+      return p / prixMoyen;
+    }
+    // Retourne { color, bg, badge } pour styliser un coef prix/m
+    function styleCoefPrixMetre(coef) {
+      if (coef == null) return { color: "#a1a1aa", bg: "rgba(255,255,255,0.04)", badge: "?" };
+      if (coef >= 1.05) return { color: "#86efac", bg: "rgba(34,197,94,0.15)", badge: "Rentable" };
+      if (coef >= 0.95) return { color: "#fde68a", bg: "rgba(251,191,36,0.15)", badge: "Moyen" };
+      return { color: "#fda4af", bg: "rgba(244,63,94,0.15)", badge: "Sous moyenne" };
+    }
+
     // ─── Helper : calcul des visites preventives en retard ──────────────
     // Pour chaque plan (horametre) lie a l'equipement, on calcule combien
     // de cycles de visite ont ete atteints par l'horametre actuel, et on
@@ -1858,7 +1886,37 @@
                         h("div", { style: { fontSize: 12, color: "#a1a1aa" } }, i.Equipement + " — " + (i.Date_Intervention || "—"))),
                       h(StatusBadge, { status: st }));
                   }));
-            }()))),
+            }())),
+          // Rentabilite chantiers (prix/m relatif). Affiche les chantiers En cours
+          // classes par coef desc, avec badge de couleur (vert > 1.05, jaune 0.95-1.05,
+          // rouge < 0.95). Reference = moyenne des prix/m sur En cours + Termine.
+          isAdmin ? (function() {
+            var allChant = ctx.chantiers || [];
+            var actifs = allChant.filter(function(c) { return c && c.statut === "En cours"; });
+            if (actifs.length === 0) return null;
+            var prixMoyen = computePrixMetreMoyen(allChant);
+            var withCoef = actifs.map(function(c) {
+              return { c: c, coef: computeCoefPrixMetre(c, prixMoyen) };
+            }).filter(function(x) { return x.coef !== null; })
+              .sort(function(a, b) { return b.coef - a.coef; });
+            if (withCoef.length === 0) return null;
+            return h(Card, null,
+              h("h3", { style: { margin: "0 0 8px", fontSize: 16, fontWeight: 700, color: "#fafafa" } }, h(IconText, { icon: "target", size: 16, color: "#a78bfa" }, "Rentabilite chantiers")),
+              h("div", { style: { fontSize: 11, color: "#71717a", marginBottom: 12 } }, "Prix/m relatif · reference moyenne : " + fmtNum(Math.round(prixMoyen)) + " XPF/m"),
+              h("div", { style: { display: "flex", flexDirection: "column", gap: 8, maxHeight: 280, overflowY: "auto" } },
+                withCoef.map(function(x) {
+                  var st = styleCoefPrixMetre(x.coef);
+                  return h("div", { key: x.c.id, onClick: function() { onNavigate("avancement", x.c); }, style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: st.bg, border: "1px solid " + st.bg.replace("0.15", "0.30"), borderRadius: 10, borderLeft: "4px solid " + st.color, cursor: "pointer", transition: "all 0.15s" } },
+                    h("div", { style: { minWidth: 0, flex: 1 } },
+                      h("div", { style: { fontWeight: 600, fontSize: 14, color: "#fafafa", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, x.c.titre || "(sans titre)"),
+                      h("div", { style: { fontSize: 12, color: "#a1a1aa" } }, fmtNum(x.c.prixMetre) + " XPF/m · " + fmtNum(x.c.metrage) + " m")
+                    ),
+                    h("span", { style: { background: st.bg, color: st.color, padding: "4px 10px", borderRadius: 20, fontSize: 12, fontWeight: 800, whiteSpace: "nowrap", border: "1px solid " + st.color, fontFamily: "monospace" } }, x.coef.toFixed(2) + "x")
+                  );
+                })
+              )
+            );
+          }()) : null),
         autoPasFait.length > 0 && h(Card, { style: { marginBottom: 20 } },
           h("h3", { style: { margin: "0 0 16px", fontSize: 16, fontWeight: 700, color: "#fafafa" } }, h(IconText, { icon: "bell-ring", size: 16, color: "#f43f5e" }, "Maintenance preventive")),
           h("div", { style: { display: "flex", flexDirection: "column", gap: 8, maxHeight: 320, overflowY: "auto" } },
@@ -8761,12 +8819,16 @@
           ) : renderAnnuel()
         ),
         activeTab === "chantiers" && h("div", null,
-          viewMode === "liste" ? h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 } },
+          viewMode === "liste" ? (function() {
+            var prixMoyenAll = computePrixMetreMoyen(chantiers);
+            return h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 } },
             chantiers.map(function(chantier) {
               var ca = chantier.metrage * chantier.prixMetre;
               var marge = ca - (chantier.depensesPrevues || 0);
               var margePercent = ca > 0 ? Math.round((marge / ca) * 100) : 0;
               var statusColor = chantier.statut === "Termine" ? "#059669" : chantier.statut === "En cours" ? "#d97706" : "#a1a1aa";
+              var coefRent = computeCoefPrixMetre(chantier, prixMoyenAll);
+              var coefStyle = styleCoefPrixMetre(coefRent);
               return h(Card, { key: chantier.id, style: { borderLeft: "4px solid " + statusColor } },
                 h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 } },
                   h("h3", { style: { fontSize: 15, fontWeight: 700, margin: 0, flex: 1 } }, chantier.titre),
@@ -8775,21 +8837,25 @@
                     h("button", { onClick: function() { setToDelete({ type: "chant", id: chantier.id, titre: chantier.titre }); }, style: actionBtnStyle, title: "Supprimer" }, h(Icon, { name: "trash-2", size: 14, color: "#dc2626" }))
                   )
                 ),
-                h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12, marginBottom: 12, fontSize: 13 } },
+                h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 8, marginBottom: 12, fontSize: 13 } },
                   h("div", { style: { background: "rgba(255,255,255,0.04)", padding: 10, borderRadius: 6 } },
-                    h("div", { style: { color: "#a1a1aa", marginBottom: 4 } }, "Metrage"),
+                    h("div", { style: { color: "#a1a1aa", marginBottom: 4, fontSize: 11 } }, "Metrage"),
                     h("div", { style: { fontWeight: 700, fontSize: 14 } }, fmtNum(chantier.metrage) + " m")
                   ),
                   h("div", { style: { background: "rgba(255,255,255,0.04)", padding: 10, borderRadius: 6 } },
-                    h("div", { style: { color: "#a1a1aa", marginBottom: 4 } }, "Prix/m"),
+                    h("div", { style: { color: "#a1a1aa", marginBottom: 4, fontSize: 11 } }, "Prix/m"),
                     h("div", { style: { fontWeight: 700, fontSize: 14, color: "#059669" } }, fmtNum(chantier.prixMetre) + " XPF")
                   ),
+                  coefRent !== null ? h("div", { style: { background: coefStyle.bg, padding: 10, borderRadius: 6, cursor: "help" }, title: "Prix/m ce chantier (" + fmtNum(chantier.prixMetre) + " XPF/m) ÷ prix/m moyen des chantiers (" + fmtNum(Math.round(prixMoyenAll)) + " XPF/m)" },
+                    h("div", { style: { color: "#a1a1aa", marginBottom: 4, fontSize: 11 } }, "Rentab. prix/m"),
+                    h("div", { style: { fontWeight: 700, fontSize: 14, color: coefStyle.color } }, coefRent.toFixed(2) + "x")
+                  ) : null,
                   h("div", { style: { background: "rgba(255,255,255,0.04)", padding: 10, borderRadius: 6 } },
-                    h("div", { style: { color: "#a1a1aa", marginBottom: 4 } }, "CA"),
+                    h("div", { style: { color: "#a1a1aa", marginBottom: 4, fontSize: 11 } }, "CA"),
                     h("div", { style: { fontWeight: 700, fontSize: 14, color: "#2563eb" } }, fmtNum(ca) + " XPF")
                   ),
                   h("div", { style: { background: "rgba(255,255,255,0.04)", padding: 10, borderRadius: 6 } },
-                    h("div", { style: { color: "#a1a1aa", marginBottom: 4 } }, "Marge"),
+                    h("div", { style: { color: "#a1a1aa", marginBottom: 4, fontSize: 11 } }, "Marge"),
                     h("div", { style: { fontWeight: 700, fontSize: 14, color: margePercent >= 0 ? "#059669" : "#dc2626" } }, margePercent + "%")
                   )
                 ),
@@ -8799,7 +8865,8 @@
                 )
               );
             })
-          ) : renderAnnuel()
+          );
+          }()) : renderAnnuel()
         ),
         activeTab === "maintenances" && (function() {
           // ── Setup local pour l'onglet Planning engins ──
@@ -12043,7 +12110,10 @@
                             if (v > 0) sparkPts.unshift(v);
                           }
                         }
-                        return h("div", { style: { display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))", gap: 8 } },
+                        var prixMoyenAv = computePrixMetreMoyen(ctxAv.chantiers);
+                        var coefPrev = computeCoefPrixMetre(chantier, prixMoyenAv);
+                        var coefStylePrev = styleCoefPrixMetre(coefPrev);
+                        return h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8 } },
                           KpiTile({
                             icon: "zap", accent: "#a78bfa",
                             label: "Vitesse actuelle",
@@ -12119,7 +12189,19 @@
                             badgeColor: margePct >= 20 ? "#86efac" : margePct >= 10 ? "#fde68a" : "#fda4af",
                             badgeBg: margePct >= 20 ? "rgba(34,197,94,0.15)" : margePct >= 10 ? "rgba(251,191,36,0.15)" : "rgba(244,63,94,0.15)",
                             tooltip: coutSource
-                          })
+                          }),
+                          coefPrev !== null ? KpiTile({
+                            icon: "target",
+                            accent: coefStylePrev.color,
+                            label: "Coef prix/m",
+                            value: coefPrev.toFixed(2) + "x",
+                            valueColor: coefStylePrev.color,
+                            hint: fmtNum(chantier.prixMetre) + " / " + fmtNum(Math.round(prixMoyenAv)),
+                            badge: coefStylePrev.badge,
+                            badgeColor: coefStylePrev.color,
+                            badgeBg: coefStylePrev.bg,
+                            tooltip: "Prix/m de ce chantier (" + fmtNum(chantier.prixMetre) + " XPF) divise par prix/m moyen des chantiers En cours + Termine (" + fmtNum(Math.round(prixMoyenAv)) + " XPF).\n> 1 = plus rentable au metre que la moyenne\n< 1 = moins rentable"
+                          }) : null
                         );
                       }())
                     );
