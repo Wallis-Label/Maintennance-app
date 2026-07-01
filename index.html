@@ -964,19 +964,27 @@
       return list.map((p) => p.valeur);
     }
 
-    // ─── Helpers : coefficient de rentabilite prix/m ───────────────────
-    // Rentabilite d'un chantier = (prix_m du chantier) / (prix_m moyen de tous
-    // les chantiers). > 1 = plus rentable au metre que la moyenne, < 1 = moins.
-    // On exclut les chantiers "A venir" (devis speculatifs) pour ne pas fausser
-    // la reference. On garde En cours + Termine.
+    // ─── Helpers : positionnement prix/m ───────────────────────────────
+    // Coef prix/m = (prix_m du chantier) / (prix_m mediane des chantiers).
+    // La MEDIANE est utilisee comme reference (plus robuste que la moyenne :
+    // un seul chantier a prix eleve ne deforme pas la ref). On exclut les
+    // chantiers "A venir" (devis speculatifs). On garde En cours + Termine.
+    //
+    // IMPORTANT : ce coef mesure un POSITIONNEMENT relatif entre les chantiers,
+    // pas une rentabilite absolue (on n'a pas les couts). Un chantier "Bas" peut
+    // etre tout a fait rentable en absolu ; il est juste moins bien pricé que
+    // les autres chantiers du portefeuille.
     function computePrixMetreMoyen(chantiers) {
       var prix = (chantiers || [])
         .filter(function(c) { return c && c.statut !== "A venir"; })
         .map(function(c) { return parseFloat(c && c.prixMetre) || 0; })
-        .filter(function(v) { return v > 0; });
+        .filter(function(v) { return v > 0; })
+        .sort(function(a, b) { return a - b; });
       if (prix.length === 0) return 0;
-      var sum = prix.reduce(function(s, v) { return s + v; }, 0);
-      return sum / prix.length;
+      // Mediane (robuste aux valeurs extremes contrairement a la moyenne).
+      var mid = Math.floor(prix.length / 2);
+      if (prix.length % 2 === 1) return prix[mid];
+      return (prix[mid - 1] + prix[mid]) / 2;
     }
     function computeCoefPrixMetre(chantier, prixMoyen) {
       if (!chantier || !prixMoyen || prixMoyen <= 0) return null;
@@ -984,12 +992,14 @@
       if (p <= 0) return null;
       return p / prixMoyen;
     }
-    // Retourne { color, bg, badge } pour styliser un coef prix/m
+    // Style associé a un coef. Bandes larges (0.85 - 1.15 = correct) pour
+    // eviter que de petits ecarts au prix mediane fassent basculer un chantier
+    // en rouge alors qu'il reste rentable en absolu.
     function styleCoefPrixMetre(coef) {
       if (coef == null) return { color: "#a1a1aa", bg: "rgba(255,255,255,0.04)", badge: "?" };
-      if (coef >= 1.05) return { color: "#86efac", bg: "rgba(34,197,94,0.15)", badge: "Rentable" };
-      if (coef >= 0.95) return { color: "#fde68a", bg: "rgba(251,191,36,0.15)", badge: "Moyen" };
-      return { color: "#fda4af", bg: "rgba(244,63,94,0.15)", badge: "Sous moyenne" };
+      if (coef >= 1.15) return { color: "#86efac", bg: "rgba(34,197,94,0.15)", badge: "Eleve" };
+      if (coef >= 0.85) return { color: "#fde68a", bg: "rgba(251,191,36,0.15)", badge: "Correct" };
+      return { color: "#fda4af", bg: "rgba(244,63,94,0.15)", badge: "Bas" };
     }
 
     // ─── Helper : calcul des visites preventives en retard ──────────────
@@ -1899,8 +1909,8 @@
             }).filter(function(x) { return x.coef !== null; })
               .sort(function(a, b) { return b.coef - a.coef; });
             return h(Card, null,
-              h("h3", { style: { margin: "0 0 8px", fontSize: 16, fontWeight: 700, color: "#fafafa" } }, h(IconText, { icon: "target", size: 16, color: "#a78bfa" }, "Rentabilite chantiers")),
-              h("div", { style: { fontSize: 11, color: "#71717a", marginBottom: 12 } }, "Prix/m relatif · reference moyenne : " + (prixMoyen > 0 ? fmtNum(Math.round(prixMoyen)) + " XPF/m" : "aucun chantier de reference")),
+              h("h3", { style: { margin: "0 0 8px", fontSize: 16, fontWeight: 700, color: "#fafafa" } }, h(IconText, { icon: "target", size: 16, color: "#a78bfa" }, "Positionnement prix/m")),
+              h("div", { style: { fontSize: 11, color: "#71717a", marginBottom: 12 } }, "Coef vs mediane du portefeuille : " + (prixMoyen > 0 ? fmtNum(Math.round(prixMoyen)) + " XPF/m" : "aucun chantier de reference")),
               withCoef.length === 0 ? h("p", { style: { color: "#71717a", textAlign: "center", padding: 20, fontSize: 13 } }, "Aucun chantier En cours avec prix/m renseigne.") :
               h("div", { style: { display: "flex", flexDirection: "column", gap: 8, maxHeight: 280, overflowY: "auto" } },
                 withCoef.map(function(x) {
@@ -8846,8 +8856,8 @@
                     h("div", { style: { color: "#a1a1aa", marginBottom: 4, fontSize: 11 } }, "Prix/m"),
                     h("div", { style: { fontWeight: 700, fontSize: 14, color: "#059669" } }, fmtNum(chantier.prixMetre) + " XPF")
                   ),
-                  coefRent !== null ? h("div", { style: { background: coefStyle.bg, padding: 10, borderRadius: 6, cursor: "help" }, title: "Prix/m ce chantier (" + fmtNum(chantier.prixMetre) + " XPF/m) ÷ prix/m moyen des chantiers (" + fmtNum(Math.round(prixMoyenAll)) + " XPF/m)" },
-                    h("div", { style: { color: "#a1a1aa", marginBottom: 4, fontSize: 11 } }, "Rentab. prix/m"),
+                  coefRent !== null ? h("div", { style: { background: coefStyle.bg, padding: 10, borderRadius: 6, cursor: "help" }, title: "Positionnement prix/m : ce chantier (" + fmtNum(chantier.prixMetre) + " XPF/m) ÷ mediane des chantiers En cours + Termine (" + fmtNum(Math.round(prixMoyenAll)) + " XPF/m)" },
+                    h("div", { style: { color: "#a1a1aa", marginBottom: 4, fontSize: 11 } }, "Coef prix/m"),
                     h("div", { style: { fontWeight: 700, fontSize: 14, color: coefStyle.color } }, coefRent.toFixed(2) + "x")
                   ) : null,
                   h("div", { style: { background: "rgba(255,255,255,0.04)", padding: 10, borderRadius: 6 } },
@@ -12200,7 +12210,7 @@
                             badge: coefStylePrev.badge,
                             badgeColor: coefStylePrev.color,
                             badgeBg: coefStylePrev.bg,
-                            tooltip: "Prix/m de ce chantier (" + fmtNum(chantier.prixMetre) + " XPF) divise par prix/m moyen des chantiers En cours + Termine (" + fmtNum(Math.round(prixMoyenAv)) + " XPF).\n> 1 = plus rentable au metre que la moyenne\n< 1 = moins rentable"
+                            tooltip: "Prix/m de ce chantier (" + fmtNum(chantier.prixMetre) + " XPF) divise par prix/m mediane des chantiers En cours + Termine (" + fmtNum(Math.round(prixMoyenAv)) + " XPF).\n> 1.15 = prix eleve dans le portefeuille\n0.85 - 1.15 = correct\n< 0.85 = prix bas\n\nAttention : c'est un positionnement RELATIF, pas une rentabilite absolue (couts non inclus)."
                           }) : null
                         );
                       }())
@@ -17684,9 +17694,9 @@
                 h("div", null,
                   h("div", { style: { fontSize: 14, fontWeight: 800, color: "#c4b5fd", display: "flex", alignItems: "center", gap: 8 } },
                     h(Icon, { name: "target", size: 16, color: "#c4b5fd" }),
-                    "Rentabilite par chantier (prix/m relatif)"
+                    "Positionnement prix/m par chantier"
                   ),
-                  h("div", { style: { fontSize: 11, color: "#a1a1aa", marginTop: 3 } }, "Coef = prix/m chantier / prix/m moyen (reference : " + (prixMoyen > 0 ? fmtNum(Math.round(prixMoyen)) + " XPF/m" : "aucune donnee") + ")")
+                  h("div", { style: { fontSize: 11, color: "#a1a1aa", marginTop: 3 } }, "Coef = prix/m chantier / mediane du portefeuille (reference : " + (prixMoyen > 0 ? fmtNum(Math.round(prixMoyen)) + " XPF/m" : "aucune donnee") + ") · Positionnel, pas de rentabilite absolue")
                 )
               ),
               withCoef.length === 0 ? h("p", { style: { color: "#71717a", textAlign: "center", padding: 20, fontSize: 13, margin: 0 } }, "Aucun chantier En cours avec prix/m renseigne.") :
