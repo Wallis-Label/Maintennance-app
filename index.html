@@ -14779,7 +14779,13 @@
       function calcPrimesForSitePeriod(site, period) {
         var siteCh = chantiersBySite[site] || [];
         if (siteCh.length === 0) return [];
-        var siteChIds = siteCh.map(function(c) { return c.id; });
+        // BUG FIX : siteChIds doit inclure TOUS les chantiers de ce site (peu importe
+        // leur statut), pas juste En cours + Termine. Sinon si un employe est affecte
+        // a un sous-chantier du meme site avec statut 'A venir' (ou autre non-actif),
+        // ses jours ne sont pas comptes : empAffOnSite le rejette (chantier hors
+        // siteChIds), puis la section 'jours ailleurs' le rejette aussi car
+        // chantierToSite resout sur le meme site (skip 'deja sur ce site').
+        var siteChIds = (chantiers || []).filter(function(c) { return c.site === site; }).map(function(c) { return c.id; });
         var results = [];
         var siteMoyenne = getMoyenneForSite(paliers, site);
         var objectif = getObjectifForSite(paliers, site);
