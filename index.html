@@ -17803,26 +17803,26 @@
       var metresParJourReel = joursTravailles > 0 ? totalMetresAll / joursTravailles : 0;
 
       // Pour ventiler les charges indirectes (carburant VL, salaires hors-equipe, charges fixes)
-      // aux JOURS TRAVAILLES par chaque sondeuse (pas aux metres) : ainsi le cout/jour
-      // reflete bien la periode reelle d'activite de la machine.
+      // aux JOURS OUVRES DE LA PERIODE (Lun-Ven filtree) : ainsi une machine qui bosse
+      // peu de jours ne prend qu'une petite part des charges fixes (car les charges des
+      // jours d'inactivite ne lui incombent pas). Le reste = 'cout structurel non couvert'.
       var sumPersonnelTerrainAll = 0;
       Object.keys(sondeusesMap).forEach(function(code) { sumPersonnelTerrainAll += sondeusesMap[code].coutPersonnel * 1.40; });
       var coutPersonnelHorsTerrain = Math.max(0, coutPersonnelTotal - sumPersonnelTerrainAll);
       var chargesIndirectesTotal = coutCarburantVL + coutPersonnelHorsTerrain + coutChargesFixesTotal;
-      // Total des jours travailles (unique dates × machine) pour ventilation prorata.
-      var sumJoursTravailles = 0;
-      Object.keys(sondeusesMap).forEach(function(code) {
-        sumJoursTravailles += Object.keys(sondeusesMap[code].joursTravailles || {}).length;
-      });
+      // Reference : jours ouvres de la periode filtree (deja calcule plus haut ligne ~17662).
+      // Si joursOuvres est vide (all/1an), fallback sur nb jours calendaires x 5/7.
+      var joursReferencePeriode = joursOuvres > 0 ? joursOuvres : 22;
+      var chargesIndirectesParJour = joursReferencePeriode > 0 ? chargesIndirectesTotal / joursReferencePeriode : 0;
 
       var sondeusesDetail = Object.keys(sondeusesMap).map(function(code) {
         var s = sondeusesMap[code];
         var coutCharges = s.coutPersonnel * 0.40;  // 40% charges patronales sur personnel terrain
-        // Part des charges indirectes AU PRORATA DES JOURS TRAVAILLES par cette machine.
-        // Une machine qui a travaille 15 j sur 60 j-flotte bear 15/60 des indirectes.
+        // Part des charges indirectes = charges_par_jour_ouvre × jours_travailles_machine.
+        // Une machine qui bosse 2 j sur 22 j ouvres du mois prend 2/22 des charges fixes.
+        // Le reste (20/22) = cout structurel de l'inactivite, non attribue a une machine.
         var nbJoursMach = Object.keys(s.joursTravailles || {}).length;
-        var partJours = sumJoursTravailles > 0 ? (nbJoursMach / sumJoursTravailles) : 0;
-        var coutIndirect = chargesIndirectesTotal * partJours;
+        var coutIndirect = chargesIndirectesParJour * nbJoursMach;
         var coutTotal = s.coutConso + s.coutPersonnel + coutCharges + s.coutEmprunt + coutIndirect;
         // Chantier principal (celui avec le plus de metres pour cette machine)
         var chantPrincipal = null;
