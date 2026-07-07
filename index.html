@@ -18269,17 +18269,7 @@
             kpiCard("green", "coins", fmtCaCompact(caYTD + caFactYTD) + " XPF", "CA " + now.getFullYear() + " (" + daysElapsed + "j)", "Metrage : " + fmtCaCompact(caYTD) + " + Activites : " + fmtCaCompact(caFactYTD) + " XPF · Periode (" + periodLabelShort + ") : " + fmtCaCompact(caPeriode) + " XPF"),
             kpiCard("red", "trending-up", fmtCaCompact(caAnnuelProj) + " XPF", "CA annuel projete", (nbChantiersPlanifies > 0 ? "Realise + " + nbChantiersPlanifies + " chantier(s) planifie(s)" : "Extrapolation lineaire (pas de planning)") + (period === "mois" ? " - mois : " + fmtCaCompact(caProjPeriode) + " XPF" : " - " + periodLabelShort + " : " + fmtCaCompact(caPeriode) + " XPF")),
             kpiCard("pink", "package-x", fmtXPF(totalCoutConso), "Cout consommables", "Annuel projete : " + fmtCaCompact(coutConsoAnnuelProj) + " XPF"),
-            kpiCard("amber", "zap", productivite.toFixed(1) + " m/h", "Productivite foration", "Annuel YTD : " + productiviteYTD.toFixed(1) + " m/h"),
-            // CA facturation activites : somme des tarifs configures (attentes, deplacements >= X min)
-            (function() {
-              var caFactTotal = sondeusesDetail.reduce(function(s, x) { return s + (x.caFacturationActivites || 0); }, 0);
-              var tarifsConfigs = Object.keys(tarifsActivitesMap).length;
-              return kpiCard("green", "banknote", fmtCaCompact(caFactTotal) + " XPF",
-                "CA facturation activites",
-                tarifsConfigs === 0
-                  ? "Aucun tarif configure (Parametres > Tarifs activites)"
-                  : tarifsConfigs + " tarif(s) configure(s) : " + Object.keys(tarifsActivitesMap).join(", "));
-            }())
+            kpiCard("amber", "zap", productivite.toFixed(1) + " m/h", "Productivite foration", "Annuel YTD : " + productiviteYTD.toFixed(1) + " m/h")
           ),
           // ── Rentabilite PAR MACHINE = CA generé - coûts complets (marge nette/jour) ──
           // Le CA est calcule par rapport avec le prix/m du chantier (pas de moyenne).
