@@ -10449,6 +10449,39 @@
       };
     }
 
+    // Coef de disponibilite historique du chantier : jours ouvres passes declares
+    // "non productifs" (ferie/intemperies/panne/arret/conge/maintenance...) / jours
+    // ouvres passes total. Retourne 1 si aucun historique disponible.
+    // Utilise pour rendre les projections previsionnelles realistes (aleas historiques).
+    var _EXCLUDED_TYPES_DISPO = { ferie: 1, intemperies: 1, panne: 1, arret: 1, non_productif: 1, conge: 1, chomage: 1, maladie: 1, maintenance: 1 };
+    function coefDispoChantierHist(chantier, dbSaisies, todayMs) {
+      if (!chantier || !chantier.dateDebut) return { coef: 1, taux: 0, joursOuvres: 0, joursAbsents: 0 };
+      var dDeb = new Date(String(chantier.dateDebut).substring(0, 10) + "T00:00:00");
+      if (isNaN(dDeb.getTime())) return { coef: 1, taux: 0, joursOuvres: 0, joursAbsents: 0 };
+      if (todayMs == null) { var _t = new Date(); _t.setHours(0, 0, 0, 0); todayMs = _t.getTime(); }
+      var saisChant = (dbSaisies || {})[chantier.id] || {};
+      var joursOuvres = 0, joursAbsents = 0;
+      var cur = new Date(dDeb.getTime()); cur.setHours(0, 0, 0, 0);
+      var todayDay = new Date(todayMs); todayDay.setHours(0, 0, 0, 0);
+      var safe = 0;
+      while (cur.getTime() < todayDay.getTime() && safe < 800) {
+        var dow = cur.getDay();
+        if (dow >= 1 && dow <= 4) {
+          joursOuvres++;
+          var iso = cur.getFullYear() + "-" + String(cur.getMonth() + 1).padStart(2, "0") + "-" + String(cur.getDate()).padStart(2, "0");
+          var s = saisChant[iso];
+          if (s) {
+            var t = (typeof s === "object" && s !== null) ? (s.typeJour || s.type || "") : "";
+            if (_EXCLUDED_TYPES_DISPO[t]) joursAbsents++;
+          }
+        }
+        cur.setDate(cur.getDate() + 1);
+        safe++;
+      }
+      var taux = joursOuvres > 0 ? (joursAbsents / joursOuvres) : 0;
+      return { coef: Math.max(0, 1 - taux), taux: taux, joursOuvres: joursOuvres, joursAbsents: joursAbsents };
+    }
+
     // Mapping weather code -> Lucide icon name + couleur (pour rendu visuel propre)
     // Plus pro que les emojis, coherent avec le reste de l'app qui utilise Lucide
     function meteoLucide(code, prec) {
@@ -11088,6 +11121,13 @@
         activeChantiers.forEach(function(c) {
           vitesseParChantier[c.id] = buildVitesseChantier(c);
         });
+        // Coef de dispo historique par chantier (aleas : pannes / intemperies /
+        // maintenance / conges declares dans les saisies). Pre-calcule une fois par render
+        // pour que le previsionnel jour par jour soit realiste.
+        var coefDispoParChantier = {};
+        activeChantiers.forEach(function(c) {
+          coefDispoParChantier[c.id] = coefDispoChantierHist(c, ctxAv.dbSaisies, bcToday.getTime()).coef;
+        });
         // Index per-machine pour le previsionnel avec adaptation
         var metByMkBC = buildMetByMachine(ctxAv.dbRelevesJourn, ctxAv.equipements);
         for (var d = 1; d <= daysInMonth; d++) {
@@ -11119,6 +11159,10 @@
               // Previsionnel base sur logique machine (anciens 7j puis propre) :
               var prev = previsionnelBaseChantierDay(c.id, ds, ctxAv.dbChantierEquipements, ctxAv.equipements, metByMkBC, vQuot, bcToday.getTime());
               var baseMet = prev.metrage || vQuot; // fallback chantier si aucune machine planifiee
+              // Application du coef de dispo historique UNIQUEMENT sur les jours futurs.
+              // Sur les jours passes, on garde la cible brute (sans aleas historiques)
+              // pour montrer visuellement le vrai deficit realise vs cible.
+              if (isFuture) baseMet = baseMet * (coefDispoParChantier[c.id] || 1);
               if (baseMet > 0) {
                 var mMap = meteoByChantier[c.id];
                 var mDay = mMap ? mMap[ds] : null;
@@ -12445,6 +12489,9 @@
                       var metByMkFC = buildMetByMachine(ctxAv.dbRelevesJourn, ctxAv.equipements);
                       var fPrev = previsionnelBaseChantierDay(chantier.id, fIso, ctxAv.dbChantierEquipements, ctxAv.equipements, metByMkFC, pVitQuot, bcToday.getTime());
                       var fBase = fPrev.metrage || pVitQuot;
+                      // Coef dispo historique (aleas : pannes / intemperies / maintenance / conges declares)
+                      var fCoefDispo = coefDispoChantierHist(chantier, ctxAv.dbSaisies, bcToday.getTime()).coef;
+                      fBase = fBase * fCoefDispo;
                       var fVal = fBase * fFactor;
                       var fIntemp = fFactor === 0; // perdu total
                       var fReduced = (fFactor > 0 && fFactor < 1) || fPrev.anyAdapt || fPrev.anyOldBaseline; // production reduite
@@ -17475,6 +17522,9 @@
               // Previsionnel base sur logique machine (anciens 7j puis propre)
               var prev = previsionnelBaseChantierDay(c.id, dStr, ctx.dbChantierEquipements, ctx.equipements, metByMkStat, vQuot, bcToday.getTime());
               var baseMet = prev.metrage || vQuot;
+              // Coef dispo historique (aleas)
+              var coefD = coefDispoChantierHist(c, ctx.dbSaisies, bcToday.getTime()).coef;
+              baseMet = baseMet * coefD;
               var val = baseMet * fact;
               if (val > 0) {
                 fcVal += val;
