@@ -18873,8 +18873,11 @@
                     var dureeChantier = Math.max(1, (dFin.getTime() - dDeb.getTime()) / 86400000);
                     dayMet = (metrage / dureeChantier) * (4/7); // approx jours ouvres
                   } else {
-                    var prevF = previsionnelBaseChantierDay(c.id, isoF, ctx.dbChantierEquipements, ctx.equipements, metByMkTr, vitesseQuot, now2.getTime(), avgMachHist);
-                    dayMet = (prevF.metrage || 0) * coefDispo;
+                    // Mode legacy (sans avgMachHist) : on retombe sur vitesse chantier
+                    // meme quand aucune machine planifiee ce jour (utile car les plannings
+                    // futurs sont rarement saisis pour 12 mois complets).
+                    var prevF = previsionnelBaseChantierDay(c.id, isoF, ctx.dbChantierEquipements, ctx.equipements, metByMkTr, vitesseQuot, now2.getTime());
+                    dayMet = (prevF.metrage || vitesseQuot) * coefDispo;
                   }
                   if (dayMet > 0) {
                     if (totalProj + dayMet > restant) dayMet = restant - totalProj;
@@ -18991,6 +18994,37 @@
                 h("div", { style: { display: "flex", alignItems: "center", gap: 6 } },
                   h("div", { style: { width: 14, height: 14, borderRadius: 3, background: "rgba(244,63,94,0.20)", border: "1px solid rgba(244,63,94,0.40)" } }),
                   h("span", { style: { color: "#cbd5e1" } }, "Zone tresorerie negative")
+                )
+              ),
+              // ── Tableau breakdown mensuel : visualiser ce qui rentre chaque mois ──
+              h("div", { style: { marginTop: 14, overflowX: "auto" } },
+                h("table", { style: { width: "100%", borderCollapse: "collapse", fontSize: 11.5, minWidth: 700 } },
+                  h("thead", null,
+                    h("tr", { style: { background: "rgba(0,0,0,0.30)" } },
+                      h("th", { style: { padding: "6px 8px", textAlign: "left", color: "#93c5fd", textTransform: "uppercase", fontSize: 10, letterSpacing: 0.4 } }, "Mois"),
+                      h("th", { style: { padding: "6px 8px", textAlign: "right", color: "#86efac", textTransform: "uppercase", fontSize: 10 } }, "CA chantiers"),
+                      h("th", { style: { padding: "6px 8px", textAlign: "right", color: "#86efac", textTransform: "uppercase", fontSize: 10 } }, "CA activites"),
+                      h("th", { style: { padding: "6px 8px", textAlign: "right", color: "#fda4af", textTransform: "uppercase", fontSize: 10 } }, "Salaires"),
+                      h("th", { style: { padding: "6px 8px", textAlign: "right", color: "#fda4af", textTransform: "uppercase", fontSize: 10 } }, "Charges fixes"),
+                      h("th", { style: { padding: "6px 8px", textAlign: "right", color: "#fda4af", textTransform: "uppercase", fontSize: 10 } }, "Emprunts"),
+                      h("th", { style: { padding: "6px 8px", textAlign: "right", color: "#c4b5fd", textTransform: "uppercase", fontSize: 10 } }, "Net"),
+                      h("th", { style: { padding: "6px 8px", textAlign: "right", color: "#a5b4fc", textTransform: "uppercase", fontSize: 10 } }, "Solde fin")
+                    )
+                  ),
+                  h("tbody", null,
+                    trMois.map(function(x, i) {
+                      return h("tr", { key: i, style: { borderTop: "1px solid rgba(255,255,255,0.05)" } },
+                        h("td", { style: { padding: "6px 8px", fontWeight: 700 } }, x.d.toLocaleDateString("fr-FR", { month: "short", year: "2-digit" })),
+                        h("td", { style: { padding: "6px 8px", textAlign: "right", color: "#86efac", fontFamily: "monospace" } }, fmtCaTr(x.caChantiers)),
+                        h("td", { style: { padding: "6px 8px", textAlign: "right", color: "#86efac", fontFamily: "monospace" } }, fmtCaTr(caActivitesMens)),
+                        h("td", { style: { padding: "6px 8px", textAlign: "right", color: "#fda4af", fontFamily: "monospace" } }, "-" + fmtCaTr(salairesMens)),
+                        h("td", { style: { padding: "6px 8px", textAlign: "right", color: "#fda4af", fontFamily: "monospace" } }, "-" + fmtCaTr(chargesFixesMens)),
+                        h("td", { style: { padding: "6px 8px", textAlign: "right", color: "#fda4af", fontFamily: "monospace" } }, "-" + fmtCaTr(empruntsMensuel)),
+                        h("td", { style: { padding: "6px 8px", textAlign: "right", fontWeight: 700, color: x.net >= 0 ? "#86efac" : "#fda4af", fontFamily: "monospace" } }, (x.net >= 0 ? "+" : "") + fmtCaTr(x.net)),
+                        h("td", { style: { padding: "6px 8px", textAlign: "right", fontWeight: 800, color: x.solde >= 0 ? "#a5b4fc" : "#fda4af", fontFamily: "monospace" } }, fmtCaTr(x.solde))
+                      );
+                    })
+                  )
                 )
               ),
               minSoldeTr < 0 ? h("div", { style: { marginTop: 10, padding: "8px 12px", background: "rgba(244,63,94,0.10)", border: "1px solid rgba(244,63,94,0.30)", borderRadius: 8, fontSize: 12, color: "#fecaca" } },
