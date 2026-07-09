@@ -27659,8 +27659,10 @@
         return function() { stop = true; clearInterval(tid); };
       }, [session]);
 
-      // ── Tickets support : count des tickets non resolus (poll 60s) ─────
+      // ── Tickets support : count des tickets non resolus (poll 30s + realtime) ──
       // Visible uniquement pour tom.wallislabel@gmail.com (admin unique du support).
+      // Realtime subscription : le badge se met a jour instantanement quand un ticket
+      // est ajoute / modifie / supprime (evite d'attendre le prochain poll 30s).
       useEffect(function() {
         var mail = String((session && session.user && session.user.email) || "").toLowerCase();
         if (mail !== "tom.wallislabel@gmail.com") { setTicketsPending(0); return; }
@@ -27673,8 +27675,19 @@
           });
         }
         refresh();
-        var tid = setInterval(refresh, 60000);
-        return function() { stop = true; clearInterval(tid); };
+        var tid = setInterval(refresh, 30000);
+        // Realtime : recharge count des qu'une ligne bouge sur tickets
+        var channel = null;
+        try {
+          channel = supabase.channel("tickets_pending_watcher")
+            .on("postgres_changes", { event: "*", schema: "public", table: "tickets" }, function() { refresh(); })
+            .subscribe();
+        } catch (e) { console.warn("[tickets-pending realtime]", e); }
+        return function() {
+          stop = true;
+          clearInterval(tid);
+          if (channel) { try { supabase.removeChannel(channel); } catch (e) {} }
+        };
       }, [session]);
 
       // Allowed pages: admin gets everything, others get only assigned pages
