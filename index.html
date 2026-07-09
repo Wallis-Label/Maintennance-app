@@ -18109,14 +18109,25 @@
           var chObj = (dbChantiers || []).find(function(c) { return String(c.id) === chantPrincipal; });
           chantPrincipalNom = chObj ? (chObj.titre || chObj.nom || ("#" + chObj.id)) : String(chantPrincipal);
         }
-        var nbJoursTravailles = Object.keys(s.joursTravailles || {}).length;
+        var joursKeys = Object.keys(s.joursTravailles || {});
+        var nbJoursTravailles = joursKeys.length;
+        // Dernier jour travaille : sert a detecter les machines inactives depuis N jours
+        var dernierJourTravaille = joursKeys.length > 0 ? joursKeys.sort().pop() : null;
+        var joursInactive = 0;
+        if (dernierJourTravaille) {
+          var djd = new Date(dernierJourTravaille + "T00:00:00");
+          var todayD = new Date(); todayD.setHours(0,0,0,0);
+          joursInactive = Math.max(0, Math.round((todayD.getTime() - djd.getTime()) / 86400000));
+        }
         // CA total = metrage + facturation activites (attentes, deplacements, etc.)
         var caTotal = s.caGenere + (s.caFacturationActivites || 0);
-        // DIVISEUR financier = jours OUVRABLES de la periode (Lun-Ven).
-        // Ainsi 5MF de charges sur 22 j ouvrables = 227k/j, pas 2.5MF/j
-        // (division par 2 jours reels). Reflete un cout journalier realiste
-        // et amortissable sur toute la periode.
-        var divJours = joursOuvrablesPeriode;
+        // DIVISEUR = jours REELLEMENT travailles par la machine sur la periode.
+        // Avant : divise par joursOuvrablesPeriode (22 j Lun-Ven du mois) -> la
+        // marge/jour d'une machine ayant travaille 2 jours puis arretee fondait
+        // artificiellement quand la periode s'allongeait, alors qu'elle ne bosse
+        // plus. Maintenant : marge/jour = perf reelle des jours travailles,
+        // stable dans le temps si la machine reste inactive.
+        var divJours = nbJoursTravailles;
         var caJour = divJours > 0 ? caTotal / divJours : 0;
         var coutJour = divJours > 0 ? coutTotal / divJours : 0;
         var margeJour = caJour - coutJour;
@@ -18141,6 +18152,8 @@
           caTotal: caTotal,
           nbJoursTravailles: nbJoursTravailles,
           joursOuvrables: joursOuvrablesPeriode,
+          dernierJourTravaille: dernierJourTravaille,
+          joursInactive: joursInactive,
           caJour: caJour,
           coutJour: coutJour,
           margeJour: margeJour,
@@ -18277,8 +18290,12 @@
           // + emprunts + charges indirectes ventilees (charges fixes, carburant VL, personnel hors-equipe).
           // Marge/jour = (CA total période / jours travaillés) - (coût total période / jours travaillés).
           (function() {
-            var withMarge = sondeusesDetail.filter(function(s) { return s.nbJoursTravailles > 0 && s.caTotal > 0; })
+            // Filtre : uniquement les machines actives (dernier jour travaille dans les 7 derniers jours)
+            // Les machines qui n'ont pas bosse depuis 7j+ sont masquees pour ne pas biaiser la lecture
+            // de la rentabilite (ex : machine 2 jours puis arret ne represente pas la realite courante).
+            var withMarge = sondeusesDetail.filter(function(s) { return s.nbJoursTravailles > 0 && s.caTotal > 0 && s.joursInactive <= 7; })
               .slice().sort(function(a, b) { return b.margeJour - a.margeJour; });
+            var hiddenInactive = sondeusesDetail.filter(function(s) { return s.nbJoursTravailles > 0 && s.caTotal > 0 && s.joursInactive > 7; }).length;
             function rankColSt(i, total) {
               if (total <= 1) return { color: "#a5b4fc", bg: "rgba(99,102,241,0.15)" };
               var pct = i / (total - 1);
@@ -18300,7 +18317,8 @@
                     h(Icon, { name: "target", size: 16, color: "#c4b5fd" }),
                     "Rentabilite par machine - marge nette/jour"
                   ),
-                  h("div", { style: { fontSize: 11, color: "#a1a1aa", marginTop: 3 } }, "Marge/jour = (CA metrage + CA facturation activites - coûts complets) ÷ jours ouvrables Lun-Ven de la periode. Conso reelle par machine + indirects (credit, impots, locations, hors-equipe) au prorata du metrage · trie du plus au moins rentable")
+                  h("div", { style: { fontSize: 11, color: "#a1a1aa", marginTop: 3 } }, "Marge/jour = (CA metrage + CA facturation activites - coûts complets) ÷ jours REELLEMENT travailles par la machine. Conso reelle par machine + indirects (credit, impots, locations, hors-equipe) au prorata du metrage · trie du plus au moins rentable"),
+                  hiddenInactive > 0 ? h("div", { style: { fontSize: 10.5, color: "#fdba74", marginTop: 4, fontStyle: "italic" } }, hiddenInactive + " machine" + (hiddenInactive > 1 ? "s" : "") + " masquee" + (hiddenInactive > 1 ? "s" : "") + " (inactive" + (hiddenInactive > 1 ? "s" : "") + " depuis plus de 7 jours)") : null
                 )
               ),
               withMarge.length === 0 ? h("p", { style: { color: "#71717a", textAlign: "center", padding: 20, fontSize: 13, margin: 0 } }, "Aucune machine avec CA sur cette periode.") :
