@@ -11467,12 +11467,12 @@
       // ── Cout/m PAR MACHINE + machine dominante de chaque chantier ──
       // Chaque chantier utilise le cout/m de SA machine (efficace = bon, lente = mauvais),
       // au lieu de la moyenne globale (injuste pour le meilleur chantier).
-      // SOURCE UNIQUE = computeCoutMachines (moteur du "Detail par sondeuse" des Stats), sur la
-      // periode [1er janvier annee courante -> fin du dernier mois COMPLET]. Ex en juillet :
-      // janvier -> fin juin. Le cout/m d'une machine (ex FS1) est ainsi IDENTIQUE ici et dans
-      // les Stats "Detail par sondeuse".
+      // SOURCE UNIQUE = computeCoutMachines (moteur du "Detail par sondeuse" des Stats), sur le
+      // DERNIER MOIS COMPLET (ex en juillet -> juin). Un seul mois plein = coherent avec le
+      // Detail par sondeuse regle sur ce mois, et non gonfle par les mois lents du debut d'annee.
+      // Le cout/m d'une machine (ex FS1) est ainsi IDENTIQUE ici et dans les Stats.
       var _coutMachNow = new Date();
-      var _coutMachDebut = new Date(_coutMachNow.getFullYear(), 0, 1);
+      var _coutMachDebut = new Date(_coutMachNow.getFullYear(), _coutMachNow.getMonth() - 1, 1);
       var _coutMachFin = new Date(_coutMachNow.getFullYear(), _coutMachNow.getMonth(), 0, 23, 59, 59);
       var coutMetreParMachineAv = computeCoutMachines(ctxAv, _coutMachDebut, _coutMachFin);
       var chantierMachineDom = (function() {
