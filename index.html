@@ -16808,6 +16808,9 @@
       // (utile quand la compta est en retard : override le solde calcule via Compta 512*)
       var _soldeManuel = useState(null);
       var soldeManuel = _soldeManuel[0]; var setSoldeManuel = _soldeManuel[1];
+      // Mois deplies dans le tableau breakdown de tresorerie (index -> true)
+      var _expTr = useState({});
+      var expandedMonthsTr = _expTr[0]; var setExpandedMonthsTr = _expTr[1];
       useEffect(function() {
         var p = (ctx.parametres || []).find(function(x) { return x && x.categorie === "tresorerie_solde_actuel"; });
         if (p && p.valeur != null && p.valeur !== "") {
@@ -19082,12 +19085,14 @@
               var caChantiersRealMi = caChantiersRealiseParMois[mi2] || 0;
               var factFrsMi = factFrsFutures[kMonth] || 0;
               var caChantiersMi = 0; // valeur affichee dans le tableau breakdown
+              var monthDetail = null;
               if (estFiable) {
                 // Mois passe fiable (compta a jour) : utiliser le REEL bancaire
                 encaiss = mvtReel.in;
                 decaiss = mvtReel.out;
                 source = "reel";
                 caChantiersMi = caChantiersRealMi; // pour info dans tooltip
+                monthDetail = { kind: "reel", reelIn: mvtReel.in, reelOut: mvtReel.out, caTerrain: caChantiersRealMi };
               } else {
                 // Mois pas encore saisi cote compta OU mois futur : PROJECTION
                 // Passe non fiable : CA = metrages saisis (Avancement) x prix/metre
@@ -19103,11 +19108,27 @@
                 encaiss = encaissMoyenReel != null ? (encaissTheorique + encaissMoyenReel) / 2 : encaissTheorique;
                 decaiss = decaissMoyenReel != null ? (decaissTheorique + decaissMoyenReel) / 2 : decaissTheorique;
                 source = "projete";
+                monthDetail = {
+                  kind: "projete",
+                  caChantiers: caChantiersMi,
+                  caActivites: caActivitesMens,
+                  encaissTheorique: encaissTheorique,
+                  encaissMoyenReel: encaissMoyenReel,
+                  encaissAjustement: encaiss - encaissTheorique,
+                  salaires: salairesMens,
+                  chargesFixes: chargesFixesMens,
+                  emprunts: empruntsMensuel,
+                  factFrs: factFrsMi,
+                  decaissTheorique: decaissTheorique,
+                  decaissMoyenReel: decaissMoyenReel,
+                  decaissAjustement: decaiss - decaissTheorique
+                };
               }
               var net = encaiss - decaiss;
               trMoisRaw.push({
                 d: dM, encaiss: encaiss, decaiss: decaiss, net: net,
-                caChantiers: caChantiersMi, factFrs: factFrsMi, source: source, estPasse: estPasse, estCourant: estCourant
+                caChantiers: caChantiersMi, factFrs: factFrsMi, source: source, estPasse: estPasse, estCourant: estCourant,
+                detail: monthDetail
               });
             }
 
@@ -19210,9 +19231,16 @@
                 ),
                 h("div", { style: { fontSize: 11, color: "#a1a1aa", marginTop: 3 } }, "Chaque mois : REEL (mouvements bancaires Compta 512*) tant que la compta est a jour, sinon PROJECTION (CA chantiers + activites - salaires x1.4 - charges fixes - emprunts - factures fournisseurs 401 non lettrees). La bascule est automatique : des qu'un mois n'a pas d'ecritures posterieures, il est considere non fiable et passe en projete." + (latestMonthKey ? " Dernier mois compta complet : " + (function() { var p = latestMonthKey.split("-"); var mn = ["janv.","fevr.","mars","avril","mai","juin","juil.","aout","sept.","oct.","nov.","dec."][parseInt(p[1])-2] || latestMonthKey; return mn + " " + p[0].slice(2); })() + "." : ""))
               ),
-              h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 8, marginBottom: 14 } },
+              (function() {
+                var soldeAujourdhui = soldeManuel != null ? soldeManuel : (nbEcrBanque > 0 ? soldeBanqueLive : (trMois[now2.getMonth()] ? trMois[now2.getMonth()].solde : soldeInit));
+                return h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8, marginBottom: 14 } },
+                h("div", { style: { padding: "10px 12px", background: "rgba(129,140,248,0.15)", border: "1px solid rgba(129,140,248,0.35)", borderRadius: 8 } },
+                  h("div", { style: { fontSize: 10, color: "#a1a1aa", textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 700, marginBottom: 4 } }, "Solde aujourd'hui"),
+                  h("div", { style: { fontSize: 18, fontWeight: 800, color: soldeAujourdhui >= 0 ? "#c7d2fe" : "#fda4af", fontFamily: "monospace" } }, fmtCaTr(soldeAujourdhui) + " XPF"),
+                  h("div", { style: { fontSize: 10, color: "#a1a1aa", marginTop: 2 } }, soldeSource === "manuel" ? "Ancre manuel" : (soldeSource === "compta" ? "Solde bancaire Compta" : "Estimation"))
+                ),
                 h("div", { style: { padding: "10px 12px", background: "rgba(96,165,250,0.10)", border: "1px solid rgba(96,165,250,0.30)", borderRadius: 8 } },
-                  h("div", { style: { fontSize: 10, color: "#a1a1aa", textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 700, marginBottom: 4 } }, "Solde initial"),
+                  h("div", { style: { fontSize: 10, color: "#a1a1aa", textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 700, marginBottom: 4 } }, "Solde 1er janvier"),
                   h("div", { style: { fontSize: 18, fontWeight: 800, color: "#93c5fd", fontFamily: "monospace" } }, fmtCaTr(soldeInit) + " XPF")
                 ),
                 h("div", { style: { padding: "10px 12px", background: "rgba(34,197,94,0.10)", border: "1px solid rgba(34,197,94,0.30)", borderRadius: 8 } },
@@ -19233,7 +19261,8 @@
                   h("div", { style: { fontSize: 18, fontWeight: 800, color: minSoldeTr < 0 ? "#fda4af" : "#fde68a", fontFamily: "monospace" } }, fmtCaTr(minSoldeTr) + " XPF"),
                   h("div", { style: { fontSize: 10, color: "#a1a1aa", marginTop: 2 } }, trMois[minIdxTr].d.toLocaleDateString("fr-FR", { month: "long", year: "numeric" }))
                 )
-              ),
+              );
+              }()),
               // ── Legende inline en tete du chart (style carburant) ──
               h("div", { style: { display: "flex", justifyContent: "flex-end", gap: 16, fontSize: 11, color: "#a1a1aa", marginBottom: 6, flexWrap: "wrap" } },
                 h("span", null, h("span", { style: { display: "inline-block", width: 12, height: 2, background: "#818cf8", verticalAlign: "middle", marginRight: 6 } }), "Solde net cumule"),
@@ -19314,16 +19343,104 @@
                       else if (x.source === "reel_partiel") { badgeStyle = { background: "rgba(251,191,36,0.15)", color: "#fde68a", border: "1px solid rgba(251,191,36,0.35)" }; badgeText = "Reel + proj"; }
                       else { badgeStyle = { background: "rgba(129,140,248,0.15)", color: "#a5b4fc", border: "1px solid rgba(129,140,248,0.35)" }; badgeText = "Projete"; }
                       var rowOpa = x.source === "reel" ? 0.75 : 1;
-                      return h("tr", { key: i, style: { borderTop: "1px solid rgba(255,255,255,0.05)", opacity: rowOpa } },
-                        h("td", { style: { padding: "6px 8px", fontWeight: 700 } }, x.d.toLocaleDateString("fr-FR", { month: "short", year: "2-digit" })),
-                        h("td", { style: { padding: "6px 8px", textAlign: "center" } },
-                          h("span", { style: Object.assign({ display: "inline-block", padding: "2px 8px", borderRadius: 999, fontSize: 9.5, fontWeight: 700, letterSpacing: 0.3 }, badgeStyle) }, badgeText)
+                      var expanded = !!expandedMonthsTr[i];
+                      var det = x.detail || {};
+                      var detailRow = expanded ? h("tr", { key: "d" + i, style: { background: "rgba(0,0,0,0.20)" } },
+                        h("td", { colSpan: 6, style: { padding: "10px 16px" } },
+                          h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 } },
+                            // Colonne encaissements
+                            h("div", null,
+                              h("div", { style: { fontSize: 10, color: "#86efac", textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 700, marginBottom: 8, borderBottom: "1px solid rgba(34,197,94,0.30)", paddingBottom: 4 } }, "Encaissements"),
+                              det.kind === "reel" ? h("div", { style: { fontSize: 12, color: "#d4d4d8" } },
+                                h("div", { style: { display: "flex", justifyContent: "space-between", padding: "3px 0" } },
+                                  h("span", null, "Total encaissements (grand livre 512*)"),
+                                  h("span", { style: { fontFamily: "monospace", color: "#86efac", fontWeight: 700 } }, fmtCaTr(det.reelIn))
+                                ),
+                                det.caTerrain > 0 ? h("div", { style: { display: "flex", justifyContent: "space-between", padding: "3px 0", opacity: 0.7, fontSize: 11 } },
+                                  h("span", null, "(pour info) CA metrages terrain"),
+                                  h("span", { style: { fontFamily: "monospace" } }, fmtCaTr(det.caTerrain))
+                                ) : null
+                              ) : h("div", { style: { fontSize: 12, color: "#d4d4d8" } },
+                                h("div", { style: { display: "flex", justifyContent: "space-between", padding: "3px 0" } },
+                                  h("span", null, "CA chantiers " + (x.estPasse ? "(saisi)" : x.estCourant ? "(saisi + prev)" : "(prev jour x jour)")),
+                                  h("span", { style: { fontFamily: "monospace" } }, fmtCaTr(det.caChantiers))
+                                ),
+                                h("div", { style: { display: "flex", justifyContent: "space-between", padding: "3px 0" } },
+                                  h("span", null, "CA activites (moyenne YTD)"),
+                                  h("span", { style: { fontFamily: "monospace" } }, fmtCaTr(det.caActivites))
+                                ),
+                                h("div", { style: { display: "flex", justifyContent: "space-between", padding: "3px 0", borderTop: "1px solid rgba(255,255,255,0.08)", marginTop: 4, paddingTop: 6 } },
+                                  h("span", null, "= Sous-total theorique"),
+                                  h("span", { style: { fontFamily: "monospace", fontWeight: 700 } }, fmtCaTr(det.encaissTheorique))
+                                ),
+                                det.encaissMoyenReel != null ? h("div", { style: { display: "flex", justifyContent: "space-between", padding: "3px 0", color: "#c7d2fe" } },
+                                  h("span", null, "Ajustement moyenne reelle (Compta)"),
+                                  h("span", { style: { fontFamily: "monospace" } }, (det.encaissAjustement >= 0 ? "+" : "") + fmtCaTr(det.encaissAjustement))
+                                ) : null,
+                                h("div", { style: { display: "flex", justifyContent: "space-between", padding: "3px 0", borderTop: "1px solid rgba(34,197,94,0.30)", marginTop: 4, paddingTop: 6, fontWeight: 800, color: "#86efac" } },
+                                  h("span", null, "TOTAL encaissements"),
+                                  h("span", { style: { fontFamily: "monospace" } }, fmtCaTr(x.encaiss))
+                                )
+                              )
+                            ),
+                            // Colonne decaissements
+                            h("div", null,
+                              h("div", { style: { fontSize: 10, color: "#fda4af", textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 700, marginBottom: 8, borderBottom: "1px solid rgba(244,63,94,0.30)", paddingBottom: 4 } }, "Decaissements"),
+                              det.kind === "reel" ? h("div", { style: { fontSize: 12, color: "#d4d4d8" } },
+                                h("div", { style: { display: "flex", justifyContent: "space-between", padding: "3px 0" } },
+                                  h("span", null, "Total decaissements (grand livre 512*)"),
+                                  h("span", { style: { fontFamily: "monospace", color: "#fda4af", fontWeight: 700 } }, "-" + fmtCaTr(det.reelOut))
+                                )
+                              ) : h("div", { style: { fontSize: 12, color: "#d4d4d8" } },
+                                h("div", { style: { display: "flex", justifyContent: "space-between", padding: "3px 0" } },
+                                  h("span", null, "Salaires x1.4"),
+                                  h("span", { style: { fontFamily: "monospace" } }, "-" + fmtCaTr(det.salaires))
+                                ),
+                                h("div", { style: { display: "flex", justifyContent: "space-between", padding: "3px 0" } },
+                                  h("span", null, "Charges fixes"),
+                                  h("span", { style: { fontFamily: "monospace" } }, "-" + fmtCaTr(det.chargesFixes))
+                                ),
+                                h("div", { style: { display: "flex", justifyContent: "space-between", padding: "3px 0" } },
+                                  h("span", null, "Mensualites emprunts"),
+                                  h("span", { style: { fontFamily: "monospace" } }, "-" + fmtCaTr(det.emprunts))
+                                ),
+                                det.factFrs > 0 ? h("div", { style: { display: "flex", justifyContent: "space-between", padding: "3px 0" } },
+                                  h("span", null, "Factures fournisseurs 401 (J+30)"),
+                                  h("span", { style: { fontFamily: "monospace" } }, "-" + fmtCaTr(det.factFrs))
+                                ) : null,
+                                h("div", { style: { display: "flex", justifyContent: "space-between", padding: "3px 0", borderTop: "1px solid rgba(255,255,255,0.08)", marginTop: 4, paddingTop: 6 } },
+                                  h("span", null, "= Sous-total theorique"),
+                                  h("span", { style: { fontFamily: "monospace", fontWeight: 700 } }, "-" + fmtCaTr(det.decaissTheorique))
+                                ),
+                                det.decaissMoyenReel != null ? h("div", { style: { display: "flex", justifyContent: "space-between", padding: "3px 0", color: "#c7d2fe" } },
+                                  h("span", null, "Ajustement moyenne reelle (Compta)"),
+                                  h("span", { style: { fontFamily: "monospace" } }, (det.decaissAjustement >= 0 ? "+" : "") + fmtCaTr(det.decaissAjustement))
+                                ) : null,
+                                h("div", { style: { display: "flex", justifyContent: "space-between", padding: "3px 0", borderTop: "1px solid rgba(244,63,94,0.30)", marginTop: 4, paddingTop: 6, fontWeight: 800, color: "#fda4af" } },
+                                  h("span", null, "TOTAL decaissements"),
+                                  h("span", { style: { fontFamily: "monospace" } }, "-" + fmtCaTr(x.decaiss))
+                                )
+                              )
+                            )
+                          )
+                        )
+                      ) : null;
+                      return [
+                        h("tr", { key: i, style: { borderTop: "1px solid rgba(255,255,255,0.05)", opacity: rowOpa, cursor: "pointer" }, onClick: function() { setExpandedMonthsTr(function(prev) { var next = Object.assign({}, prev); next[i] = !prev[i]; return next; }); } },
+                          h("td", { style: { padding: "6px 8px", fontWeight: 700, display: "flex", alignItems: "center", gap: 6 } },
+                            h("span", { style: { display: "inline-block", width: 10, fontSize: 10, color: "#71717a", transition: "transform 0.15s", transform: expanded ? "rotate(90deg)" : "rotate(0deg)" } }, "▶"),
+                            x.d.toLocaleDateString("fr-FR", { month: "short", year: "2-digit" })
+                          ),
+                          h("td", { style: { padding: "6px 8px", textAlign: "center" } },
+                            h("span", { style: Object.assign({ display: "inline-block", padding: "2px 8px", borderRadius: 999, fontSize: 9.5, fontWeight: 700, letterSpacing: 0.3 }, badgeStyle) }, badgeText)
+                          ),
+                          h("td", { style: { padding: "6px 8px", textAlign: "right", color: "#86efac", fontFamily: "monospace" } }, fmtCaTr(x.encaiss)),
+                          h("td", { style: { padding: "6px 8px", textAlign: "right", color: "#fda4af", fontFamily: "monospace" } }, "-" + fmtCaTr(x.decaiss)),
+                          h("td", { style: { padding: "6px 8px", textAlign: "right", fontWeight: 700, color: x.net >= 0 ? "#86efac" : "#fda4af", fontFamily: "monospace" } }, (x.net >= 0 ? "+" : "") + fmtCaTr(x.net)),
+                          h("td", { style: { padding: "6px 8px", textAlign: "right", fontWeight: 800, color: x.solde >= 0 ? "#a5b4fc" : "#fda4af", fontFamily: "monospace" } }, fmtCaTr(x.solde))
                         ),
-                        h("td", { style: { padding: "6px 8px", textAlign: "right", color: "#86efac", fontFamily: "monospace" } }, fmtCaTr(x.encaiss)),
-                        h("td", { style: { padding: "6px 8px", textAlign: "right", color: "#fda4af", fontFamily: "monospace" } }, "-" + fmtCaTr(x.decaiss)),
-                        h("td", { style: { padding: "6px 8px", textAlign: "right", fontWeight: 700, color: x.net >= 0 ? "#86efac" : "#fda4af", fontFamily: "monospace" } }, (x.net >= 0 ? "+" : "") + fmtCaTr(x.net)),
-                        h("td", { style: { padding: "6px 8px", textAlign: "right", fontWeight: 800, color: x.solde >= 0 ? "#a5b4fc" : "#fda4af", fontFamily: "monospace" } }, fmtCaTr(x.solde))
-                      );
+                        detailRow
+                      ];
                     })
                   )
                 )
