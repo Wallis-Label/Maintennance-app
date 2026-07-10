@@ -16026,7 +16026,6 @@
         { key: "primes", label: "Primes", icon: "trophy" },
         { key: "financement", label: "Financement", icon: "wallet" },
         { key: "emprunts", label: "Emprunts", icon: "landmark" },
-        { key: "charges-fixes", label: "Charges fixes", icon: "receipt" },
         { key: "personnel", label: "Personnel", icon: "user-round" },
         { key: "stats-mecaniciens", label: "Mecaniciens", icon: "wrench" },
         { key: "coffre-rh", label: "Coffre-fort RH", icon: "folder-lock" },
@@ -25994,7 +25993,6 @@
         { name: "Finances", pages: [
           { key: "financement", label: "Financement", lucide: "wallet" },
           { key: "emprunts", label: "Emprunts", lucide: "landmark" },
-          { key: "charges-fixes", label: "Charges fixes", lucide: "receipt" },
           { key: "compta-ext", label: "Comptabilite", lucide: "file-text", external: "https://comptabilite-wallislabel.vercel.app" },
         ]},
         { name: "Soumissions", pages: [
@@ -28952,7 +28950,6 @@
         if (currentPage === "carburant") return h(EcranCarburant, null);
         if (currentPage === "financement") return h(EcranFinancement, { onNavigate: navigate });
         if (currentPage === "emprunts") return h(EcranEmprunts, null);
-        if (currentPage === "charges-fixes") return h(EcranChargesFixes, null);
         if (currentPage === "planning") return h(EcranPlanning, null);
         if (currentPage === "avancement") return h(EcranAvancement, null);
         if (currentPage === "previsionnel") return h(EcranPrevisionnel, { initialChantierId: pageData && pageData.chantierId });
