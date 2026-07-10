@@ -18926,7 +18926,10 @@
               var fallbackLineaire = vitesseQuot <= 0;
               // Boucle jour par jour sur les 12 prochains mois
               var effectiveEnd = Math.min(dFin.getTime(), horizonMs);
-              var cursor = new Date(now2.getTime());
+              // Chantiers A VENIR : demarrer le cursor a leur dateDebut (pas a today)
+              // Chantiers EN COURS : demarrer le cursor a today
+              var startCursorMs = dDeb.getTime() > now2.getTime() ? dDeb.getTime() : now2.getTime();
+              var cursor = new Date(startCursorMs);
               var totalProj = 0, safeF = 0;
               while (cursor.getTime() <= effectiveEnd && safeF < 500 && totalProj < restant) {
                 var dow = cursor.getDay();
@@ -18947,9 +18950,10 @@
                   if (dayMet > 0) {
                     if (totalProj + dayMet > restant) dayMet = restant - totalProj;
                     totalProj += dayMet;
-                    // Determine l'index mois relatif
-                    var mi = (cursor.getFullYear() - now2.getFullYear()) * 12 + (cursor.getMonth() - now2.getMonth());
-                    if (mi >= 0 && mi < nbMoisRestants) caChantiersParMois[mi] += dayMet * prix;
+                    // Index = mois de l'annee (0..11), aligne avec la boucle de rendu janvier->decembre
+                    if (cursor.getFullYear() === now2.getFullYear()) {
+                      caChantiersParMois[cursor.getMonth()] += dayMet * prix;
+                    }
                   }
                 }
                 cursor.setDate(cursor.getDate() + 1); safeF++;
