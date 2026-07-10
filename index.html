@@ -19222,8 +19222,8 @@
               return sign + Math.round(abs);
             };
             // ── Chart style courbe carburant : polyline + aire dégradée + moyenne pointillée ──
-            var Wt = 720, Ht = 220;
-            var padT = { t: 22, r: 18, b: 32, l: 60 };
+            var Wt = 1100, Ht = 240;
+            var padT = { t: 22, r: 24, b: 32, l: 60 };
             var iwt = Wt - padT.l - padT.r;
             var iht = Ht - padT.t - padT.b;
             var valsTr = trMois.map(function(x) { return x.solde; });
@@ -19304,8 +19304,8 @@
                 h("span", null, h("span", { style: { display: "inline-block", width: 12, height: 0, borderTop: "2px dashed #f43f5e", verticalAlign: "middle", marginRight: 6 } }))
               ),
               // ── SVG polyline + aire degradee + moyenne pointillee (style carburant) ──
-              h("div", { style: { overflowX: "auto" } },
-                h("svg", { width: Wt, height: Ht, viewBox: "0 0 " + Wt + " " + Ht, style: { maxWidth: "100%", display: "block" } },
+              h("div", { style: { width: "100%" } },
+                h("svg", { viewBox: "0 0 " + Wt + " " + Ht, style: { width: "100%", height: "auto", display: "block" } },
                   // Gradient definition
                   h("defs", null,
                     h("linearGradient", { id: "tresorerie-grad-pos", x1: "0", x2: "0", y1: "0", y2: "1" },
