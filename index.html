@@ -18960,6 +18960,26 @@
               }
             });
 
+            // ── CA REALISE par mois (metrages saisis dans Avancement) ──
+            // Utilise pour les mois passes non fiables cote Compta : au lieu d'afficher 0,
+            // on utilise le CA reellement produit par les sondeurs (metrages jour * prix/metre).
+            var currentYearReal = now2.getFullYear();
+            var caChantiersRealiseParMois = new Array(12).fill(0);
+            (dbChantiers || []).forEach(function(c) {
+              var prix = parseFloat(c.prixMetre) || 0;
+              if (prix <= 0) return;
+              var saisCh = (ctx.dbSaisies || {})[c.id] || {};
+              Object.keys(saisCh).forEach(function(dateStr) {
+                var d = new Date(String(dateStr).substring(0,10) + "T00:00:00");
+                if (isNaN(d.getTime())) return;
+                if (d.getFullYear() !== currentYearReal) return;
+                var vv = saisCh[dateStr];
+                var val = typeof vv === "object" && vv !== null ? (parseFloat(vv.valeur) || 0) : (parseFloat(vv) || 0);
+                if (val <= 0) return;
+                caChantiersRealiseParMois[d.getMonth()] += val * prix;
+              });
+            });
+
             // ── Determination du dernier mois "fiable" cote Compta ──
             // Un mois est reel seulement s'il existe un mois strictement PLUS RECENT
             // avec des ecritures 512* : sinon on considere qu'il est en cours de saisie
@@ -19000,16 +19020,24 @@
               // (le dernier mois est probablement en cours de saisie par la compta)
               var estFiable = !!mvtReel && latestMonthKey && kMonth < latestMonthKey;
               var encaiss, decaiss, source;
-              var caChantiersMi = caChantiersParMois[mi2] || 0;
+              var caChantiersForecastMi = caChantiersParMois[mi2] || 0;
+              var caChantiersRealMi = caChantiersRealiseParMois[mi2] || 0;
               var factFrsMi = factFrsFutures[kMonth] || 0;
               if (estFiable) {
-                // Mois passe fiable (compta a jour) : utiliser le REEL
+                // Mois passe fiable (compta a jour) : utiliser le REEL bancaire
                 encaiss = mvtReel.in;
                 decaiss = mvtReel.out;
                 source = "reel";
               } else {
                 // Mois pas encore saisi cote compta OU mois futur : PROJECTION
-                encaiss = caChantiersMi + caActivitesMens;
+                // Passe non fiable : CA = metrages saisis (Avancement) x prix/metre
+                // Courant : realise 1er->today + forecast today->fin de mois
+                // Futur : forecast pur
+                var caMi;
+                if (estPasse) caMi = caChantiersRealMi;
+                else if (estCourant) caMi = caChantiersRealMi + caChantiersForecastMi;
+                else caMi = caChantiersForecastMi;
+                encaiss = caMi + caActivitesMens;
                 decaiss = salairesMens + chargesFixesMens + empruntsMensuel + factFrsMi;
                 source = "projete";
               }
