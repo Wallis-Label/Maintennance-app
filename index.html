@@ -11467,13 +11467,22 @@
       // ── Cout/m PAR MACHINE + machine dominante de chaque chantier ──
       // Chaque chantier utilise le cout/m de SA machine (efficace = bon, lente = mauvais),
       // au lieu de la moyenne globale (injuste pour le meilleur chantier).
-      // SOURCE UNIQUE = computeCoutMachines (moteur du "Detail par sondeuse" des Stats), sur le
-      // DERNIER MOIS COMPLET (ex en juillet -> juin). Un seul mois plein = coherent avec le
-      // Detail par sondeuse regle sur ce mois, et non gonfle par les mois lents du debut d'annee.
-      // Le cout/m d'une machine (ex FS1) est ainsi IDENTIQUE ici et dans les Stats.
+      // SOURCE UNIQUE = computeCoutMachines (moteur du "Detail par sondeuse" des Stats).
+      // Periode = [1er mois avec des rapports -> fin du dernier mois COMPLET]. L'app a demarre
+      // en avril : pas de donnee machine avant, et le FEC ne ventile pas par machine. Donc on
+      // ne prend QUE la periode ou l'app a des donnees (avril->juin), pour que coutS fixes et
+      // metrage couvrent la MEME periode (sinon 6 mois de charges / 3 mois de metrage = exces).
       var _coutMachNow = new Date();
-      var _coutMachDebut = new Date(_coutMachNow.getFullYear(), _coutMachNow.getMonth() - 1, 1);
-      var _coutMachFin = new Date(_coutMachNow.getFullYear(), _coutMachNow.getMonth(), 0, 23, 59, 59);
+      var _coutMachYear = _coutMachNow.getFullYear();
+      var _coutMachFin = new Date(_coutMachYear, _coutMachNow.getMonth(), 0, 23, 59, 59); // fin dernier mois complet
+      var _coutMachMinMonth = _coutMachNow.getMonth(); // fallback : mois courant
+      (ctxAv.dbRapportsForage || []).forEach(function(r) {
+        if (!r || !r.date_rapport) return;
+        var d = new Date(String(r.date_rapport).substring(0, 10) + "T00:00:00");
+        if (isNaN(d.getTime()) || d.getFullYear() !== _coutMachYear) return;
+        if (d.getMonth() < _coutMachMinMonth) _coutMachMinMonth = d.getMonth();
+      });
+      var _coutMachDebut = new Date(_coutMachYear, _coutMachMinMonth, 1);
       var coutMetreParMachineAv = computeCoutMachines(ctxAv, _coutMachDebut, _coutMachFin);
       var chantierMachineDom = (function() {
         var byChant = {};
