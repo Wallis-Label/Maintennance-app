@@ -16804,6 +16804,28 @@
       // Charge uniquement les 2 classes utiles pour eviter de tirer toute la compta.
       var _dbEcr = useState([]);
       var dbEcrCompta = _dbEcr[0]; var setDbEcrCompta = _dbEcr[1];
+      // Solde bancaire actuel renseigne manuellement pour ancrer la courbe de tresorerie
+      // (utile quand la compta est en retard : override le solde calcule via Compta 512*)
+      var _soldeManuel = useState(null);
+      var soldeManuel = _soldeManuel[0]; var setSoldeManuel = _soldeManuel[1];
+      useEffect(function() {
+        var p = (ctx.parametres || []).find(function(x) { return x && x.categorie === "tresorerie_solde_actuel"; });
+        if (p && p.valeur != null && p.valeur !== "") {
+          var v = parseFloat(p.valeur);
+          if (!isNaN(v)) setSoldeManuel(v);
+        }
+      }, [ctx.parametres]);
+      async function saveSoldeManuel(val) {
+        var existing = (ctx.parametres || []).find(function(x) { return x && x.categorie === "tresorerie_solde_actuel"; });
+        if (existing) {
+          var res = await supabase.from("parametres").update({ valeur: String(val) }).eq("id", existing.id);
+          if (res.error) throw new Error(res.error.message);
+        } else {
+          var res2 = await supabase.from("parametres").insert({ categorie: "tresorerie_solde_actuel", valeur: String(val), ordre: 0 });
+          if (res2.error) throw new Error(res2.error.message);
+        }
+        setSoldeManuel(val);
+      }
       var _loading = useState(true);
       var loading = _loading[0]; var setLoading = _loading[1];
       // ─ Cache meteo par chantier (pour previsions ajustees) ─
@@ -18832,8 +18854,7 @@
             // Fallback si aucune ecriture Compta chargee : parametres.tresorerie_solde_init
             var soldeInitParam = (parametres || []).find(function(p) { return p && p.categorie === "tresorerie_solde_init"; });
             var soldeInitParamVal = soldeInitParam ? (parseFloat(soldeInitParam.valeur) || 0) : 0;
-            var soldeInit = nbEcrBanque > 0 ? soldeBanqueLive : soldeInitParamVal;
-            var soldeSource = nbEcrBanque > 0 ? "compta" : "parametres";
+            // soldeInit et soldeSource sont determines plus bas (passe 2)
 
             // ── Mouvements bancaires reels PASSES par mois (via 512*) ──
             // Encaissements = debits (argent entre), Decaissements = credits (argent sort).
@@ -19022,23 +19043,10 @@
               if (!latestMonthKey || k > latestMonthKey) latestMonthKey = k;
             });
 
-            // ── Reconstruction du solde au 1er janvier de l'annee ──
-            // solde 1er janv = solde bancaire actuel - somme des flux "reels fiables"
-            // depuis le 1er janv (les mois non fiables sont retires du calcul aussi).
             var currentYear = now2.getFullYear();
-            var flux1erJanvIci = 0;
-            Object.keys(mvtsBanqueParMois).forEach(function(k) {
-              var parts = k.split("-");
-              var y = parseInt(parts[0]); var m = parseInt(parts[1]) - 1;
-              if (y === currentYear && m <= now2.getMonth()) {
-                flux1erJanvIci += mvtsBanqueParMois[k].in - mvtsBanqueParMois[k].out;
-              }
-            });
-            var solde1erJanvier = nbEcrBanque > 0 ? (soldeBanqueLive - flux1erJanvIci) : soldeInit;
 
-            // Construction annee complete : janvier a decembre
-            var trMois = [];
-            var solde = solde1erJanvier;
+            // ── PASSE 1 : calcul des nets mensuels (encaiss - decaiss) sans solde cumule ──
+            var trMoisRaw = [];
             for (var mi2 = 0; mi2 < 12; mi2++) {
               var dM = new Date(currentYear, mi2, 1);
               var dMEnd = new Date(currentYear, mi2 + 1, 0); // dernier jour du mois
@@ -19075,12 +19083,47 @@
                 source = "projete";
               }
               var net = encaiss - decaiss;
-              solde += net;
-              trMois.push({
-                d: dM, encaiss: encaiss, decaiss: decaiss, net: net, solde: solde,
+              trMoisRaw.push({
+                d: dM, encaiss: encaiss, decaiss: decaiss, net: net,
                 caChantiers: caChantiersMi, factFrs: factFrsMi, source: source, estPasse: estPasse, estCourant: estCourant
               });
             }
+
+            // ── PASSE 2 : determination du solde de depart (1er janvier) ──
+            // Priorite : (1) solde manuel renseigne -> ancrer courbe pour que solde a
+            // fin du mois courant = ce chiffre ; (2) reconstruction via ecritures Compta 512* ;
+            // (3) fallback parametres.tresorerie_solde_init
+            var solde1erJanvier, soldeSource;
+            if (soldeManuel != null) {
+              var netCumulJanvToCurrent = 0;
+              for (var kk = 0; kk <= now2.getMonth(); kk++) netCumulJanvToCurrent += trMoisRaw[kk].net;
+              solde1erJanvier = soldeManuel - netCumulJanvToCurrent;
+              soldeSource = "manuel";
+            } else if (nbEcrBanque > 0) {
+              var flux1erJanvIci = 0;
+              Object.keys(mvtsBanqueParMois).forEach(function(k) {
+                var parts = k.split("-");
+                var y = parseInt(parts[0]); var m = parseInt(parts[1]) - 1;
+                if (y === currentYear && m <= now2.getMonth()) {
+                  flux1erJanvIci += mvtsBanqueParMois[k].in - mvtsBanqueParMois[k].out;
+                }
+              });
+              solde1erJanvier = soldeBanqueLive - flux1erJanvIci;
+              soldeSource = "compta";
+            } else {
+              solde1erJanvier = soldeInitParamVal;
+              soldeSource = "parametres";
+            }
+
+            // ── PASSE 3 : solde cumule ──
+            var trMois = [];
+            var solde = solde1erJanvier;
+            for (var mi3 = 0; mi3 < trMoisRaw.length; mi3++) {
+              solde += trMoisRaw[mi3].net;
+              var mm = Object.assign({}, trMoisRaw[mi3], { solde: solde });
+              trMois.push(mm);
+            }
+            var soldeInit = solde1erJanvier;
             var soldeFinTr = trMois[trMois.length - 1].solde;
             var minSoldeTr = Math.min.apply(null, trMois.map(function(x) { return x.solde; }));
             var minIdxTr = trMois.findIndex(function(x) { return x.solde === minSoldeTr; });
@@ -19122,7 +19165,26 @@
                 h("div", { style: { fontSize: 14, fontWeight: 800, color: "#93c5fd", display: "flex", alignItems: "center", gap: 8 } },
                   h(Icon, { name: "line-chart", size: 16, color: "#93c5fd" }),
                   "Tresorerie previsionnelle - annee " + now2.getFullYear(),
-                  soldeSource === "compta" ? h("span", { style: { fontSize: 10, background: "rgba(34,197,94,0.15)", color: "#86efac", padding: "2px 8px", borderRadius: 999, fontWeight: 700, letterSpacing: 0.4 } }, "Compta connectee") : h("span", { style: { fontSize: 10, background: "rgba(251,191,36,0.15)", color: "#fde68a", padding: "2px 8px", borderRadius: 999, fontWeight: 700, letterSpacing: 0.4 } }, "Solde parametres")
+                  soldeSource === "manuel" ? h("span", { style: { fontSize: 10, background: "rgba(129,140,248,0.20)", color: "#c7d2fe", padding: "2px 8px", borderRadius: 999, fontWeight: 700, letterSpacing: 0.4 } }, "Ancre solde manuel") : (soldeSource === "compta" ? h("span", { style: { fontSize: 10, background: "rgba(34,197,94,0.15)", color: "#86efac", padding: "2px 8px", borderRadius: 999, fontWeight: 700, letterSpacing: 0.4 } }, "Compta connectee") : h("span", { style: { fontSize: 10, background: "rgba(251,191,36,0.15)", color: "#fde68a", padding: "2px 8px", borderRadius: 999, fontWeight: 700, letterSpacing: 0.4 } }, "Solde parametres")),
+                  h("button", {
+                    onClick: async function() {
+                      var cur = soldeManuel != null ? String(soldeManuel) : "";
+                      var input = window.prompt("Solde bancaire ACTUEL en XPF (ex: -65000000 pour -65 MF).\nCe chiffre ancre la courbe pour compenser une compta en retard.\nLaisser vide pour retourner en mode automatique.", cur);
+                      if (input === null) return;
+                      if (input.trim() === "") {
+                        try {
+                          var ex = (ctx.parametres || []).find(function(x) { return x && x.categorie === "tresorerie_solde_actuel"; });
+                          if (ex) { await supabase.from("parametres").delete().eq("id", ex.id); }
+                          setSoldeManuel(null);
+                        } catch (e) { alert("Erreur : " + e.message); }
+                        return;
+                      }
+                      var v = parseFloat(input.replace(/\s/g, "").replace(",", "."));
+                      if (isNaN(v)) { alert("Nombre invalide"); return; }
+                      try { await saveSoldeManuel(v); } catch (e) { alert("Erreur : " + e.message); }
+                    },
+                    style: { marginLeft: "auto", fontSize: 10, padding: "3px 10px", background: "rgba(129,140,248,0.15)", border: "1px solid rgba(129,140,248,0.35)", color: "#c7d2fe", borderRadius: 6, cursor: "pointer", fontWeight: 700 }
+                  }, soldeManuel != null ? "Ajuster solde" : "Ancrer solde reel")
                 ),
                 h("div", { style: { fontSize: 11, color: "#a1a1aa", marginTop: 3 } }, "Chaque mois : REEL (mouvements bancaires Compta 512*) tant que la compta est a jour, sinon PROJECTION (CA chantiers + activites - salaires x1.4 - charges fixes - emprunts - factures fournisseurs 401 non lettrees). La bascule est automatique : des qu'un mois n'a pas d'ecritures posterieures, il est considere non fiable et passe en projete." + (latestMonthKey ? " Dernier mois compta complet : " + (function() { var p = latestMonthKey.split("-"); var mn = ["janv.","fevr.","mars","avril","mai","juin","juil.","aout","sept.","oct.","nov.","dec."][parseInt(p[1])-2] || latestMonthKey; return mn + " " + p[0].slice(2); })() + "." : ""))
               ),
