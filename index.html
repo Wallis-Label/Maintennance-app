@@ -206,6 +206,27 @@
     const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRmbW5tenlldHliYWV5Z3VnaGNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYxMDIyMTQsImV4cCI6MjA5MTY3ODIxNH0.mpFFrat0OkWvm30FSt5gtW8zR4KcBjdc0V-I0NPxaVA";
     const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+    // Telecharge le PDF d'une demande d'intervention (meme rendu que le PDF joint aux emails).
+    // Appelle l'endpoint securise (JWT admin) sur employes-psi et declenche le download.
+    async function downloadDemandeInterventionPdf(id, demandeurNom, chantierNom) {
+      try {
+        var sess = await supabase.auth.getSession();
+        var token = sess && sess.data && sess.data.session && sess.data.session.access_token;
+        if (!token) { alert("Session expiree, reconnecte-toi."); return; }
+        var qs = "?id=" + encodeURIComponent(id) +
+                 "&demandeur=" + encodeURIComponent(demandeurNom || "") +
+                 "&chantier=" + encodeURIComponent(chantierNom || "");
+        var resp = await fetch("https://employes-psi.vercel.app/api/pdf-intervention" + qs, { headers: { Authorization: "Bearer " + token } });
+        if (!resp.ok) { var e = ""; try { e = await resp.text(); } catch (x) {} alert("Erreur PDF : " + (e || resp.status)); return; }
+        var blob = await resp.blob();
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement("a");
+        a.href = url; a.download = "demande-intervention-" + id + ".pdf";
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(function() { URL.revokeObjectURL(url); }, 2000);
+      } catch (err) { alert("Erreur telechargement PDF : " + (err && err.message || err)); }
+    }
+
     // Email admin : seul ce compte peut modifier l'horametre et supprimer des releves
     const ADMIN_EMAIL = "tom.wallislabel@gmail.com";
 
@@ -22018,6 +22039,7 @@
               ) : null,
               c.signature_employe_png ? h("div", null, sectionTitle("Signature employe"), sigBox(c.signature_employe_png)) : null,
               h("div", { style: { display: "flex", gap: 10, marginTop: 16, flexWrap: "wrap" } },
+                actionBtn({ label: "Telecharger PDF", icon: "download", color: "neutral", onClick: function() { downloadDemandeInterventionPdf(c.id, name, chantierLabel(c.chantier_id)); } }),
                 c.statut === "soumis" ? actionBtn({ label: "Planifier", icon: "calendar-plus", color: "indigo", onClick: function() {
                   // Ouvre la modale pre-remplie avec les donnees de la demande.
                   // L'admin pourra modifier tous les champs avant de creer l'intervention reelle.
