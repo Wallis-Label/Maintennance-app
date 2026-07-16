@@ -11853,12 +11853,19 @@
         var dates = Object.keys(dset).map(function(d) {
           return { t: new Date(d + "T00:00:00").getTime(), v: getDailyMetrageChantier(chId, d) };
         }).filter(function(x) { return !isNaN(x.t) && x.t <= nowMs && x.v > 0; });
+        // Premier jour de metrage du chantier (borne le denominateur hebdo).
+        var firstDataMs = dates.length ? dates.reduce(function(m, x) { return x.t < m ? x.t : m; }, dates[0].t) : nowMs;
         function _iso(dd) { var y = dd.getFullYear(), m = dd.getMonth() + 1, j = dd.getDate(); return y + "-" + (m < 10 ? "0" : "") + m + "-" + (j < 10 ? "0" : "") + j; }
         function calWindow(nbDays) {
           var startMs = nowMs - (nbDays - 1) * 86400000;
           var tot = 0, nb = 0;
           dates.forEach(function(x) { if (x.t >= startMs) { tot += x.v; nb++; } });
-          return { moyJour: nb > 0 ? tot / nb : 0, moyHebdo: tot / (nbDays / 7) };
+          // Moyenne hebdo : on ne compte pas les semaines AVANT le 1er metrage du chantier,
+          // sinon une periode plus longue que l'age du chantier est diluee (ex: 6 mois sur un
+          // chantier de 4 mois -> 2 mois de semaines vides qui font chuter la moyenne).
+          var effStart = Math.max(startMs, firstDataMs);
+          var spanDays = Math.max(1, Math.round((nowMs - effStart) / 86400000) + 1);
+          return { moyJour: nb > 0 ? tot / nb : 0, moyHebdo: tot / (spanDays / 7) };
         }
         function complete() {
           var tot = 0, nb = 0, minT = null;
