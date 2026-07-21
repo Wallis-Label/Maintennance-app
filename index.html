@@ -651,6 +651,43 @@
       return "normal";
     }
 
+    // ─── Overlay non-productif ────────────────────────────────────────────
+    // Un rapport de forage marque "non productif" colore le jour du chantier
+    // (comme un brush panne/intemperie sur la page Avancement) ET alimente les
+    // primes avec la meme regle que panne/intemperies. Le motif dicte le type :
+    //   panne -> "panne" (P) · intemperies -> "intemperies" (I) · sinon "non_productif" (NP).
+    // Idempotent : on retire d'abord les entrees derivees (_np) puis on re-derive
+    // depuis les rapports courants. Une saisie manuelle (posee a la main sur la
+    // grille) a toujours priorite et n'est jamais ecrasee.
+    function overlayNonProductifSaisies(base, rapports) {
+      var out = {};
+      var keys = Object.keys(base || {});
+      for (var i = 0; i < keys.length; i++) {
+        var ck = keys[i];
+        out[ck] = {};
+        var dkeys = Object.keys(base[ck] || {});
+        for (var j = 0; j < dkeys.length; j++) {
+          var dk = dkeys[j];
+          var e = base[ck][dk];
+          if (e && typeof e === "object" && e._np) continue; // strip derivees precedentes
+          out[ck][dk] = e;
+        }
+      }
+      (rapports || []).forEach(function(r) {
+        if (!r || !r.non_productif) return;
+        var cid = r.chantier_id;
+        var d = r.date_rapport ? String(r.date_rapport).substring(0, 10) : null;
+        if (!cid || !d) return;
+        if (!out[cid]) out[cid] = {};
+        // Une saisie manuelle (valeur ou statut pose a la main) gagne toujours.
+        if (out[cid][d] !== undefined && out[cid][d] !== null) return;
+        var motif = String(r.motif_non_productif || "").toLowerCase();
+        var tj = (motif === "panne" || motif === "intemperies") ? motif : "non_productif";
+        out[cid][d] = { valeur: 0, typeJour: tj, _np: true };
+      });
+      return out;
+    }
+
     // ─── Helper module-level : calcul EXACT des primes de metrage ──────
     // Replique la logique de calcPrimesForSitePeriod (ex-EcranPrimes) pour qu'elle soit
     // reutilisable depuis EcranStatistiques (cout reel inclut les primes).
@@ -797,9 +834,10 @@
           var effectiveType = (saisieType === "panne" || saisieType === "intemperies" || saisieType === "non_productif" || saisieType === "arret") ? saisieType : tj;
           if (effectiveType === "ferie") return;
           if (effectiveType === "arret") { adjJours += 1; }
-          else if (effectiveType === "panne" || effectiveType === "intemperies") {
+          else if (effectiveType === "panne" || effectiveType === "intemperies" || effectiveType === "non_productif") {
+            // Cause externe (panne / meteo / journee non productive) -> rattrapage moyenne site.
             adjMetrage += siteMoyenne; adjJours += 1;
-          } else if (effectiveType === "non_productif" || effectiveType === "conge" || effectiveType === "chomage") {
+          } else if (effectiveType === "conge" || effectiveType === "chomage") {
             var machineEmp = getMachineEmpForDate(emp.id, dateStr);
             var metrageMachine = machineEmp ? getMetrageMachineForDate(machineEmp, dateStr) : null;
             var rattrapage;
@@ -9447,8 +9485,8 @@
         setSaisies(newSaisies);
       };
 
-      var TYPE_COLORS = { panne: "#f59e0b", intemperies: "#3b82f6", ferie: "#dc2626" };
-      var TYPE_LABELS = { panne: "P", intemperies: "I", ferie: "F" };
+      var TYPE_COLORS = { panne: "#f59e0b", intemperies: "#3b82f6", ferie: "#dc2626", non_productif: "#a855f7", arret: "#52525b" };
+      var TYPE_LABELS = { panne: "P", intemperies: "I", ferie: "F", non_productif: "NP", arret: "A" };
       var isSpecial = typeJour !== "normal";
 
       var bgColor = isWeekend ? "rgba(255,255,255,0.04)" : isToday ? "rgba(99,102,241,0.10)" : isSpecial ? (TYPE_COLORS[typeJour] || "rgba(255,255,255,0.04)") + "20" : "rgba(255,255,255,0.02)";
@@ -11622,7 +11660,7 @@
             // Trouver les employes qui ont travaille recemment sur ce site (30 derniers jours)
             var recentEmpIds = {};
             prev.forEach(function(a) {
-              if (a.typeJour !== "travail" && a.typeJour !== "panne" && a.typeJour !== "intemperies" && a.typeJour !== "ferie") return;
+              if (a.typeJour !== "travail" && a.typeJour !== "panne" && a.typeJour !== "intemperies" && a.typeJour !== "ferie" && a.typeJour !== "non_productif") return;
               var matchSite = false;
               for (var s = 0; s < siteChantierIds.length; s++) {
                 if (String(a.chantierId) === String(siteChantierIds[s])) { matchSite = true; break; }
@@ -11694,7 +11732,8 @@
         { key: "ferie", label: "Ferie", color: "#dc2626", icon: "calendar-off" },
         { key: "panne", label: "Panne", color: "#f59e0b", icon: "alert-triangle" },
         { key: "intemperies", label: "Intemperies", color: "#3b82f6", icon: "cloud-rain" },
-        { key: "arret", label: "Arret", color: "#52525b", icon: "octagon-x" }
+        { key: "arret", label: "Arret", color: "#52525b", icon: "octagon-x" },
+        { key: "non_productif", label: "Non productif", color: "#a855f7", icon: "ban" }
       ];
 
       var nextIdAv = function() { return Date.now() + Math.floor(Math.random() * 1000); };
@@ -16010,14 +16049,14 @@
               adjJours += 1;
               joursParType.arret += 1;
               daysDetail.push({ date: dateStr, type: "arret", machine: null, metrage: 0, source: "arret (0m, +1j)" });
-            } else if (effectiveType === "panne" || effectiveType === "intemperies") {
-              // Cause externe (panne machine / meteo) -> rattrapage = moyenne_jour_site fixe.
+            } else if (effectiveType === "panne" || effectiveType === "intemperies" || effectiveType === "non_productif") {
+              // Cause externe (panne machine / meteo / journee non productive) -> rattrapage = moyenne_jour_site fixe.
               // L'employe n'est pas responsable, il merite la moyenne complete.
               adjMetrage += siteMoyenne;
               adjJours += 1;
               joursParType[effectiveType] += 1;
               daysDetail.push({ date: dateStr, type: effectiveType, machine: null, metrage: siteMoyenne, source: "moyenne site (rattrapage " + effectiveType + ")" });
-            } else if (effectiveType === "non_productif" || effectiveType === "conge" || effectiveType === "chomage") {
+            } else if (effectiveType === "conge" || effectiveType === "chomage") {
               // Absence liee a l'employe -> rattrapage limite par la performance reelle.
               // Cascade de sources de metrage_jour, par ordre de priorite :
               //   1. Rapport forage de SA machine ce jour
@@ -28482,7 +28521,7 @@
               supabase.from("demandes_financement").select("*").order("created_at", { ascending: false }),
               supabase.from("releves_journaliers").select("*").order("date_releve", { ascending: false }),
               // Rapports forage : light fetch (sans signatures lourdes en base64)
-              supabase.from("rapports_forage").select("id,date_rapport,sondeuse_code,equipement_id,chantier_id,client,lieu,quart,equipe,horametre,sondages,activites,remarques,consommables_perdus,controles_ok,total_metres,total_heures,personnel_id,statut,created_at").order("date_rapport", { ascending: false }),
+              supabase.from("rapports_forage").select("id,date_rapport,sondeuse_code,equipement_id,chantier_id,client,lieu,quart,equipe,horametre,sondages,activites,remarques,consommables_perdus,controles_ok,total_metres,total_heures,personnel_id,statut,created_at,non_productif,motif_non_productif").order("date_rapport", { ascending: false }),
               supabase.from("emprunts").select("*").order("date_debut", { ascending: false }),
               supabase.from("charges_fixes").select("*").order("categorie").order("libelle"),
               supabase.from("bug_logs").select("*").order("created_at", { ascending: false }).limit(500),
@@ -28591,7 +28630,7 @@
         if (!session) return;
         function refreshRapports() {
           supabase.from("rapports_forage")
-            .select("id,date_rapport,sondeuse_code,equipement_id,chantier_id,client,lieu,quart,equipe,horametre,sondages,activites,remarques,consommables_perdus,controles_ok,total_metres,total_heures,personnel_id,statut,created_at")
+            .select("id,date_rapport,sondeuse_code,equipement_id,chantier_id,client,lieu,quart,equipe,horametre,sondages,activites,remarques,consommables_perdus,controles_ok,total_metres,total_heures,personnel_id,statut,created_at,non_productif,motif_non_productif")
             .order("date_rapport", { ascending: false })
             .then(res => { if (res.data) setDbRapportsForage(res.data); });
         }
@@ -29620,10 +29659,16 @@
         return rapportsAsReleves.concat(csvFiltered);
       }, [rapportsAsReleves, dbRelevesJourn]);
 
+      // Saisies "effectives" : saisies manuelles + overlay derive des rapports non productifs
+      // (colore la grille Avancement + alimente les primes comme panne/intemperies).
+      const dbSaisiesEffective = useMemo(function() {
+        return overlayNonProductifSaisies(dbSaisies, dbRapportsForage);
+      }, [dbSaisies, dbRapportsForage]);
+
       const contextValue = {
         interventions, equipements, plans, pieces, releves, piecesEquipements, parametres, setParametres,
         isAdmin, isSecretaire, isRH, userEmail, pendingValidations, validationLog, allowedPages,
-        dbChantiers, setDbChantiers, dbSaisies, setDbSaisies,
+        dbChantiers, setDbChantiers, dbSaisies: dbSaisiesEffective, setDbSaisies,
         dbDeclarations, setDbDeclarations, dbRenouvellements, setDbRenouvellements,
         dbAppUsers, setDbAppUsers, dbAffectations, setDbAffectations, dbPaliers, setDbPaliers,
         dbChantierEquipements, setDbChantierEquipements, addChantierEquipement, updateChantierEquipement, deleteChantierEquipement,
