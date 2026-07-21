@@ -20688,18 +20688,24 @@
           h("h3", { style: sectionTitleStyle }, h(Icon, { name: "briefcase", size: 14, color: "#a78bfa" }), "Chantier"),
           h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, marginBottom: 12 } },
             h("label", { style: labelStyleEdit }, "Client", h("input", { type: "text", value: form.client, onChange: function(e) { update("client", e.target.value); }, style: inputStyleEdit })),
-            h("label", { style: labelStyleEdit }, "Lieu (site)", h("select", { value: form.lieu || "", onChange: function(e) { update("lieu", e.target.value); }, style: inputStyleEdit },
-              (function() {
-                var set = {};
-                (dbChantiers || []).forEach(function(c) { if (c.statut !== "En cours" && c.statut !== "A venir") return; var s = String(c.site || "").trim(); if (s) set[s.toUpperCase()] = s; });
-                var arr = Object.keys(set).map(function(k) { return set[k]; }).sort();
-                var cur = String(form.lieu || "").trim();
-                if (cur && arr.map(function(x) { return x.toUpperCase(); }).indexOf(cur.toUpperCase()) < 0) arr.unshift(cur);
-                var opts = [h("option", { key: "__empty", value: "" }, "-- Choisir un site --")];
-                arr.forEach(function(s) { opts.push(h("option", { key: s, value: s }, s)); });
-                return opts;
-              }())
-            )),
+            h("label", { style: labelStyleEdit }, "Lieu (chantier)", (function() {
+              var titres = [], seen = {};
+              (dbChantiers || []).forEach(function(c) {
+                if (c.statut !== "En cours" && c.statut !== "A venir") return;
+                var t = String(c.titre || "").trim();
+                if (t && !seen[t.toUpperCase()]) { seen[t.toUpperCase()] = 1; titres.push(t); }
+              });
+              titres.sort();
+              var cur = String(form.lieu || "").trim();
+              // Correspondance insensible a la casse : "OUACO NMC" (rapport) <-> "Ouaco NMC" (chantier).
+              var match = null;
+              for (var i = 0; i < titres.length; i++) { if (titres[i].toUpperCase() === cur.toUpperCase()) { match = titres[i]; break; } }
+              var arr = titres.slice();
+              if (cur && !match) arr.unshift(cur); // valeur orpheline (chantier termine/supprime) : on la garde
+              var opts = [h("option", { key: "__e", value: "" }, "-- Choisir un chantier --")];
+              arr.forEach(function(t) { opts.push(h("option", { key: t, value: t }, t)); });
+              return h("select", { value: match || cur, onChange: function(e) { update("lieu", e.target.value); }, style: inputStyleEdit }, opts);
+            }())),
             h("label", { style: labelStyleEdit }, "Sondeuse (code)", h("input", { type: "text", value: form.sondeuse_code, onChange: function(e) { update("sondeuse_code", e.target.value); }, style: inputStyleEdit })),
             h("label", { style: labelStyleEdit }, "Date", h("input", { type: "date", value: form.date_rapport, onChange: function(e) { update("date_rapport", e.target.value); }, style: inputStyleEdit })),
             h("label", { style: labelStyleEdit }, "Quart", h("select", { value: form.quart, onChange: function(e) { update("quart", e.target.value); }, style: inputStyleEdit }, QUARTS.map(function(q) { return h("option", { key: q.value, value: q.value }, q.label); })))
