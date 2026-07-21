@@ -20691,7 +20691,7 @@
             h("label", { style: labelStyleEdit }, "Lieu (site)", h("select", { value: form.lieu || "", onChange: function(e) { update("lieu", e.target.value); }, style: inputStyleEdit },
               (function() {
                 var set = {};
-                (dbChantiers || []).forEach(function(c) { var s = String(c.site || "").trim(); if (s) set[s.toUpperCase()] = s; });
+                (dbChantiers || []).forEach(function(c) { if (c.statut !== "En cours" && c.statut !== "A venir") return; var s = String(c.site || "").trim(); if (s) set[s.toUpperCase()] = s; });
                 var arr = Object.keys(set).map(function(k) { return set[k]; }).sort();
                 var cur = String(form.lieu || "").trim();
                 if (cur && arr.map(function(x) { return x.toUpperCase(); }).indexOf(cur.toUpperCase()) < 0) arr.unshift(cur);
