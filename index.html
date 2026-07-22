@@ -11305,6 +11305,19 @@
     // ouvres passes total. Retourne 1 si aucun historique disponible.
     // Utilise pour rendre les projections previsionnelles realistes (aleas historiques).
     var _EXCLUDED_TYPES_DISPO = { ferie: 1, intemperies: 1, panne: 1, arret: 1, non_productif: 1, conge: 1, chomage: 1, maladie: 1, maintenance: 1 };
+    // ─── Taux d'absence LISSE (evite le bruit sur faible historique) ──────────
+    // Un taux brut = jours_absents / jours_ouvres devient absurde sur 2-3 jours
+    // (1 jour de pluie sur 2 -> 50% !). On applique un lissage additif : on part
+    // avec un "credit" de COEF_DISPO_PRIOR_JOURS jours de bonne dispo, si bien qu'un
+    // aleas isole est dilue tant qu'on n'a pas accumule un vrai historique. Le taux
+    // ne devient significatif que "longtemps apres", quand les donnees sont sures.
+    // Ex : 1 absent / 2 ouvres -> 1/(2+20)=4,5% (au lieu de 50%). 11/115 -> 8,1% (~inchange).
+    var COEF_DISPO_PRIOR_JOURS = 20;
+    function tauxAbsenceLisse(joursAbsents, joursOuvres) {
+      var denom = (joursOuvres || 0) + COEF_DISPO_PRIOR_JOURS;
+      if (denom <= 0) return 0;
+      return Math.max(0, Math.min(1, (joursAbsents || 0) / denom));
+    }
     function coefDispoChantierHist(chantier, dbSaisies, todayMs) {
       if (!chantier || !chantier.dateDebut) return { coef: 1, taux: 0, joursOuvres: 0, joursAbsents: 0 };
       var dDeb = new Date(String(chantier.dateDebut).substring(0, 10) + "T00:00:00");
@@ -11329,7 +11342,7 @@
         cur.setDate(cur.getDate() + 1);
         safe++;
       }
-      var taux = joursOuvres > 0 ? (joursAbsents / joursOuvres) : 0;
+      var taux = tauxAbsenceLisse(joursAbsents, joursOuvres);
       return { coef: Math.max(0, 1 - taux), taux: taux, joursOuvres: joursOuvres, joursAbsents: joursAbsents };
     }
 
@@ -13060,7 +13073,7 @@
                         safeP++;
                       }
                     })();
-                    var tauxAbsence = joursOuvresPasses > 0 ? (joursAbsentsPasses / joursOuvresPasses) : 0;
+                    var tauxAbsence = tauxAbsenceLisse(joursAbsentsPasses, joursOuvresPasses);
                     if (vitesse14j === 0) {
                       return h("div", { style: { background: "rgba(245,158,11,0.10)", border: "1px solid rgba(245,158,11,0.30)", borderRadius: 10, padding: 12, marginBottom: 16, fontSize: 12.5, color: "#fde68a" } },
                         h("strong", null, "Previsionnel indisponible : "), "aucun jour productif sur les 14 derniers Lun-Jeu pour ce chantier. Ajoute des saisies pour activer la projection."
@@ -18344,7 +18357,7 @@
           dCurP.setDate(dCurP.getDate() + 1);
           safeP++;
         }
-        var tauxAbsenceCh = joursOuvresPasses > 0 ? (joursAbsentsPasses / joursOuvresPasses) : 0;
+        var tauxAbsenceCh = tauxAbsenceLisse(joursAbsentsPasses, joursOuvresPasses);
         var coefDispoCh = Math.max(0, 1 - tauxAbsenceCh);
         // Boucle jour par jour Lun-Jeu de today a min(dateFin, yearEnd)
         var effectiveEnd = Math.min(dFin.getTime(), yearEndMsProj);
@@ -19911,7 +19924,7 @@
                 }
                 dCurP.setDate(dCurP.getDate() + 1); safeP++;
               }
-              var tauxAbs = joursOuvresP > 0 ? (joursAbsentsP / joursOuvresP) : 0;
+              var tauxAbs = tauxAbsenceLisse(joursAbsentsP, joursOuvresP);
               var coefDispo = Math.max(0, 1 - tauxAbs);
               var avgMachHist = computeAvgMachinesHistChantier(c, ctx.dbRelevesJourn, now2);
               // Fallback ratio lineaire simple si pas de vitesse historique
@@ -26175,7 +26188,7 @@
             sP++;
           }
         }
-        var tauxAbsence = joursOuvresPasses > 0 ? (joursAbsentsPasses / joursOuvresPasses) : 0;
+        var tauxAbsence = tauxAbsenceLisse(joursAbsentsPasses, joursOuvresPasses);
         var joursProductifsPasses = joursOuvresPasses - joursAbsentsPasses;
 
         // ─ Jours ouvres restants jusqu'au contrat ─
